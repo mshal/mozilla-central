@@ -108,9 +108,13 @@ endif
 endif
 endif
 repackage-zip: UNPACKAGE="$(ZIP_IN)"
-repackage-zip:  libs-$(AB_CD)
+
+repackage-preqs = \
+  libs-$(AB_CD) \
+  $(call mkdir_deps $(JARLOG_DIR_AB_CD)) \
+  $(NULL)
+repackage-zip: $(repackage-preqs)
 # Adjust jar logs with the new locale (can't use sed -i because of bug 373784)
-	mkdir -p $(JARLOG_DIR_AB_CD)
 	-cp -r $(JARLOG_DIR)/en-US/*.jar.log $(JARLOG_DIR_AB_CD)
 	-$(PERL) -pi.old -e "s/en-US/$(AB_CD)/g" $(JARLOG_DIR_AB_CD)/*.jar.log
 # call a hook for apps to put their uninstall helper.exe into the package
@@ -175,7 +179,7 @@ langpack-%: libs-%
 
 
 # This variable is to allow the wget-en-US target to know which ftp server to download from
-ifndef EN_US_BINARY_URL 
+ifndef EN_US_BINARY_URL
 EN_US_BINARY_URL = $(error You must set EN_US_BINARY_URL)
 endif
 
