@@ -35,7 +35,6 @@ UTIL_JAVA_FILES := \
   $(NULL)
 
 FENNEC_JAVA_FILES = \
-  AboutHomeContent.java \
   AboutHomePromoBox.java \
   AboutHomeSection.java \
   ActivityHandlerHelper.java \
@@ -81,6 +80,7 @@ FENNEC_JAVA_FILES = \
   GeckoMenuInflater.java \
   GeckoMenuItem.java \
   GeckoMessageReceiver.java \
+  GeckoSubMenu.java \
   GeckoPreferences.java \
   GeckoProfile.java \
   GeckoThread.java \
@@ -89,6 +89,7 @@ FENNEC_JAVA_FILES = \
   InputMethods.java \
   LinkPreference.java \
   LinkTextView.java \
+  MemoryMonitor.java \
   MenuButton.java \
   MenuItemActionBar.java \
   MenuItemDefault.java \
@@ -166,6 +167,7 @@ FENNEC_JAVA_FILES = \
   ui/PanZoomTarget.java \
   ui/SimpleScaleGestureDetector.java \
   ui/SubdocumentScrollHelper.java \
+  widget/DateTimePicker.java \
   GeckoNetworkManager.java \
   GeckoScreenOrientationListener.java \
   UpdateService.java \
@@ -178,6 +180,7 @@ endif
 
 FENNEC_PP_JAVA_FILES = \
   App.java \
+  AboutHomeContent.java \
   MarketplaceApp.java \
   WebApp.java \
   WebApps.java \
@@ -211,8 +214,6 @@ FENNEC_PP_XML_FILES = \
   res/xml/preferences.xml \
   res/menu/browser_app_menu.xml \
   res/menu-v11/browser_app_menu.xml \
-  res/menu-v11/gecko_app_menu.xml \
-  res/menu-v11/titlebar_contextmenu.xml \
   res/menu-large-v11/browser_app_menu.xml \
   res/menu-xlarge-v11/browser_app_menu.xml \
   $(NULL)
@@ -329,6 +330,7 @@ RES_LAYOUT = \
   res/layout/awesomebar_tab_indicator.xml \
   res/layout/awesomebar_tabs.xml \
   res/layout/bookmark_edit.xml \
+  res/layout/datetime_picker.xml \
   res/layout/doorhangerpopup.xml \
   res/layout/doorhanger.xml \
   res/layout/find_in_page_content.xml \
@@ -336,6 +338,7 @@ RES_LAYOUT = \
   res/layout/web_app.xml \
   res/layout/launch_app_list.xml \
   res/layout/launch_app_listitem.xml \
+  res/layout/menu_action_bar.xml \
   res/layout/menu_item.xml \
   res/layout/menu_popup.xml \
   res/layout/notification_icon_text.xml \
@@ -427,6 +430,7 @@ RES_XML = \
 
 RES_ANIM = \
   res/anim/grow_fade_in.xml \
+  res/anim/grow_fade_in_center.xml \
   res/anim/shrink_fade_out.xml \
   $(NULL)
 
@@ -464,8 +468,6 @@ RES_DRAWABLE_BASE = \
   res/drawable/ic_menu_reload.png \
   res/drawable/ic_menu_save_as_pdf.png \
   res/drawable/ic_menu_share.png \
-  res/drawable/ic_menu_reading_list_add.png \
-  res/drawable/ic_menu_reading_list_remove.png \
   res/drawable/ic_menu_forward.png \
   res/drawable/remote_tabs_off.png \
   res/drawable/remote_tabs_on.png \
@@ -492,9 +494,6 @@ RES_DRAWABLE_BASE = \
   res/drawable/larry_blue.png \
   res/drawable/larry_green.png \
   res/drawable/menu.xml \
-  res/drawable/menu_item_bg.xml \
-  res/drawable/menu_item_default.xml \
-  res/drawable/menu_item_pressed.xml \
   res/drawable/site_security_identified.png \
   res/drawable/site_security_verified.png \
   res/drawable/urlbar_stop.png \
@@ -506,6 +505,7 @@ RES_DRAWABLE_BASE = \
   res/drawable/bookmarkdefaults_favicon_support.png \
   res/drawable/bookmarkdefaults_favicon_addons.png \
   res/drawable/handle_end.png \
+  res/drawable/handle_middle.png \
   res/drawable/handle_start.png \
   $(addprefix res/drawable-mdpi/,$(notdir $(SYNC_RES_DRAWABLE_MDPI))) \
   $(NULL)
@@ -541,8 +541,6 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/ic_menu_bookmark_add.png \
   res/drawable-hdpi/ic_menu_bookmark_remove.png \
   res/drawable-hdpi/ic_menu_forward.png \
-  res/drawable-hdpi/ic_menu_reading_list_add.png \
-  res/drawable-hdpi/ic_menu_reading_list_remove.png \
   res/drawable-hdpi/ic_menu_reload.png \
   res/drawable-hdpi/ic_menu_save_as_pdf.png \
   res/drawable-hdpi/ic_menu_share.png \
@@ -574,6 +572,7 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/validation_arrow_inverted.png \
   res/drawable-hdpi/validation_bg.9.png \
   res/drawable-hdpi/handle_end.png \
+  res/drawable-hdpi/handle_middle.png \
   res/drawable-hdpi/handle_start.png \
   $(addprefix res/drawable-hdpi/,$(notdir $(SYNC_RES_DRAWABLE_HDPI))) \
   $(NULL)
@@ -606,8 +605,6 @@ RES_DRAWABLE_XHDPI = \
   res/drawable-xhdpi/ic_menu_bookmark_add.png \
   res/drawable-xhdpi/ic_menu_bookmark_remove.png \
   res/drawable-xhdpi/ic_menu_forward.png \
-  res/drawable-xhdpi/ic_menu_reading_list_add.png \
-  res/drawable-xhdpi/ic_menu_reading_list_remove.png \
   res/drawable-xhdpi/ic_menu_reload.png \
   res/drawable-xhdpi/ic_menu_save_as_pdf.png \
   res/drawable-xhdpi/ic_menu_share.png \
@@ -636,6 +633,7 @@ RES_DRAWABLE_XHDPI = \
   res/drawable-xhdpi/validation_arrow_inverted.png \
   res/drawable-xhdpi/validation_bg.9.png \
   res/drawable-xhdpi/handle_end.png \
+  res/drawable-xhdpi/handle_middle.png \
   res/drawable-xhdpi/handle_start.png \
   $(NULL)
 
@@ -649,8 +647,6 @@ RES_DRAWABLE_MDPI_V11 = \
   res/drawable-mdpi-v11/ic_menu_desktop_mode.png \
   res/drawable-mdpi-v11/ic_menu_find_in_page.png \
   res/drawable-mdpi-v11/ic_menu_forward.png \
-  res/drawable-mdpi-v11/ic_menu_reading_list_add.png \
-  res/drawable-mdpi-v11/ic_menu_reading_list_remove.png \
   res/drawable-mdpi-v11/ic_menu_reload.png \
   res/drawable-mdpi-v11/ic_menu_save_as_pdf.png \
   res/drawable-mdpi-v11/ic_menu_share.png \
@@ -658,9 +654,8 @@ RES_DRAWABLE_MDPI_V11 = \
   res/drawable-mdpi-v11/menu_panel_bg.9.png \
   res/drawable-mdpi-v11/menu_popup_bg.9.png \
   res/drawable-mdpi-v11/menu_popup_arrow.png \
-  res/drawable-mdpi-v11/menu_item_texture.png \
-  res/drawable-mdpi-v11/menu_item_pressed_texture.png \
   res/drawable-mdpi-v11/menu_item_check.png \
+  res/drawable-mdpi-v11/menu_item_uncheck.png \
   $(NULL)
 
 RES_DRAWABLE_HDPI_V11 = \
@@ -673,8 +668,6 @@ RES_DRAWABLE_HDPI_V11 = \
   res/drawable-hdpi-v11/ic_menu_desktop_mode.png \
   res/drawable-hdpi-v11/ic_menu_find_in_page.png \
   res/drawable-hdpi-v11/ic_menu_forward.png \
-  res/drawable-hdpi-v11/ic_menu_reading_list_add.png \
-  res/drawable-hdpi-v11/ic_menu_reading_list_remove.png \
   res/drawable-hdpi-v11/ic_menu_reload.png \
   res/drawable-hdpi-v11/ic_menu_save_as_pdf.png \
   res/drawable-hdpi-v11/ic_menu_share.png \
@@ -682,9 +675,8 @@ RES_DRAWABLE_HDPI_V11 = \
   res/drawable-hdpi-v11/menu_panel_bg.9.png \
   res/drawable-hdpi-v11/menu_popup_bg.9.png \
   res/drawable-hdpi-v11/menu_popup_arrow.png \
-  res/drawable-hdpi-v11/menu_item_texture.png \
-  res/drawable-hdpi-v11/menu_item_pressed_texture.png \
   res/drawable-hdpi-v11/menu_item_check.png \
+  res/drawable-hdpi-v11/menu_item_uncheck.png \
   $(NULL)
 
 RES_DRAWABLE_XHDPI_V11 = \
@@ -697,8 +689,6 @@ RES_DRAWABLE_XHDPI_V11 = \
   res/drawable-xhdpi-v11/ic_menu_desktop_mode.png \
   res/drawable-xhdpi-v11/ic_menu_find_in_page.png \
   res/drawable-xhdpi-v11/ic_menu_forward.png \
-  res/drawable-xhdpi-v11/ic_menu_reading_list_add.png \
-  res/drawable-xhdpi-v11/ic_menu_reading_list_remove.png \
   res/drawable-xhdpi-v11/ic_menu_reload.png \
   res/drawable-xhdpi-v11/ic_menu_save_as_pdf.png \
   res/drawable-xhdpi-v11/ic_menu_share.png \
@@ -706,9 +696,8 @@ RES_DRAWABLE_XHDPI_V11 = \
   res/drawable-xhdpi-v11/menu_panel_bg.9.png \
   res/drawable-xhdpi-v11/menu_popup_bg.9.png \
   res/drawable-xhdpi-v11/menu_popup_arrow.png \
-  res/drawable-xhdpi-v11/menu_item_texture.png \
-  res/drawable-xhdpi-v11/menu_item_pressed_texture.png \
   res/drawable-xhdpi-v11/menu_item_check.png \
+  res/drawable-xhdpi-v11/menu_item_uncheck.png \
   $(NULL)
 
 RES_DRAWABLE_LAND_V14 = \
@@ -898,6 +887,7 @@ MOZ_ANDROID_DRAWABLES += \
   mobile/android/base/resources/drawable/desktop_notification.png               \
   mobile/android/base/resources/drawable/highlight.xml                          \
   mobile/android/base/resources/drawable/menu_button.xml                        \
+  mobile/android/base/resources/drawable/menu_item_checkmark.xml                \
   mobile/android/base/resources/drawable/menu_level.xml                         \
   mobile/android/base/resources/drawable/progress_spinner.xml                   \
   mobile/android/base/resources/drawable/progress_spinner_1.png                 \
@@ -991,25 +981,25 @@ jars/gecko-browser.jar: jars/gecko-mozglue.jar jars/gecko-util.jar jars/sync-thi
 	@echo "JAR gecko-browser.jar"
 	$(NSINSTALL) -D classes/gecko-browser
 	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all,-deprecation,-fallthrough -d classes/gecko-browser -classpath "jars/gecko-mozglue.jar:jars/gecko-util.jar:jars/sync-thirdparty.jar" $(addprefix $(srcdir)/,$(FENNEC_JAVA_FILES)) $(FENNEC_PP_JAVA_FILES) $(addprefix $(srcdir)/,$(SYNC_JAVA_FILES)) $(SYNC_PP_JAVA_FILES) R.java
-	jar cMf jars/gecko-browser.jar -C classes/gecko-browser .
+	$(JAR) cMf jars/gecko-browser.jar -C classes/gecko-browser .
 
 jars/gecko-mozglue.jar: $(addprefix $(srcdir)/,$(MOZGLUE_JAVA_FILES)) jars
 	@echo "JAR gecko-mozglue.jar"
 	$(NSINSTALL) -D classes/gecko-mozglue
 	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all -d classes/gecko-mozglue $(addprefix $(srcdir)/,$(MOZGLUE_JAVA_FILES))
-	jar cMf jars/gecko-mozglue.jar -C classes/gecko-mozglue .
+	$(JAR) cMf jars/gecko-mozglue.jar -C classes/gecko-mozglue .
 
 jars/gecko-util.jar: $(addprefix $(srcdir)/,$(UTIL_JAVA_FILES)) jars
 	@echo "JAR gecko-util.jar"
 	$(NSINSTALL) -D classes/gecko-util
 	$(JAVAC) $(JAVAC_FLAGS) -Xlint:all,-deprecation -d classes/gecko-util $(addprefix $(srcdir)/,$(UTIL_JAVA_FILES))
-	jar cMf jars/gecko-util.jar -C classes/gecko-util .
+	$(JAR) cMf jars/gecko-util.jar -C classes/gecko-util .
 
 jars/sync-thirdparty.jar: $(addprefix $(srcdir)/,$(SYNC_THIRDPARTY_JAVA_FILES)) jars
 	@echo "JAR sync-thirdparty.jar"
 	$(NSINSTALL) -D classes/sync-thirdparty
 	$(JAVAC) $(JAVAC_FLAGS) -d classes/sync-thirdparty $(addprefix $(srcdir)/,$(SYNC_THIRDPARTY_JAVA_FILES))
-	jar cMf jars/sync-thirdparty.jar -C classes/sync-thirdparty .
+	$(JAR) cMf jars/sync-thirdparty.jar -C classes/sync-thirdparty .
 
 jars:
 	@echo "MKDIR jars"

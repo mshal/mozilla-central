@@ -60,35 +60,37 @@ NS_IMPL_EVENT_HANDLER(SmsManager, sent)
 NS_IMPL_EVENT_HANDLER(SmsManager, delivered)
 
 /* static */already_AddRefed<SmsManager>
-SmsManager::CheckPermissionAndCreateInstance(nsPIDOMWindow* aWindow)
+SmsManager::CreateInstanceIfAllowed(nsPIDOMWindow* aWindow)
 {
   NS_ASSERTION(aWindow, "Null pointer!");
+
+#ifndef MOZ_WEBSMS_BACKEND
+  return nullptr;
+#endif
 
   // First of all, the general pref has to be turned on.
   bool enabled = false;
   Preferences::GetBool("dom.sms.enabled", &enabled);
   NS_ENSURE_TRUE(enabled, nullptr);
 
-  nsPIDOMWindow* innerWindow = aWindow->IsInnerWindow() ?
-    aWindow :
-    aWindow->GetCurrentInnerWindow();
-
-  // Need the document for security check.
-  nsCOMPtr<nsIDocument> document =
-    do_QueryInterface(innerWindow->GetExtantDocument());
-  NS_ENSURE_TRUE(document, nullptr);
-
-  nsCOMPtr<nsIPrincipal> principal = document->NodePrincipal();
-  NS_ENSURE_TRUE(principal, nullptr);
-
   nsCOMPtr<nsIPermissionManager> permMgr =
     do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
   NS_ENSURE_TRUE(permMgr, nullptr);
 
   uint32_t permission = nsIPermissionManager::DENY_ACTION;
-  permMgr->TestPermissionFromPrincipal(principal, "sms", &permission);
+  permMgr->TestPermissionFromWindow(aWindow, "sms", &permission);
 
   if (permission != nsIPermissionManager::ALLOW_ACTION) {
+    return nullptr;
+  }
+
+  // Check the Sms Service:
+  nsCOMPtr<nsISmsService> smsService = do_GetService(SMS_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(smsService, nullptr);
+
+  bool result = false;
+  smsService->HasSupport(&result);
+  if (!result) {
     return nullptr;
   }
 

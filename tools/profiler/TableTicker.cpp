@@ -29,6 +29,8 @@
 #include "nsIXULAppInfo.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsIObserverService.h"
+#include "mozilla/Services.h"
 
 // JS
 #include "jsdbgapi.h"
@@ -479,7 +481,7 @@ public:
     t->SetPaused(true);
 
     // Get file path
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
     nsCString tmpPath;
     tmpPath.AppendPrintf("/sdcard/profile_%i_%i.txt", XRE_GetProcessType(), getpid());
 #else
@@ -1096,6 +1098,10 @@ void mozilla_sampler_start(int aProfileEntries, int aInterval,
   t->Start();
   if (t->ProfileJS())
       stack->enableJSSampling();
+
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  if (os)
+    os->NotifyObservers(nullptr, "profiler-started", nullptr);
 }
 
 void mozilla_sampler_stop()
@@ -1118,6 +1124,10 @@ void mozilla_sampler_stop()
 
   if (disableJS)
     stack->disableJSSampling();
+
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  if (os)
+    os->NotifyObservers(nullptr, "profiler-stopped", nullptr);
 }
 
 bool mozilla_sampler_is_active()

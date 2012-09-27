@@ -403,8 +403,6 @@ FunctionBox::FunctionBox(JSContext *cx, ObjectBox* traceListHead, JSFunction *fu
                          ParseContext *outerpc, StrictMode sms)
   : SharedContext(cx, /* isFunction = */ true, sms),
     objbox(traceListHead, fun, this),
-    siblings(outerpc ? outerpc->functionList : NULL),
-    kids(NULL),
     bindings(),
     bufStart(0),
     bufEnd(0),
@@ -475,8 +473,6 @@ Parser::newFunctionBox(JSFunction *fun, ParseContext *outerpc, StrictMode sms)
         return NULL;
     }
 
-    if (outerpc)
-        outerpc->functionList = funbox;
     traceListHead = &funbox->objbox;
 
     return funbox;
@@ -1151,7 +1147,6 @@ LeaveFunction(ParseNode *fn, Parser *parser, PropertyName *funName = NULL,
 
     FunctionBox *funbox = fn->pn_funbox;
     JS_ASSERT(funbox == funpc->sc->asFunbox());
-    funbox->kids = funpc->functionList;
 
     if (!pc->topStmt || pc->topStmt->type == STMT_BLOCK)
         fn->pn_dflags |= PND_BLOCKCHILD;
@@ -1795,16 +1790,6 @@ Parser::functionExpr()
     return functionDef(name, Normal, Expression);
 }
 
-void
-FunctionBox::recursivelySetStrictMode(StrictMode strictness)
-{
-    if (strictModeState == StrictMode::UNKNOWN) {
-        strictModeState = strictness;
-        for (FunctionBox *kid = kids; kid; kid = kid->siblings)
-            kid->recursivelySetStrictMode(strictness);
-    }
-}
-
 /*
  * Indicate that the current scope can't switch to strict mode with a body-level
  * "use strict" directive anymore. Return false on error.
@@ -1818,10 +1803,12 @@ Parser::setStrictMode(bool strictMode)
         if (pc->sc->isFunction) {
             JS_ASSERT(pc->parent->sc->strictModeState == StrictMode::STRICT);
         } else {
-            JS_ASSERT(StrictModeFromContext(context) == StrictMode::STRICT || pc->staticLevel);
+            JS_ASSERT_IF(pc->staticLevel == 0,
+                         StrictModeFromContext(context) == StrictMode::STRICT);
         }
         return true;
     }
+
     if (strictMode) {
         if (pc->queuedStrictModeError) {
             // There was a strict mode error in this scope before we knew it was
@@ -1831,24 +1818,24 @@ Parser::setStrictMode(bool strictMode)
             return false;
         }
         pc->sc->strictModeState = StrictMode::STRICT;
-    } else if (!pc->parent || pc->parent->sc->strictModeState == StrictMode::NOTSTRICT) {
-        // This scope will not be strict.
-        pc->sc->strictModeState = StrictMode::NOTSTRICT;
-        if (pc->queuedStrictModeError && context->hasStrictOption() &&
-            pc->queuedStrictModeError->report.errorNumber != JSMSG_STRICT_CODE_WITH) {
-            // Convert queued strict mode error to a warning.
-            pc->queuedStrictModeError->report.flags |= JSREPORT_WARNING;
-            pc->queuedStrictModeError->throwError();
+    } else {
+        if (!pc->parent || pc->parent->sc->strictModeState == StrictMode::NOTSTRICT) {
+            // This scope lacks a strict directive, and its parent (if it has
+            // one) definitely isn't strict, so it definitely won't be strict.
+            pc->sc->strictModeState = StrictMode::NOTSTRICT;
+            if (pc->queuedStrictModeError && context->hasStrictOption() &&
+                pc->queuedStrictModeError->report.errorNumber != JSMSG_STRICT_CODE_WITH) {
+                // Convert queued strict mode error to a warning.
+                pc->queuedStrictModeError->report.flags |= JSREPORT_WARNING;
+                pc->queuedStrictModeError->throwError();
+            }
+        } else {
+            // This scope (which has a parent and so must be a function) lacks
+            // a strict directive, but it's not yet clear if its parent is
+            // strict.  (This can only happen for functions in default
+            // arguments.)  Leave it in the UNKNOWN state for now.
+            JS_ASSERT(pc->sc->isFunction);
         }
-    }
-    JS_ASSERT_IF(!pc->sc->isFunction, !pc->functionList);
-    if (pc->sc->strictModeState != StrictMode::UNKNOWN && pc->sc->isFunction) {
-        // We changed the strict mode state. Retroactively recursively set
-        // strict mode status on all the function children we've seen so far
-        // children (That is, functions in default expressions).
-        pc->sc->asFunbox()->strictModeState = pc->sc->strictModeState;
-        for (FunctionBox *kid = pc->functionList; kid; kid = kid->siblings)
-            kid->recursivelySetStrictMode(pc->sc->strictModeState);
     }
     return true;
 }
@@ -2960,6 +2947,54 @@ Parser::matchInOrOf(bool *isForOfp)
     return false;
 }
 
+static bool
+IsValidForStatementLHS(ParseNode *pn1, JSVersion version, bool forDecl, bool forEach, bool forOf)
+{
+    if (forDecl) {
+        if (pn1->pn_count > 1)
+            return false;
+        if (pn1->isOp(JSOP_DEFCONST))
+            return false;
+#if JS_HAS_DESTRUCTURING
+        // In JS 1.7 only, for (var [K, V] in EXPR) has a special meaning.
+        // Hence all other destructuring decls are banned there.
+        if (version == JSVERSION_1_7 && !forEach && !forOf) {
+            ParseNode *lhs = pn1->pn_head;
+            if (lhs->isKind(PNK_ASSIGN))
+                lhs = lhs->pn_left;
+
+            if (lhs->isKind(PNK_OBJECT))
+                return false;
+            if (lhs->isKind(PNK_ARRAY) && lhs->pn_count != 2)
+                return false;
+        }
+#endif
+        return true;
+    }
+
+    switch (pn1->getKind()) {
+      case PNK_NAME:
+      case PNK_DOT:
+      case PNK_CALL:
+      case PNK_XMLUNARY:
+      case PNK_ELEM:
+        return true;
+
+#if JS_HAS_DESTRUCTURING
+      case PNK_ARRAY:
+      case PNK_OBJECT:
+        // In JS 1.7 only, for ([K, V] in EXPR) has a special meaning.
+        // Hence all other destructuring left-hand sides are banned there.
+        if (version == JSVERSION_1_7 && !forEach && !forOf)
+            return pn1->isKind(PNK_ARRAY) && pn1->pn_count == 2;
+        return true;
+#endif
+
+      default:
+        return false;
+    }
+}
+
 ParseNode *
 Parser::forStatement()
 {
@@ -3087,35 +3122,8 @@ Parser::forStatement()
         pn->pn_iflags |= (forOf ? JSITER_FOR_OF : JSITER_ENUMERATE);
 
         /* Check that the left side of the 'in' or 'of' is valid. */
-        if (forDecl
-            ? (pn1->pn_count > 1 || pn1->isOp(JSOP_DEFCONST)
-#if JS_HAS_DESTRUCTURING
-               || (versionNumber() == JSVERSION_1_7 &&
-                   pn->isOp(JSOP_ITER) &&
-                   !(pn->pn_iflags & JSITER_FOREACH) &&
-                   (pn1->pn_head->isKind(PNK_OBJECT) ||
-                    (pn1->pn_head->isKind(PNK_ARRAY) &&
-                     pn1->pn_head->pn_count != 2) ||
-                    (pn1->pn_head->isKind(PNK_ASSIGN) &&
-                     (!pn1->pn_head->pn_left->isKind(PNK_ARRAY) ||
-                      pn1->pn_head->pn_left->pn_count != 2))))
-#endif
-              )
-            : (!pn1->isKind(PNK_NAME) &&
-               !pn1->isKind(PNK_DOT) &&
-#if JS_HAS_DESTRUCTURING
-               ((versionNumber() == JSVERSION_1_7 &&
-                 pn->isOp(JSOP_ITER) &&
-                 !(pn->pn_iflags & JSITER_FOREACH))
-                ? (!pn1->isKind(PNK_ARRAY) || pn1->pn_count != 2)
-                : (!pn1->isKind(PNK_ARRAY) && !pn1->isKind(PNK_OBJECT))) &&
-#endif
-               !pn1->isKind(PNK_CALL) &&
-#if JS_HAS_XML_SUPPORT
-               !pn1->isKind(PNK_XMLUNARY) &&
-#endif
-               !pn1->isKind(PNK_ELEM)))
-        {
+        bool forEach = bool(pn->pn_iflags & JSITER_FOREACH);
+        if (!IsValidForStatementLHS(pn1, versionNumber(), forDecl, forEach, forOf)) {
             reportError(pn1, JSMSG_BAD_FOR_LEFTSIDE);
             return NULL;
         }
@@ -3239,7 +3247,7 @@ Parser::forStatement()
                  * in JS1.7.
                  */
                 JS_ASSERT(pn->isOp(JSOP_ITER));
-                if (!(pn->pn_iflags & JSITER_FOREACH))
+                if (!(pn->pn_iflags & JSITER_FOREACH) && !forOf)
                     pn->pn_iflags |= JSITER_FOREACH | JSITER_KEYVALUE;
             }
             break;
@@ -4756,12 +4764,11 @@ class CompExprTransplanter {
     Parser          *parser;
     bool            genexp;
     unsigned        adjust;
-    unsigned        funcLevel;
     HashSet<Definition *> visitedImplicitArguments;
 
   public:
     CompExprTransplanter(ParseNode *pn, Parser *parser, bool ge, unsigned adj)
-      : root(pn), parser(parser), genexp(ge), adjust(adj), funcLevel(0),
+      : root(pn), parser(parser), genexp(ge), adjust(adj),
         visitedImplicitArguments(parser->context)
     {}
 
@@ -4940,33 +4947,9 @@ CompExprTransplanter::transplant(ParseNode *pn)
         break;
 
       case PN_FUNC:
-      {
-        /*
-         * Only the first level of transplant recursion through functions needs
-         * to reparent the funbox, since all descendant functions are correctly
-         * linked under the top-most funbox.
-         */
-        FunctionBox *funbox = pn->pn_funbox;
-
-        if (++funcLevel == 1 && genexp) {
-            FunctionBox *parent = pc->sc->asFunbox();
-
-            FunctionBox **funboxp = &pc->parent->functionList;
-            while (*funboxp != funbox)
-                funboxp = &(*funboxp)->siblings;
-            *funboxp = funbox->siblings;
-
-            funbox->siblings = parent->kids;
-            parent->kids = funbox;
-        }
-        /* FALL THROUGH */
-      }
-
       case PN_NAME:
         if (!transplant(pn->maybeExpr()))
             return false;
-        if (pn->isArity(PN_FUNC))
-            --funcLevel;
 
         if (pn->isDefn()) {
             if (genexp && !BumpStaticLevel(pn, pc))
@@ -5240,7 +5223,10 @@ Parser::comprehensionTail(ParseNode *kid, unsigned blockid, bool isGenexp,
             if (!CheckDestructuring(context, &data, pn3, this))
                 return NULL;
 
-            if (versionNumber() == JSVERSION_1_7) {
+            if (versionNumber() == JSVERSION_1_7 &&
+                !(pn2->pn_iflags & JSITER_FOREACH) &&
+                !forOf)
+            {
                 /* Destructuring requires [key, value] enumeration in JS1.7. */
                 if (!pn3->isKind(PNK_ARRAY) || pn3->pn_count != 2) {
                     reportError(NULL, JSMSG_BAD_FOR_LEFTSIDE);
@@ -5249,8 +5235,7 @@ Parser::comprehensionTail(ParseNode *kid, unsigned blockid, bool isGenexp,
 
                 JS_ASSERT(pn2->isOp(JSOP_ITER));
                 JS_ASSERT(pn2->pn_iflags & JSITER_ENUMERATE);
-                if (!(pn2->pn_iflags & JSITER_FOREACH))
-                    pn2->pn_iflags |= JSITER_FOREACH | JSITER_KEYVALUE;
+                pn2->pn_iflags |= JSITER_FOREACH | JSITER_KEYVALUE;
             }
             break;
 #endif

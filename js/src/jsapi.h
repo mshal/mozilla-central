@@ -817,20 +817,24 @@ SameType(const Value &lhs, const Value &rhs)
     return JSVAL_SAME_TYPE_IMPL(lhs.data, rhs.data);
 }
 
+} /* namespace JS */
+
 /************************************************************************/
 
-template <> struct RootMethods<const Value>
+namespace js {
+
+template <> struct RootMethods<const JS::Value>
 {
-    static Value initial() { return UndefinedValue(); }
+    static JS::Value initial() { return UndefinedValue(); }
     static ThingRootKind kind() { return THING_ROOT_VALUE; }
-    static bool poisoned(const Value &v) { return IsPoisonedValue(v); }
+    static bool poisoned(const JS::Value &v) { return IsPoisonedValue(v); }
 };
 
-template <> struct RootMethods<Value>
+template <> struct RootMethods<JS::Value>
 {
-    static Value initial() { return UndefinedValue(); }
+    static JS::Value initial() { return UndefinedValue(); }
     static ThingRootKind kind() { return THING_ROOT_VALUE; }
-    static bool poisoned(const Value &v) { return IsPoisonedValue(v); }
+    static bool poisoned(const JS::Value &v) { return IsPoisonedValue(v); }
 };
 
 template <class Outer> class MutableValueOperations;
@@ -845,7 +849,7 @@ template <class Outer>
 class ValueOperations
 {
     friend class MutableValueOperations<Outer>;
-    const Value * value() const { return static_cast<const Outer*>(this)->extract(); }
+    const JS::Value * value() const { return static_cast<const Outer*>(this)->extract(); }
 
   public:
     bool isUndefined() const { return value()->isUndefined(); }
@@ -890,7 +894,7 @@ class ValueOperations
 template <class Outer>
 class MutableValueOperations : public ValueOperations<Outer>
 {
-    Value * value() { return static_cast<Outer*>(this)->extractMutable(); }
+    JS::Value * value() { return static_cast<Outer*>(this)->extractMutable(); }
 
   public:
     void setNull() { value()->setNull(); }
@@ -912,11 +916,11 @@ class MutableValueOperations : public ValueOperations<Outer>
  * and value-extracting operations.
  */
 template <>
-class HandleBase<Value> : public ValueOperations<Handle<Value> >
+class HandleBase<JS::Value> : public ValueOperations<Handle<JS::Value> >
 {
-    friend class ValueOperations<Handle<Value> >;
-    const Value * extract() const {
-        return static_cast<const Handle<Value>*>(this)->address();
+    friend class ValueOperations<Handle<JS::Value> >;
+    const JS::Value * extract() const {
+        return static_cast<const Handle<JS::Value>*>(this)->address();
     }
 };
 
@@ -925,16 +929,16 @@ class HandleBase<Value> : public ValueOperations<Handle<Value> >
  * type-querying, value-extracting, and mutating operations.
  */
 template <>
-class MutableHandleBase<Value> : public MutableValueOperations<MutableHandle<Value> >
+class MutableHandleBase<JS::Value> : public MutableValueOperations<MutableHandle<JS::Value> >
 {
-    friend class ValueOperations<MutableHandle<Value> >;
-    const Value * extract() const {
-        return static_cast<const MutableHandle<Value>*>(this)->address();
+    friend class ValueOperations<MutableHandle<JS::Value> >;
+    const JS::Value * extract() const {
+        return static_cast<const MutableHandle<JS::Value>*>(this)->address();
     }
 
-    friend class MutableValueOperations<MutableHandle<Value> >;
-    Value * extractMutable() {
-        return static_cast<MutableHandle<Value>*>(this)->address();
+    friend class MutableValueOperations<MutableHandle<JS::Value> >;
+    JS::Value * extractMutable() {
+        return static_cast<MutableHandle<JS::Value>*>(this)->address();
     }
 };
 
@@ -943,20 +947,24 @@ class MutableHandleBase<Value> : public MutableValueOperations<MutableHandle<Val
  * value-extracting, and mutating operations.
  */
 template <>
-class RootedBase<Value> : public MutableValueOperations<Rooted<Value> >
+class RootedBase<JS::Value> : public MutableValueOperations<Rooted<JS::Value> >
 {
-    friend class ValueOperations<Rooted<Value> >;
-    const Value * extract() const {
-        return static_cast<const Rooted<Value>*>(this)->address();
+    friend class ValueOperations<Rooted<JS::Value> >;
+    const JS::Value * extract() const {
+        return static_cast<const Rooted<JS::Value>*>(this)->address();
     }
 
-    friend class MutableValueOperations<Rooted<Value> >;
-    Value * extractMutable() {
-        return static_cast<Rooted<Value>*>(this)->address();
+    friend class MutableValueOperations<Rooted<JS::Value> >;
+    JS::Value * extractMutable() {
+        return static_cast<Rooted<JS::Value>*>(this)->address();
     }
 };
 
+} /* namespace js */
+
 /************************************************************************/
+
+namespace JS {
 
 #ifndef __GNUC__
 
@@ -1215,7 +1223,7 @@ class AutoArrayRooter : private AutoGCRooter {
   private:
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 
-    SkipRoot skip;
+    js::SkipRoot skip;
 };
 
 template<class T>
@@ -1298,7 +1306,7 @@ class AutoVectorRooter : protected AutoGCRooter
     VectorImpl vector;
 
     /* Prevent overwriting of inline elements in vector. */
-    SkipRoot vectorRoot;
+    js::SkipRoot vectorRoot;
 
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
@@ -2642,8 +2650,8 @@ ToNumber(JSContext *cx, const Value &v, double *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        JS::SkipRoot root(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot root(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isNumber()) {
@@ -2736,8 +2744,8 @@ ToUint16(JSContext *cx, const js::Value &v, uint16_t *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        SkipRoot skip(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot skip(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isInt32()) {
@@ -2752,8 +2760,8 @@ ToInt32(JSContext *cx, const js::Value &v, int32_t *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        JS::SkipRoot root(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot root(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isInt32()) {
@@ -2768,8 +2776,8 @@ ToUint32(JSContext *cx, const js::Value &v, uint32_t *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        JS::SkipRoot root(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot root(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isInt32()) {
@@ -2784,8 +2792,8 @@ ToInt64(JSContext *cx, const js::Value &v, int64_t *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        JS::SkipRoot skip(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot skip(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isInt32()) {
@@ -2801,8 +2809,8 @@ ToUint64(JSContext *cx, const js::Value &v, uint64_t *out)
 {
     AssertArgumentsAreSane(cx, v);
     {
-        SkipRoot skip(cx, &v);
-        MaybeCheckStackRoots(cx);
+        js::SkipRoot skip(cx, &v);
+        js::MaybeCheckStackRoots(cx);
     }
 
     if (v.isInt32()) {
@@ -2906,21 +2914,8 @@ JS_BeginRequest(JSContext *cx);
 extern JS_PUBLIC_API(void)
 JS_EndRequest(JSContext *cx);
 
-/* Yield to pending GC operations, regardless of request depth */
-extern JS_PUBLIC_API(void)
-JS_YieldRequest(JSContext *cx);
-
-extern JS_PUBLIC_API(unsigned)
-JS_SuspendRequest(JSContext *cx);
-
-extern JS_PUBLIC_API(void)
-JS_ResumeRequest(JSContext *cx, unsigned saveDepth);
-
 extern JS_PUBLIC_API(JSBool)
 JS_IsInRequest(JSRuntime *rt);
-
-extern JS_PUBLIC_API(JSBool)
-JS_IsInSuspendedRequest(JSRuntime *rt);
 
 #ifdef __cplusplus
 JS_END_EXTERN_C
@@ -2939,12 +2934,9 @@ IsPoisonedId(jsid iden)
     return false;
 }
 
-template <> struct RootMethods<const jsid>
-{
-    static jsid initial() { return JSID_VOID; }
-    static ThingRootKind kind() { return THING_ROOT_ID; }
-    static bool poisoned(jsid id) { return IsPoisonedId(id); }
-};
+} /* namespace JS */
+
+namespace js {
 
 template <> struct RootMethods<jsid>
 {
@@ -2953,12 +2945,12 @@ template <> struct RootMethods<jsid>
     static bool poisoned(jsid id) { return IsPoisonedId(id); }
 };
 
-} /* namespace JS */
+} /* namespace js */
 
 class JSAutoRequest {
   public:
     JSAutoRequest(JSContext *cx JS_GUARD_OBJECT_NOTIFIER_PARAM)
-        : mContext(cx), mSaveDepth(0) {
+        : mContext(cx) {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
         JS_BeginRequest(mContext);
     }
@@ -2966,48 +2958,8 @@ class JSAutoRequest {
         JS_EndRequest(mContext);
     }
 
-    void suspend() {
-        mSaveDepth = JS_SuspendRequest(mContext);
-    }
-    void resume() {
-        JS_ResumeRequest(mContext, mSaveDepth);
-    }
-
   protected:
     JSContext *mContext;
-    unsigned  mSaveDepth;
-    JS_DECL_USE_GUARD_OBJECT_NOTIFIER
-
-#if 0
-  private:
-    static void *operator new(size_t) CPP_THROW_NEW { return 0; };
-    static void operator delete(void *, size_t) { };
-#endif
-};
-
-class JSAutoSuspendRequest {
-  public:
-    JSAutoSuspendRequest(JSContext *cx JS_GUARD_OBJECT_NOTIFIER_PARAM)
-        : mContext(cx), mSaveDepth(0) {
-        JS_GUARD_OBJECT_NOTIFIER_INIT;
-        if (mContext) {
-            mSaveDepth = JS_SuspendRequest(mContext);
-        }
-    }
-    ~JSAutoSuspendRequest() {
-        resume();
-    }
-
-    void resume() {
-        if (mContext) {
-            JS_ResumeRequest(mContext, mSaveDepth);
-            mContext = 0;
-        }
-    }
-
-  protected:
-    JSContext *mContext;
-    unsigned mSaveDepth;
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 
 #if 0
@@ -4387,8 +4339,8 @@ extern JS_PUBLIC_API(void *)
 JS_GetInstancePrivate(JSContext *cx, JSObject *obj, JSClass *clasp,
                       jsval *argv);
 
-extern JS_PUBLIC_API(JSObject *)
-JS_GetPrototype(JSRawObject obj);
+extern JS_PUBLIC_API(JSBool)
+JS_GetPrototype(JSContext *cx, JSObject *obj, JSObject **protop);
 
 extern JS_PUBLIC_API(JSBool)
 JS_SetPrototype(JSContext *cx, JSObject *obj, JSObject *proto);

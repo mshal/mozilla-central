@@ -202,8 +202,16 @@ DebuggerUI.prototype = {
       label: L10N.getStr("confirmTabSwitch.buttonOpen"),
       accessKey: L10N.getStr("confirmTabSwitch.buttonOpen.accessKey"),
       callback: function DUI_notificationButtonOpen() {
-        this.findDebugger().close();
-        this.toggleDebugger();
+        let scriptDebugger = this.findDebugger();
+        let targetWindow = scriptDebugger.globalUI.chromeWindow;
+        scriptDebugger.close();
+        let self = this;
+        targetWindow.addEventListener("Debugger:Shutdown", function toggle() {
+          targetWindow.removeEventListener("Debugger:Shutdown", toggle, false);
+          Services.tm.currentThread.dispatch({ run: function() {
+            self.toggleDebugger();
+          }}, 0);
+        }, false);
       }.bind(this)
     }];
 
@@ -466,37 +474,10 @@ ChromeDebuggerProcess.prototype = {
    */
   _initServer: function RDP__initServer() {
     if (!DebuggerServer.initialized) {
-      DebuggerServer.init(this._allowConnection);
+      DebuggerServer.init();
       DebuggerServer.addBrowserActors();
     }
-    DebuggerServer.closeListener();
     DebuggerServer.openListener(DebuggerPreferences.remotePort);
-  },
-
-  /**
-   * Prompt the user to accept or decline the incoming connection.
-   *
-   * @return true if the connection should be permitted, false otherwise
-   */
-  _allowConnection: function RDP__allowConnection() {
-    let title = L10N.getStr("remoteIncomingPromptTitle");
-    let msg = L10N.getStr("remoteIncomingPromptMessage");
-    let disableButton = L10N.getStr("remoteIncomingPromptDisable");
-    let prompt = Services.prompt;
-    let flags = prompt.BUTTON_POS_0 * prompt.BUTTON_TITLE_OK +
-                prompt.BUTTON_POS_1 * prompt.BUTTON_TITLE_CANCEL +
-                prompt.BUTTON_POS_2 * prompt.BUTTON_TITLE_IS_STRING +
-                prompt.BUTTON_POS_1_DEFAULT;
-    let result = prompt.confirmEx(null, title, msg, flags, null, null,
-                                  disableButton, null, { value: false });
-    if (result == 0) {
-      return true;
-    }
-    if (result == 2) {
-      DebuggerServer.closeListener();
-      Services.prefs.setBoolPref("devtools.debugger.remote-enabled", false);
-    }
-    return false;
   },
 
   /**

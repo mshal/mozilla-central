@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/TabChild.h"
 #include "mozilla/layers/PLayerChild.h"
 #include "mozilla/layers/PLayersChild.h"
 #include "mozilla/layers/PLayersParent.h"
@@ -25,6 +26,7 @@
 #include "mozilla/Preferences.h"
 #include "nsIWidget.h"
 
+using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
 namespace mozilla {
@@ -128,18 +130,20 @@ public:
     }
   }
 
-  // Applies the effective 2D transform and returns true if it is a 2D
-  // transform. If it's a 3D transform then it applies an identity and returns
-  // false.
-  bool Apply2DTransform()
+  // Gets the effective transform and returns true if it is a 2D
+  // transform.
+  bool Setup2DTransform()
   {
     const gfx3DMatrix& effectiveTransform = mLayer->GetEffectiveTransform();
-
     // Will return an identity matrix for 3d transforms.
-    bool is2D = effectiveTransform.CanDraw2D(&mTransform);
-    mTarget->SetMatrix(mTransform);
+    return effectiveTransform.CanDraw2D(&mTransform);
+  }
 
-    return is2D;
+  // Applies the effective transform if it's 2D. If it's a 3D transform then
+  // it applies an identity.
+  void Apply2DTransform()
+  {
+    mTarget->SetMatrix(mTransform);
   }
 
   // Set the opaque rect to match the bounds of the visible region.
@@ -213,6 +217,7 @@ BasicLayerManager::BasicLayerManager(nsIWidget* aWidget) :
   , mDoubleBuffering(BUFFER_NONE), mUsingDefaultTarget(false)
   , mCachedSurfaceInUse(false)
   , mTransactionIncomplete(false)
+  , mCompositorMightResample(false)
 {
   MOZ_COUNT_CTOR(BasicLayerManager);
   NS_ASSERTION(aWidget, "Must provide a widget");
@@ -736,14 +741,16 @@ PixmanTransform(const gfxImageSurface *aDest,
  * @param aDest         Desintation context.
  * @param aBounds       Area represented by aSource.
  * @param aTransform    Transformation matrix.
- * @param aDrawOffset   Location to draw returned surface on aDest.
+ * @param aDestRect     Output: rectangle in which to draw returned surface on aDest
+ *                      (same size as aDest). Only filled in if this returns
+ *                      a surface.
  * @param aDontBlit     Never draw to aDest if this is true.
  * @return              Transformed surface, or nullptr if it has been drawn to aDest.
  */
 static already_AddRefed<gfxASurface> 
 Transform3D(gfxASurface* aSource, gfxContext* aDest, 
             const gfxRect& aBounds, const gfx3DMatrix& aTransform, 
-            gfxPoint& aDrawOffset, bool aDontBlit)
+            gfxRect& aDestRect, bool aDontBlit)
 {
   nsRefPtr<gfxImageSurface> sourceImage = aSource->GetAsImageSurface();
   if (!sourceImage) {
@@ -761,18 +768,19 @@ Transform3D(gfxASurface* aSource, gfxContext* aDest,
 
   // Intersect the transformed layer with the destination rectangle.
   // This is in device space since we have an identity transform set on aTarget.
-  gfxRect destRect = aDest->GetClipExtents();
-  destRect.IntersectRect(destRect, offsetRect);
+  aDestRect = aDest->GetClipExtents();
+  aDestRect.IntersectRect(aDestRect, offsetRect);
+  aDestRect.RoundOut();
 
   // Create a surface the size of the transformed object.
   nsRefPtr<gfxASurface> dest = aDest->CurrentSurface();
   nsRefPtr<gfxImageSurface> destImage;
   gfxPoint offset;
   bool blitComplete;
-  if (!destImage || aDontBlit || !aDest->ClipContainsRect(destRect)) {
-    destImage = new gfxImageSurface(gfxIntSize(destRect.width, destRect.height),
+  if (!destImage || aDontBlit || !aDest->ClipContainsRect(aDestRect)) {
+    destImage = new gfxImageSurface(gfxIntSize(aDestRect.width, aDestRect.height),
                                     gfxASurface::ImageFormatARGB32);
-    offset = destRect.TopLeft();
+    offset = aDestRect.TopLeft();
     blitComplete = false;
   } else {
     offset = -dest->GetDeviceOffset();
@@ -789,9 +797,8 @@ Transform3D(gfxASurface* aSource, gfxContext* aDest,
     return nullptr;
   }
 
-  // If we haven't actually drawn to aDest then return our temporary image so that
-  // the caller can do this.
-  aDrawOffset = destRect.TopLeft();
+  // If we haven't actually drawn to aDest then return our temporary image so
+  // that the caller can do this.
   return destImage.forget(); 
 }
 
@@ -889,7 +896,13 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
                "ContainerLayer with mask layer should force UseIntermediateSurface");
 
   gfxContextAutoSaveRestore contextSR;
-  bool needsSaveRestore = needsGroup || clipRect || needsClipToVisibleRegion;
+  gfxMatrix transform;
+  // Will return an identity matrix for 3d transforms, and is handled separately below.
+  bool is2D = paintContext.Setup2DTransform();
+  NS_ABORT_IF_FALSE(is2D || needsGroup || !aLayer->GetFirstChild(), "Must PushGroup for 3d transforms!");
+
+  bool needsSaveRestore =
+    needsGroup || clipRect || needsClipToVisibleRegion || !is2D;
   if (needsSaveRestore) {
     contextSR.SetContext(aTarget);
 
@@ -900,8 +913,7 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     }
   }
 
-  bool is2D = paintContext.Apply2DTransform();
-  NS_ABORT_IF_FALSE(is2D || needsGroup || !aLayer->GetFirstChild(), "Must PushGroup for 3d transforms!");
+  paintContext.Apply2DTransform();
 
   const nsIntRegion& visibleRegion = aLayer->GetEffectiveVisibleRegion();
   // If needsGroup is true, we'll clip to the visible region after we've popped the group
@@ -948,7 +960,7 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     // Revert these changes when 725886 is ready
     NS_ABORT_IF_FALSE(untransformedSurface,
                       "We should always allocate an untransformed surface with 3d transforms!");
-    gfxPoint offset;
+    gfxRect destRect;
     bool dontBlit = needsClipToVisibleRegion || mTransactionIncomplete ||
                       aLayer->GetEffectiveOpacity() != 1.0f;
 #ifdef DEBUG
@@ -966,10 +978,16 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     const gfx3DMatrix& effectiveTransform = aLayer->GetEffectiveTransform();
     nsRefPtr<gfxASurface> result =
       Transform3D(untransformedSurface, aTarget, bounds,
-                  effectiveTransform, offset, dontBlit);
+                  effectiveTransform, destRect, dontBlit);
 
     if (result) {
-      aTarget->SetSource(result, offset);
+      aTarget->SetSource(result, destRect.TopLeft());
+      // Azure doesn't support EXTEND_NONE, so to avoid extending the edges
+      // of the source surface out to the current clip region, clip to
+      // the rectangle of the result surface now.
+      aTarget->NewPath();
+      aTarget->Rectangle(destRect, true);
+      aTarget->Clip();
       FlushGroup(paintContext, needsClipToVisibleRegion);
     }
   }
@@ -1074,6 +1092,17 @@ BasicShadowLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
   // to the previous transaction.
   if (HasShadowManager()) {
     ShadowLayerForwarder::BeginTransaction(mTargetBounds, mTargetRotation);
+
+    // If we're drawing on behalf of a context with async pan/zoom
+    // enabled, then the entire buffer of thebes layers might be
+    // composited (including resampling) asynchronously before we get
+    // a chance to repaint, so we have to ensure that it's all valid
+    // and not rotated.
+    if (mWidget) {
+      if (TabChild* window = mWidget->GetOwningTabChild()) {
+        mCompositorMightResample = window->IsAsyncPanZoomEnabled();
+      }
+    }
 
     // If we have a non-default target, we need to let our shadow manager draw
     // to it. This will happen at the end of the transaction.

@@ -286,14 +286,25 @@ ContentParent::GetNewOrUsed(bool aForBrowserElement)
 static bool
 AppNeedsInheritedOSPrivileges(mozIApplication* aApp)
 {
-    bool needsInherit = false;
-    // FIXME/bug 785592: implement a CameraBridge so we don't have to
-    // hack around with OS permissions
-    if (NS_FAILED(aApp->HasPermission("camera", &needsInherit))) {
-        NS_WARNING("Unable to check permissions.  Breakage may follow.");
-        return false;
+    const char* const needInheritPermissions[] = {
+        // FIXME/bug 785592: implement a CameraBridge so we don't have
+        // to hack around with OS permissions
+        "camera",
+        // FIXME/bug 793034: change our video architecture so that we
+        // can stream video from remote processes
+        "deprecated-hwvideo",
+    };
+    for (size_t i = 0; i < ArrayLength(needInheritPermissions); ++i) {
+        const char* const permission = needInheritPermissions[i];
+        bool needsInherit = false;
+        if (NS_FAILED(aApp->HasPermission(permission, &needsInherit))) {
+            NS_WARNING("Unable to check permissions.  Breakage may follow.");
+            return false;
+        } else if (needsInherit) {
+            return true;
+        }
     }
-    return needsInherit;
+    return false;
 }
 
 /*static*/ TabParent*
@@ -1439,7 +1450,7 @@ ContentParent::DeallocPExternalHelperApp(PExternalHelperAppParent* aService)
 PSmsParent*
 ContentParent::AllocPSms()
 {
-    if (!AppProcessHasPermission(this, "sms")) {
+    if (!AssertAppProcessPermission(this, "sms")) {
         return nullptr;
     }
     return new SmsParent();
@@ -1469,7 +1480,7 @@ PBluetoothParent*
 ContentParent::AllocPBluetooth()
 {
 #ifdef MOZ_B2G_BT
-    if (!AppProcessHasPermission(this, "bluetooth")) {
+    if (!AssertAppProcessPermission(this, "bluetooth")) {
         return nullptr;
     }
     return new mozilla::dom::bluetooth::BluetoothParent();

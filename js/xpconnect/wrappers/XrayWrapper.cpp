@@ -269,8 +269,8 @@ createHolder(JSContext *cx, JSObject *wrappedNative, JSObject *parent)
     // wrapped native alive. Furthermore, the reachability of that object and
     // the associated holder are exactly the same, so we can use that for our
     // strong reference.
-    JS_ASSERT(IS_WN_WRAPPER(wrappedNative) ||
-              js::GetObjectClass(wrappedNative)->ext.innerObject);
+    MOZ_ASSERT(IS_WN_WRAPPER(wrappedNative) ||
+               js::GetObjectClass(wrappedNative)->ext.innerObject);
     js::SetReservedSlot(holder, JSSLOT_WN, PrivateValue(wn));
     js::SetReservedSlot(holder, JSSLOT_RESOLVING, PrivateValue(NULL));
     return holder;
@@ -490,7 +490,7 @@ GetWrappedNativeObjectFromHolder(JSObject *holder)
 }
 
 static inline JSObject *
-FindWrapper(JSObject *wrapper)
+FindWrapper(JSContext *cx, JSObject *wrapper)
 {
     while (!js::IsWrapper(wrapper) ||
            !(Wrapper::wrapperHandler(wrapper)->flags() &
@@ -499,7 +499,8 @@ FindWrapper(JSObject *wrapper)
             js::GetProxyHandler(wrapper) == &sandboxProxyHandler) {
             wrapper = SandboxProxyHandler::wrappedObject(wrapper);
         } else {
-            wrapper = js::GetObjectProto(wrapper);
+            if (!js::GetObjectProto(cx, wrapper, &wrapper))
+                return nullptr;
         }
         // NB: we must eventually hit our wrapper.
     }
@@ -526,7 +527,9 @@ XPCWrappedNativeXrayTraits::isResolving(JSContext *cx, JSObject *holder,
 JSBool
 holder_get(JSContext *cx, JSHandleObject wrapper_, JSHandleId id, JSMutableHandleValue vp)
 {
-    JSObject *wrapper = FindWrapper(wrapper_);
+    JSObject *wrapper = FindWrapper(cx, wrapper_);
+    if (!wrapper)
+        return false;
 
     JSObject *holder = GetHolder(wrapper);
 
@@ -548,7 +551,9 @@ holder_get(JSContext *cx, JSHandleObject wrapper_, JSHandleId id, JSMutableHandl
 JSBool
 holder_set(JSContext *cx, JSHandleObject wrapper_, JSHandleId id, JSBool strict, JSMutableHandleValue vp)
 {
-    JSObject *wrapper = FindWrapper(wrapper_);
+    JSObject *wrapper = FindWrapper(cx, wrapper_);
+    if (!wrapper)
+        return false;
 
     JSObject *holder = GetHolder(wrapper);
     if (XPCWrappedNativeXrayTraits::isResolving(cx, holder, id)) {
@@ -653,9 +658,11 @@ Is(JSObject *wrapper)
 static JSBool
 mozMatchesSelectorStub(JSContext *cx, unsigned argc, jsval *vp)
 {
-    if (argc < 1)
+    if (argc < 1) {
         JS_ReportError(cx, "Not enough arguments");
-    
+        return false;
+    }
+
     JSObject *wrapper = JS_THIS_OBJECT(cx, vp);
     JSString *selector = JS_ValueToString(cx, JS_ARGV(cx, vp)[0]);
     nsDependentJSString selectorStr;
@@ -712,8 +719,11 @@ XPCWrappedNativeXrayTraits::resolveNativeProperty(JSContext *cx, JSObject *wrapp
         // this problem for mozMatchesSelector. See: bug 763897.
         desc->obj = wrapper;
         desc->attrs = JSPROP_ENUMERATE;
+        JSObject *proto;
+        if (!JS_GetPrototype(cx, wrapper, &proto))
+            return false;
         JSFunction *fun = JS_NewFunction(cx, mozMatchesSelectorStub, 
-                                         1, 0, JS_GetPrototype(wrapper), 
+                                         1, 0, proto, 
                                          "mozMatchesSelector");
         NS_ENSURE_TRUE(fun, false);
         desc->value = OBJECT_TO_JSVAL(JS_GetFunctionObject(fun));

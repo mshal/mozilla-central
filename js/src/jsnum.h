@@ -31,7 +31,7 @@ FinishRuntimeNumberState(JSRuntime *rt);
 
 /* Initialize the Number class, returning its prototype object. */
 extern JSObject *
-js_InitNumberClass(JSContext *cx, JSObject *obj);
+js_InitNumberClass(JSContext *cx, js::HandleObject obj);
 
 /*
  * String constants for global function names, used in jsapi.c and jsnum.c.
@@ -42,7 +42,6 @@ extern const char js_parseFloat_str[];
 extern const char js_parseInt_str[];
 
 class JSString;
-class JSFixedString;
 
 /*
  * When base == 10, this function implements ToString() as specified by
@@ -54,7 +53,7 @@ js_NumberToString(JSContext *cx, double d);
 
 namespace js {
 
-extern JSFixedString *
+extern JSFlatString *
 Int32ToString(JSContext *cx, int32_t i);
 
 /*
@@ -65,10 +64,10 @@ extern bool JS_FASTCALL
 NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb);
 
 /* Same as js_NumberToString, different signature. */
-extern JSFixedString *
+extern JSFlatString *
 NumberToString(JSContext *cx, double d);
 
-extern JSFixedString *
+extern JSFlatString *
 IndexToString(JSContext *cx, uint32_t index);
 
 /*

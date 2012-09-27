@@ -570,6 +570,22 @@ public:
   // system principal, and true for a null principal.
   static bool IsSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
 
+  // Get a permission-manager setting for the given principal and type.
+  // If the pref doesn't exist or if it isn't ALLOW_ACTION, false is
+  // returned, otherwise true is returned. Always returns true for the
+  // system principal, and false for a null principal.
+  // This version checks the permission for an exact host match on
+  // the principal
+  static bool IsExactSitePermAllow(nsIPrincipal* aPrincipal, const char* aType);
+
+  // Get a permission-manager setting for the given principal and type.
+  // If the pref doesn't exist or if it isn't DENY_ACTION, false is
+  // returned, otherwise true is returned. Always returns false for the
+  // system principal, and true for a null principal.
+  // This version checks the permission for an exact host match on
+  // the principal
+  static bool IsExactSitePermDeny(nsIPrincipal* aPrincipal, const char* aType);
+
   // Returns true if aDoc1 and aDoc2 have equal NodePrincipal()s.
   static bool HaveEqualPrincipals(nsIDocument* aDoc1, nsIDocument* aDoc2);
 
@@ -1537,10 +1553,22 @@ public:
    * which places the viewport information in the document header instead
    * of returning it directly.
    *
+   * @param aDisplayWidth width of the on-screen display area for this
+   * document, in device pixels.
+   * @param aDisplayHeight height of the on-screen display area for this
+   * document, in device pixels.
+   *
    * NOTE: If the site is optimized for mobile (via the doctype), this
    * will return viewport information that specifies default information.
    */
-  static ViewportInfo GetViewportInfo(nsIDocument* aDocument);
+  static ViewportInfo GetViewportInfo(nsIDocument* aDocument,
+                                      uint32_t aDisplayWidth,
+                                      uint32_t aDisplayHeight);
+
+  /**
+   * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.
+   */
+  static double GetDevicePixelsPerMetaViewportPixel(nsIWidget* aWidget);
 
   // Call EnterMicroTask when you're entering JS execution.
   // Usually the best way to do this is to use nsAutoMicroTask.

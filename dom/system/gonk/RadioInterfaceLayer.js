@@ -28,6 +28,8 @@ const DEBUG = RIL.DEBUG_RIL;
 
 const RADIOINTERFACELAYER_CID =
   Components.ID("{2d831c8d-6017-435b-a80c-e5d422810cea}");
+const RILNETWORKINTERFACE_CID =
+  Components.ID("{3bdd52a9-3965-4130-b569-0ac5afed045e}");
 
 const nsIAudioManager = Ci.nsIAudioManager;
 const nsIRadioInterfaceLayer = Ci.nsIRadioInterfaceLayer;
@@ -93,6 +95,10 @@ XPCOMUtils.defineLazyServiceGetter(this, "gSystemMessenger",
                                    "@mozilla.org/system-message-internal;1",
                                    "nsISystemMessagesInternal");
 
+XPCOMUtils.defineLazyServiceGetter(this, "gNetworkManager",
+                                   "@mozilla.org/network/manager;1",
+                                   "nsINetworkManager");
+
 XPCOMUtils.defineLazyGetter(this, "WAP", function () {
   let WAP = {};
   Cu.import("resource://gre/modules/WapPushManager.js", WAP);
@@ -150,6 +156,10 @@ XPCOMUtils.defineLazyGetter(this, "gAudioManager", function getAudioManager() {
 
 
 function RadioInterfaceLayer() {
+  this.dataNetworkInterface = new RILNetworkInterface(this, Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE);
+  this.mmsNetworkInterface = new RILNetworkInterface(this, Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS);
+  this.suplNetworkInterface = new RILNetworkInterface(this, Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_SUPL);
+
   debug("Starting RIL Worker");
   this.worker = new ChromeWorker("resource://gre/modules/ril_worker.js");
   this.worker.onerror = this.onerror.bind(this);
@@ -189,7 +199,7 @@ function RadioInterfaceLayer() {
   let lock = gSettingsService.createLock();
   lock.get("ril.radio.disabled", this);
 
-  // Read the APN data form the setting DB.
+  // Read the APN data from the settings DB.
   lock.get("ril.data.apn", this);
   lock.get("ril.data.user", this);
   lock.get("ril.data.passwd", this);
@@ -204,6 +214,21 @@ function RadioInterfaceLayer() {
                                   "ril.data.passwd",
                                   "ril.data.httpProxyHost",
                                   "ril.data.httpProxyPort"];
+
+  // Read secondary APNs from the settings DB.
+  lock.get("ril.mms.apn", this);
+  lock.get("ril.mms.user", this);
+  lock.get("ril.mms.passwd", this);
+  lock.get("ril.mms.httpProxyHost", this);
+  lock.get("ril.mms.httpProxyPort", this);
+  lock.get("ril.mms.mmsc", this);
+  lock.get("ril.mms.mmsproxy", this);
+  lock.get("ril.mms.mmsport", this);
+  lock.get("ril.supl.apn", this);
+  lock.get("ril.supl.user", this);
+  lock.get("ril.supl.passwd", this);
+  lock.get("ril.supl.httpProxyHost", this);
+  lock.get("ril.supl.httpProxyPort", this);
 
   // Read the desired setting of call waiting from the settings DB.
   lock.get("ril.callwaiting.enabled", this);
@@ -381,10 +406,7 @@ RadioInterfaceLayer.prototype = {
         this.updateDataConnection(message);
         break;
       case "datacallerror":
-        // 3G Network revoked the data connection, possible unavailable APN
-        debug("Received data registration error message. Failed APN " +
-              this.dataCallSettings["apn"]);
-        RILNetworkInterface.reset();
+        this.handleDataCallError(message);
         break;
       case "signalstrengthchange":
         this.handleSignalStrengthChange(message);
@@ -448,7 +470,9 @@ RadioInterfaceLayer.prototype = {
         let callback = this._contactsCallbacks[message.requestId];
         if (callback) {
           delete this._contactsCallbacks[message.requestId];
-          callback.receiveContactsList(message.contactType, message.contacts);
+          callback.receiveContactsList(message.errorMsg,
+                                       message.contactType,
+                                       message.contacts);
         }
         break;
       case "iccmbdn":
@@ -527,6 +551,9 @@ RadioInterfaceLayer.prototype = {
       }
     }
 
+    this.checkRoamingBetweenOperators(voice);
+    this.checkRoamingBetweenOperators(data);
+
     if (voiceMessage || operatorMessage) {
       ppmm.broadcastAsyncMessage("RIL:VoiceInfoChanged", voice);
     }
@@ -537,6 +564,32 @@ RadioInterfaceLayer.prototype = {
     if (selectionMessage) {
       this.updateNetworkSelectionMode(selectionMessage);
     }
+  },
+
+  /**
+    * Fix the roaming. RIL can report roaming in some case it is not
+    * really the case. See bug 787967
+    *
+    * @param registration  The voiceMessage or dataMessage from which the
+    *                      roaming state will be changed (maybe, if needed).
+    */
+  checkRoamingBetweenOperators: function checkRoamingBetweenOperators(registration) {
+    let icc = this.rilContext.icc;
+    if (!icc || !registration.connected) {
+      return;
+    }
+
+    let spn = icc.spn;
+    let operator = registration.network;
+    let longName = operator.longName;
+    let shortName = operator.shortName;
+
+    let equalsLongName = longName && (spn == longName);
+    let equalsShortName = shortName && (spn == shortName);
+    let equalsMcc = icc.mcc == operator.mcc;
+
+    registration.roaming = registration.roaming &&
+                           !(equalsMcc && (equalsLongName || equalsShortName));
   },
 
   /**
@@ -591,7 +644,7 @@ RadioInterfaceLayer.prototype = {
     dataInfo.type = newInfo.type;
     // For the data connection, the `connected` flag indicates whether
     // there's an active data call.
-    dataInfo.connected = RILNetworkInterface.connected;
+    dataInfo.connected = this.dataNetworkInterface.connected;
 
     // Make sure we also reset the operator and signal strength information
     // if we drop off the network.
@@ -612,6 +665,18 @@ RadioInterfaceLayer.prototype = {
       ppmm.broadcastAsyncMessage("RIL:DataInfoChanged", dataInfo);
     }
     this.updateRILNetworkInterface();
+  },
+
+  /**
+   * Handle data errors
+   */
+  handleDataCallError: function handleDataCallError(message) {
+    // Notify data call error only for data APN
+    if (message.apn == this.dataCallSettings["apn"]) {
+      ppmm.broadcastAsyncMessage("RIL:DataError", message);
+    }
+
+    this._deliverDataCallCallback("dataCallError", [message]);
   },
 
   handleSignalStrengthChange: function handleSignalStrengthChange(message) {
@@ -755,12 +820,18 @@ RadioInterfaceLayer.prototype = {
       return;
     }
 
-    if (!this.dataCallSettings["enabled"] && RILNetworkInterface.connected) {
-      debug("Data call settings: disconnect data call.");
-      RILNetworkInterface.disconnect();
+    if (this.dataNetworkInterface.state == RIL.GECKO_NETWORK_STATE_CONNECTING ||
+        this.dataNetworkInterface.state == RIL.GECKO_NETWORK_STATE_DISCONNECTING) {
+      debug("Nothing to do during connecting/disconnecting in progress.");
       return;
     }
-    if (!this.dataCallSettings["enabled"] || RILNetworkInterface.connected) {
+
+    if (!this.dataCallSettings["enabled"] && this.dataNetworkInterface.connected) {
+      debug("Data call settings: disconnect data call.");
+      this.dataNetworkInterface.disconnect();
+      return;
+    }
+    if (!this.dataCallSettings["enabled"] || this.dataNetworkInterface.connected) {
       debug("Data call settings: nothing to do.");
       return;
     }
@@ -780,7 +851,7 @@ RadioInterfaceLayer.prototype = {
     }
 
     debug("Data call settings: connect data call.");
-    RILNetworkInterface.connect(this.dataCallSettings);
+    this.dataNetworkInterface.connect(this.dataCallSettings);
   },
 
   /**
@@ -962,9 +1033,12 @@ RadioInterfaceLayer.prototype = {
       return;
     }
 
-    let id = gSmsDatabaseService.saveReceivedMessage(message.sender || null,
-                                                     message.fullBody || null,
-                                                     message.timestamp);
+    let id = -1;
+    if (message.messageClass != RIL.PDU_DCS_MSG_CLASS_0) {
+      id = gSmsDatabaseService.saveReceivedMessage(message.sender || null,
+                                                   message.fullBody || null,
+                                                   message.timestamp);
+    }
     let sms = gSmsService.createSmsMessage(id,
                                            DOM_SMS_DELIVERY_RECEIVED,
                                            message.sender || null,
@@ -973,6 +1047,14 @@ RadioInterfaceLayer.prototype = {
                                            message.timestamp,
                                            false);
 
+    gSystemMessenger.broadcastMessage("sms-received",
+                                      {id: id,
+                                       delivery: DOM_SMS_DELIVERY_RECEIVED,
+                                       sender: message.sender || null,
+                                       receiver: message.receiver || null,
+                                       body: message.fullBody || null,
+                                       timestamp: message.timestamp,
+                                       read: false});
     Services.obs.notifyObservers(sms, kSmsReceivedObserverTopic, null);
   },
 
@@ -1060,9 +1142,10 @@ RadioInterfaceLayer.prototype = {
   handleDataCallState: function handleDataCallState(datacall) {
     let data = this.rilContext.data;
 
-    if (datacall.ifname) {
+    if (datacall.ifname &&
+        datacall.apn == this.dataCallSettings["apn"]) {
       data.connected = (datacall.state == RIL.GECKO_NETWORK_STATE_CONNECTED);
-      ppmm.broadcastAsyncMessage("RIL:DataInfoChanged", data);    
+      ppmm.broadcastAsyncMessage("RIL:DataInfoChanged", data);
     }
 
     this._deliverDataCallCallback("dataCallStateChanged",
@@ -1139,7 +1222,10 @@ RadioInterfaceLayer.prototype = {
         for each (let msgname in RIL_IPC_MSG_NAMES) {
           ppmm.removeMessageListener(msgname, this);
         }
-        RILNetworkInterface.shutdown();
+        // Shutdown all RIL network interfaces
+        this.dataNetworkInterface.shutdown();
+        this.mmsNetworkInterface.shutdown();
+        this.suplNetworkInterface.shutdown();
         ppmm = null;
         Services.obs.removeObserver(this, "xpcom-shutdown");
         Services.obs.removeObserver(this, kMozSettingsChangedObserverTopic);
@@ -1162,6 +1248,8 @@ RadioInterfaceLayer.prototype = {
 
   // APN data for making data calls.
   dataCallSettings: {},
+  dataCallSettingsMMS: {},
+  dataCallSettingsSUPL: {},
   _dataCallSettingsToRead: [],
   _oldRilDataEnabledState: null,
 
@@ -1191,6 +1279,25 @@ RadioInterfaceLayer.prototype = {
           this._dataCallSettingsToRead.splice(index, 1);
         }
         this.updateRILNetworkInterface();
+        break;
+      case "ril.mms.apn":
+      case "ril.mms.user":
+      case "ril.mms.passwd":
+      case "ril.mms.httpProxyHost":
+      case "ril.mms.httpProxyPort":
+      case "ril.mms.mmsc":
+      case "ril.mms.mmsproxy":
+      case "ril.mms.mmsport":
+        key = aName.slice(8);
+        this.dataCallSettingsMMS[key] = aResult;
+        break;
+      case "ril.supl.apn":
+      case "ril.supl.user":
+      case "ril.supl.passwd":
+      case "ril.supl.httpProxyHost":
+      case "ril.supl.httpProxyPort":
+        key = aName.slice(9);
+        this.dataCallSettingsSUPL[key] = aResult;
         break;
       case "ril.callwaiting.enabled":
         this._callWaitingEnabled = aResult;
@@ -1327,9 +1434,6 @@ RadioInterfaceLayer.prototype = {
     if (value == this.microphoneMuted) {
       return;
     }
-    gAudioManager.phoneState = value ?
-      nsIAudioManager.PHONE_STATE_IN_COMMUNICATION :
-      nsIAudioManager.PHONE_STATE_IN_CALL;  //XXX why is this needed?
     gAudioManager.microphoneMuted = value;
 
     if (!this._activeCall) {
@@ -1345,7 +1449,6 @@ RadioInterfaceLayer.prototype = {
     if (value == this.speakerEnabled) {
       return;
     }
-    gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_IN_CALL; // XXX why is this needed?
     let force = value ? nsIAudioManager.FORCE_SPEAKER :
                         nsIAudioManager.FORCE_NONE;
     gAudioManager.setForceForUse(nsIAudioManager.USE_COMMUNICATION, force);
@@ -1792,6 +1895,74 @@ RadioInterfaceLayer.prototype = {
     }
   },
 
+  /**
+   * Determine whether secondary APN goes through default APN.
+   */
+  usingDefaultAPN: function usingDefaultAPN(apntype) {
+    switch (apntype) {
+      case "mms":
+        return (this.dataCallSettingsMMS["apn"] == this.dataCallSettings["apn"]);
+      case "supl":
+        return (this.dataCallSettingsSUPL["apn"] == this.dataCallSettings["apn"]);
+      return false;
+    }
+  },
+
+  setupDataCallByType: function setupDataCallByType(apntype) {
+    if (apntype != "default" && this.usingDefaultAPN(apntype)) {
+      debug("Secondary APN type " + apntype + " goes through default APN, nothing to do.");
+      return;
+    }
+    switch (apntype) {
+      case "default":
+        this.dataNetworkInterface.connect(this.dataCallSettings);
+        break;
+      case "mms":
+        this.mmsNetworkInterface.connect(this.dataCallSettingsMMS);
+        break;
+      case "supl":
+        this.suplNetworkInterface.connect(this.dataCallSettingsSUPL);
+        break;
+      default:
+        debug("Unsupported APN type " + apntype);
+        break;
+    }
+  },
+
+  deactivateDataCallByType: function deactivateDataCallByType(apntype) {
+    if (apntype != "default" && this.usingDefaultAPN(apntype)) {
+      debug("Secondary APN type " + apntype + " goes through default APN, nothing to do.");
+      return;
+    }
+    switch (apntype) {
+      case "default":
+        this.dataNetworkInterface.disconnect();
+        break;
+      case "mms":
+        this.mmsNetworkInterface.disconnect();
+        break;
+      case "supl":
+        this.suplNetworkInterface.disconnect();
+        break;
+      default:
+        debug("Unsupported APN type " + apntype);
+        break;
+    }
+  },
+
+  getDataCallStateByType: function getDataCallStateByType(apntype) {
+    switch (apntype) {
+      case "default":
+        return this.dataNetworkInterface.state;
+      case "mms":
+        return this.mmsNetworkInterface.state;
+      case "supl":
+        return this.suplNetworkInterface.state;
+      default:
+        return RIL.GECKO_NETWORK_STATE_UNKNOWN;
+    }
+  },
+
   setupDataCall: function setupDataCall(radioTech, apn, user, passwd, chappap, pdptype) {
     this.worker.postMessage({rilMessageType: "setupDataCall",
                              radioTech: radioTech,
@@ -1831,7 +2002,7 @@ RadioInterfaceLayer.prototype = {
   getICCContacts: function getICCContacts(contactType, callback) {
     if (!this._contactsCallbacks) {
       this._contactsCallbacks = {};
-    } 
+    }
     let requestId = Math.floor(Math.random() * 1000);
     this._contactsCallbacks[requestId] = callback;
     this.worker.postMessage({rilMessageType: "getICCContacts",
@@ -1840,8 +2011,18 @@ RadioInterfaceLayer.prototype = {
   }
 };
 
-let RILNetworkInterface = {
+function RILNetworkInterface(ril, type)
+{
+  this.mRIL = ril;
+  this.type = type;
+}
 
+RILNetworkInterface.prototype = {
+  classID:   RILNETWORKINTERFACE_CID,
+  classInfo: XPCOMUtils.generateCI({classID: RILNETWORKINTERFACE_CID,
+                                    classDescription: "RILNetworkInterface",
+                                    interfaces: [Ci.nsINetworkInterface,
+                                                 Ci.nsIRIODataCallback]}),
   QueryInterface: XPCOMUtils.generateQI([Ci.nsINetworkInterface,
                                          Ci.nsIRILDataCallback]),
 
@@ -1893,8 +2074,20 @@ let RILNetworkInterface = {
 
   // nsIRILDataCallback
 
+  dataCallError: function dataCallError(message) {
+    if (message.apn != this.dataCallSettings["apn"]) {
+      return;
+    }
+    debug("Data call error on APN: " + message.apn);
+    this.reset();
+  },
+
   dataCallStateChanged: function dataCallStateChanged(datacall) {
-    debug("Data call ID: " + datacall.cid + ", interface name: " + datacall.ifname);
+    if (datacall.apn != this.dataCallSettings["apn"]) {
+      return;
+    }
+    debug("Data call ID: " + datacall.cid + ", interface name: " +
+          datacall.ifname + ", APN name: " + datacall.apn);
     if (this.connecting &&
         (datacall.state == RIL.GECKO_NETWORK_STATE_CONNECTING ||
          datacall.state == RIL.GECKO_NETWORK_STATE_CONNECTED)) {
@@ -1910,9 +2103,7 @@ let RILNetworkInterface = {
         this.dns2 = datacall.dns[1];
       }
       if (!this.registeredAsNetworkInterface) {
-        let networkManager = Cc["@mozilla.org/network/manager;1"]
-                               .getService(Ci.nsINetworkManager);
-        networkManager.registerNetworkInterface(this);
+        gNetworkManager.registerNetworkInterface(this);
         this.registeredAsNetworkInterface = true;
       }
     }
@@ -1924,6 +2115,21 @@ let RILNetworkInterface = {
     }
 
     this.state = datacall.state;
+
+    // In case the data setting changed while the datacall was being started or
+    // ended, let's re-check the setting and potentially adjust the datacall
+    // state again.
+    if (this == this.mRIL.dataNetworkInterface) {
+      this.mRIL.updateRILNetworkInterface();
+    }
+
+    if (this.state == RIL.GECKO_NETWORK_STATE_UNKNOWN &&
+       this.registeredAsNetworkInterface) {
+      gNetworkManager.unregisterNetworkInterface(this);
+      this.registeredAsNetworkInterface = false;
+      return;
+    }
+
     Services.obs.notifyObservers(this,
                                  kNetworkInterfaceStateChangedTopic,
                                  null);
@@ -1943,13 +2149,6 @@ let RILNetworkInterface = {
   // APN failed connections. Retry counter
   apnRetryCounter: 0,
 
-  get mRIL() {
-    delete this.mRIL;
-    return this.mRIL = Cc["@mozilla.org/telephony/system-worker-manager;1"]
-                         .getService(Ci.nsIInterfaceRequestor)
-                         .getInterface(Ci.nsIRadioInterfaceLayer);
-  },
-
   get connected() {
     return this.state == RIL.GECKO_NETWORK_STATE_CONNECTED;
   },
@@ -1965,8 +2164,13 @@ let RILNetworkInterface = {
     }
 
     if (options) {
-      // Save the APN data locally for using them in connection retries. 
+      // Save the APN data locally for using them in connection retries.
       this.dataCallSettings = options;
+    }
+
+    if (!this.dataCallSettings["apn"]) {
+      debug("APN name is empty, nothing to do.");
+      return;
     }
 
     this.httpProxyHost = this.dataCallSettings["httpProxyHost"];
@@ -2020,7 +2224,7 @@ let RILNetworkInterface = {
 
   // Entry method for timer events. Used to reconnect to a failed APN
   notify: function(timer) {
-    RILNetworkInterface.connect();
+    this.connect();
   },
 
   shutdown: function() {

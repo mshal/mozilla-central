@@ -19,8 +19,8 @@ LIBXUL_LIBRARY  = 1
 EXPORTS = \
 	CustomQS_Canvas.h \
 	CustomQS_Canvas2D.h \
-	CustomQS_WebGL.h \
 	WebGLContext.h \
+	WebGLElementArrayCache.h \
 	$(NULL)
 
 EXPORTS_NAMESPACES = mozilla/dom
@@ -52,7 +52,10 @@ CPPSRCS += \
 	WebGLExtensionLoseContext.cpp \
 	WebGLTexelConversions.cpp \
 	WebGLExtensionCompressedTextureS3TC.cpp \
+	WebGLExtensionCompressedTextureATC.cpp \
+	WebGLExtensionCompressedTexturePVRTC.cpp \
 	WebGLExtensionDepthTexture.cpp \
+	WebGLElementArrayCache.cpp \
 	$(NULL)
 
 DEFINES += -DUSE_ANGLE

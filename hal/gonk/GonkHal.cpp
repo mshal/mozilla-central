@@ -102,7 +102,6 @@ public:
   VibratorRunnable()
     : mMonitor("VibratorRunnable")
     , mIndex(0)
-    , mShuttingDown(false)
   {
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
     if (!os) {
@@ -110,8 +109,9 @@ public:
       return;
     }
 
-    os->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, /* weak ref */ true);
+    os->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
   }
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSIRUNNABLE
   NS_DECL_NSIOBSERVER
@@ -119,6 +119,8 @@ public:
   // Run on the main thread, not the vibrator thread.
   void Vibrate(const nsTArray<uint32_t> &pattern);
   void CancelVibrate();
+
+  static bool ShuttingDown() { return sShuttingDown; }
 
 private:
   Monitor mMonitor;
@@ -132,10 +134,14 @@ private:
 
   // Set to true in our shutdown observer.  When this is true, we kill the
   // vibrator thread.
-  bool mShuttingDown;
+  static bool sShuttingDown;
 };
 
-NS_IMPL_ISUPPORTS2(VibratorRunnable, nsIRunnable, nsIObserver);
+NS_IMPL_THREADSAFE_ISUPPORTS2(VibratorRunnable, nsIRunnable, nsIObserver);
+
+bool VibratorRunnable::sShuttingDown = false;
+
+static nsRefPtr<VibratorRunnable> sVibratorRunnable;
 
 NS_IMETHODIMP
 VibratorRunnable::Run()
@@ -151,7 +157,7 @@ VibratorRunnable::Run()
   // condvar onto another thread.  Better just to be chill about small errors in
   // the timing here.
 
-  while (!mShuttingDown) {
+  while (!sShuttingDown) {
     if (mIndex < mPattern.Length()) {
       uint32_t duration = mPattern[mIndex];
       if (mIndex % 2 == 0) {
@@ -164,7 +170,7 @@ VibratorRunnable::Run()
       mMonitor.Wait();
     }
   }
-
+  sVibratorRunnable = NULL;
   return NS_OK;
 }
 
@@ -174,8 +180,9 @@ VibratorRunnable::Observe(nsISupports *subject, const char *topic,
 {
   MOZ_ASSERT(strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0);
   MonitorAutoLock lock(mMonitor);
-  mShuttingDown = true;
+  sShuttingDown = true;
   mMonitor.Notify();
+
   return NS_OK;
 }
 
@@ -198,8 +205,6 @@ VibratorRunnable::CancelVibrate()
   mMonitor.Notify();
 }
 
-VibratorRunnable *sVibratorRunnable = NULL;
-
 void
 EnsureVibratorThreadInitialized()
 {
@@ -207,8 +212,7 @@ EnsureVibratorThreadInitialized()
     return;
   }
 
-  nsRefPtr<VibratorRunnable> runnable = new VibratorRunnable();
-  sVibratorRunnable = runnable;
+  sVibratorRunnable = new VibratorRunnable();
   nsCOMPtr<nsIThread> thread;
   NS_NewThread(getter_AddRefs(thread), sVibratorRunnable);
 }
@@ -218,6 +222,10 @@ EnsureVibratorThreadInitialized()
 void
 Vibrate(const nsTArray<uint32_t> &pattern, const hal::WindowIdentifier &)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (VibratorRunnable::ShuttingDown()) {
+    return;
+  }
   EnsureVibratorThreadInitialized();
   sVibratorRunnable->Vibrate(pattern);
 }
@@ -225,6 +233,10 @@ Vibrate(const nsTArray<uint32_t> &pattern, const hal::WindowIdentifier &)
 void
 CancelVibrate(const hal::WindowIdentifier &)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (VibratorRunnable::ShuttingDown()) {
+    return;
+  }
   EnsureVibratorThreadInitialized();
   sVibratorRunnable->CancelVibrate();
 }
@@ -339,8 +351,8 @@ GetCurrentBatteryInformation(hal::BatteryInformation *aBatteryInfo)
     chargingFile = fopen("/sys/class/power_supply/battery/status", "r");
     if (chargingFile) {
       char status[16];
-      fscanf(chargingFile, "%s", &status);
-      if (!strcmp(status, "Charging") || !strcmp(status, "Full")) {
+      char *str = fgets(status, sizeof(status), chargingFile);
+      if (str && (!strcmp(str, "Charging\n") || !strcmp(str, "Full\n"))) {
         // no way here to know if we're charging from USB or AC.
         chargingSrc = BATTERY_CHARGING_USB;
       } else {
@@ -603,7 +615,7 @@ sys_clock_settime(clockid_t clk_id, const struct timespec *tp)
 }
 
 void
-AdjustSystemClock(int32_t aDeltaMilliseconds)
+AdjustSystemClock(int64_t aDeltaMilliseconds)
 {
   if (aDeltaMilliseconds == 0) {
     return;
@@ -614,8 +626,8 @@ AdjustSystemClock(int32_t aDeltaMilliseconds)
   // Preventing context switch before setting system clock
   sched_yield();
   clock_gettime(CLOCK_REALTIME, &now);
-  now.tv_sec += aDeltaMilliseconds/1000;
-  now.tv_nsec += (aDeltaMilliseconds%1000)*NsecPerMsec;
+  now.tv_sec += aDeltaMilliseconds / 1000;
+  now.tv_nsec += (aDeltaMilliseconds % 1000) * NsecPerMsec;
   if (now.tv_nsec >= NsecPerSec)
   {
     now.tv_sec += 1;
@@ -656,6 +668,16 @@ GetTimezone()
   char timezone[32];
   property_get("persist.sys.timezone", timezone, "");
   return nsCString(timezone);
+}
+
+void
+EnableSystemTimeChangeNotifications()
+{
+}
+
+void
+DisableSystemTimeChangeNotifications()
+{
 }
 
 // Nothing to do here.  Gonk widgetry always listens for screen

@@ -16,6 +16,7 @@ DEPTH            = @DEPTH@
 topsrcdir        = @top_srcdir@
 srcdir           = @srcdir@
 VPATH            = @srcdir@
+FAIL_ON_WARNINGS := 1
 
 include $(DEPTH)/config/autoconf.mk
 include $(topsrcdir)/dom/dom-config.mk
@@ -50,6 +51,8 @@ CPPSRCS += \
   BluetoothChild.cpp \
   BluetoothParent.cpp \
   BluetoothServiceChildProcess.cpp \
+  BluetoothUnixSocketConnector.cpp \
+  BluetoothHfpManager.cpp \
   $(NULL)
 
 XPIDLSRCS = \

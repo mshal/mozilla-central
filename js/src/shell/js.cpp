@@ -467,11 +467,7 @@ Process(JSContext *cx, JSObject *obj_, const char *filename, bool forceTTY)
             gCanceled = false;
             errno = 0;
 
-            char *line;
-            {
-                JSAutoSuspendRequest suspended(cx);
-                line = GetLine(file, startline == lineno ? "js> " : "");
-            }
+            char *line = GetLine(file, startline == lineno ? "js> " : "");
             if (!line) {
                 if (errno) {
                     JS_ReportError(cx, strerror(errno));
@@ -737,7 +733,6 @@ class AutoNewContext
   private:
     JSContext *oldcx;
     JSContext *newcx;
-    Maybe<JSAutoSuspendRequest> suspension;
     Maybe<JSAutoRequest> newRequest;
 
     AutoNewContext(const AutoNewContext &) MOZ_DELETE;
@@ -754,7 +749,6 @@ class AutoNewContext
         JS_SetOptions(newcx, JS_GetOptions(newcx) | JSOPTION_DONT_REPORT_UNCAUGHT);
         JS_SetGlobalObject(newcx, JS_GetGlobalForScopeChain(cx));
 
-        suspension.construct(cx);
         newRequest.construct(newcx);
         return true;
     }
@@ -768,10 +762,9 @@ class AutoNewContext
             if (throwing)
                 JS_GetPendingException(newcx, exc.address());
             newRequest.destroy();
-            suspension.destroy();
             if (throwing)
                 JS_SetPendingException(oldcx, exc);
-            JS_DestroyContextNoGC(newcx);
+            DestroyContext(newcx, false);
         }
     }
 };
@@ -909,16 +902,17 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
             options |= JSOPTION_COMPILE_N_GO;
         if (noScriptRval)
             options |= JSOPTION_NO_SCRIPT_RVAL;
-        JS_SetOptions(cx, options);
 
+        JS_SetOptions(cx, options);
         JSScript *script = JS_CompileUCScript(cx, global, codeChars, codeLength, fileName, lineNumber);
+        JS_SetOptions(cx, saved);
         if (!script)
             return false;
+
         if (sourceMapURL && !script->scriptSource()->hasSourceMap()) {
             if (!script->scriptSource()->setSourceMap(cx, sourceMapURL, script->filename))
                 return false;
         }
-        JS_SetOptions(cx, saved);
         if (!JS_ExecuteScript(cx, global, script, vp))
             return false;
     }
@@ -2707,23 +2701,18 @@ Sleep_fn(JSContext *cx, unsigned argc, jsval *vp)
                   ? 0
                   : int64_t(PRMJ_USEC_PER_SEC * t_secs);
     }
-    if (t_ticks == 0) {
-        JS_YieldRequest(cx);
-    } else {
-        JSAutoSuspendRequest suspended(cx);
-        PR_Lock(gWatchdogLock);
-        int64_t to_wakeup = PRMJ_Now() + t_ticks;
-        for (;;) {
-            PR_WaitCondVar(gSleepWakeup, t_ticks);
-            if (gCanceled)
-                break;
-            int64_t now = PRMJ_Now();
-            if (!IsBefore(now, to_wakeup))
-                break;
-            t_ticks = to_wakeup - now;
-        }
-        PR_Unlock(gWatchdogLock);
+    PR_Lock(gWatchdogLock);
+    int64_t to_wakeup = PRMJ_Now() + t_ticks;
+    for (;;) {
+        PR_WaitCondVar(gSleepWakeup, t_ticks);
+        if (gCanceled)
+            break;
+        int64_t now = PRMJ_Now();
+        if (!IsBefore(now, to_wakeup))
+            break;
+        t_ticks = to_wakeup - now;
     }
+    PR_Unlock(gWatchdogLock);
     return !gCanceled;
 }
 
@@ -3258,8 +3247,11 @@ Wrap(JSContext *cx, unsigned argc, jsval *vp)
         return true;
     }
 
-    JSObject *obj = JSVAL_TO_OBJECT(v);
-    JSObject *wrapped = Wrapper::New(cx, obj, obj->getProto(), &obj->global(),
+    RootedObject obj(cx, JSVAL_TO_OBJECT(v));
+    RootedObject proto(cx);
+    if (!JSObject::getProto(cx, obj, &proto))
+        return false;
+    JSObject *wrapped = Wrapper::New(cx, obj, proto, &obj->global(),
                                      &DirectWrapper::singleton);
     if (!wrapped)
         return false;

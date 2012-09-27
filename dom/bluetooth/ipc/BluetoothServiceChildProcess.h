@@ -10,6 +10,9 @@
 #include "BluetoothService.h"
 
 namespace mozilla {
+namespace ipc {
+class UnixSocketConsumer;
+}
 namespace dom {
 namespace bluetooth {
 
@@ -62,10 +65,6 @@ public:
                 BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
   virtual nsresult
-  GetDevicePropertiesInternal(const nsAString& aDevicePath,
-                              const nsAString& aSignalPath) MOZ_OVERRIDE;
-
-  virtual nsresult
   SetProperty(BluetoothObjectType aType,
               const nsAString& aPath,
               const BluetoothNamedValue& aValue,
@@ -90,29 +89,32 @@ public:
   virtual nsresult
   GetSocketViaService(const nsAString& aObjectPath,
                       const nsAString& aService,
-                      int aType,
+                      BluetoothSocketType aType,
                       bool aAuth,
                       bool aEncrypt,
+                      mozilla::ipc::UnixSocketConsumer* aConsumer,
                       BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
   virtual bool
-  CloseSocket(int aFd, BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
-
-  virtual bool
   SetPinCodeInternal(const nsAString& aDeviceAddress,
-                     const nsAString& aPinCode) MOZ_OVERRIDE;
+                     const nsAString& aPinCode,
+                     BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
   virtual bool
   SetPasskeyInternal(const nsAString& aDeviceAddress,
-                     uint32_t aPasskey) MOZ_OVERRIDE;
+                     uint32_t aPasskey,
+                     BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
   virtual bool
   SetPairingConfirmationInternal(const nsAString& aDeviceAddress,
-                                 bool aConfirm) MOZ_OVERRIDE;
+                                 bool aConfirm,
+                                 BluetoothReplyRunnable* aRunnable)
+                                 MOZ_OVERRIDE;
 
   virtual bool
   SetAuthorizationInternal(const nsAString& aDeviceAddress,
-                           bool aAllow) MOZ_OVERRIDE;
+                           bool aAllow,
+                           BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
 protected:
   BluetoothServiceChildProcess();
@@ -138,6 +140,14 @@ private:
   // This method should never be called.
   virtual nsresult
   StopInternal() MOZ_OVERRIDE;
+
+  // Should never be called from the child
+  virtual nsresult
+  GetDevicePropertiesInternal(const BluetoothSignal& aSignal) MOZ_OVERRIDE;
+
+  // This method should never be called from the child.
+  virtual nsresult
+  PrepareAdapterInternal(const nsAString& aPath) MOZ_OVERRIDE;
 };
 
 END_BLUETOOTH_NAMESPACE

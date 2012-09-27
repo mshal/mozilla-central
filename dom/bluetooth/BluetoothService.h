@@ -14,6 +14,12 @@
 #include "nsIThread.h"
 #include "nsTObserverArray.h"
 
+namespace mozilla {
+namespace ipc {
+class UnixSocketConsumer;
+}
+}
+
 BEGIN_BLUETOOTH_NAMESPACE
 
 class BluetoothManager;
@@ -175,14 +181,12 @@ public:
   /** 
    * Fetches the propertes for the specified device
    *
-   * @param aDevicePath Path of the object
-   * @param aSignalPath Path to distrubute signal after receiving properties
+   * @param aSignal BluetoothSignal to be distrubuted after retrieving device properties
    *
    * @return NS_OK on function run, NS_ERROR_FAILURE otherwise
    */
   virtual nsresult
-  GetDevicePropertiesInternal(const nsAString& aDevicePath,
-                              const nsAString& aSignalPath) = 0;
+  GetDevicePropertiesInternal(const BluetoothSignal& aSignal) = 0;
 
   /**
    * Set a property for the specified object
@@ -228,25 +232,30 @@ public:
   virtual nsresult
   GetSocketViaService(const nsAString& aObjectPath,
                       const nsAString& aService,
-                      int aType,
+                      BluetoothSocketType aType,
                       bool aAuth,
                       bool aEncrypt,
+                      mozilla::ipc::UnixSocketConsumer* aSocketConsumer,
                       BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual bool
-  CloseSocket(int aFd, BluetoothReplyRunnable* aRunnable) = 0;
+  SetPinCodeInternal(const nsAString& aDeviceAddress, const nsAString& aPinCode,
+                     BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual bool
-  SetPinCodeInternal(const nsAString& aDeviceAddress, const nsAString& aPinCode) = 0;
+  SetPasskeyInternal(const nsAString& aDeviceAddress, uint32_t aPasskey,
+                     BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual bool
-  SetPasskeyInternal(const nsAString& aDeviceAddress, uint32_t aPasskey) = 0;
+  SetPairingConfirmationInternal(const nsAString& aDeviceAddress, bool aConfirm,
+                                 BluetoothReplyRunnable* aRunnable) = 0;
 
   virtual bool
-  SetPairingConfirmationInternal(const nsAString& aDeviceAddress, bool aConfirm) = 0;
+  SetAuthorizationInternal(const nsAString& aDeviceAddress, bool aAllow,
+                           BluetoothReplyRunnable* aRunnable) = 0;
 
-  virtual bool
-  SetAuthorizationInternal(const nsAString& aDeviceAddress, bool aAllow) = 0;
+  virtual nsresult
+  PrepareAdapterInternal(const nsAString& aPath) = 0;
 
   bool
   IsEnabled() const

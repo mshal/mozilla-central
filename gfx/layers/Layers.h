@@ -294,6 +294,13 @@ public:
   Layer* GetRoot() { return mRoot; }
 
   /**
+   * Does a breadth-first search from the root layer to find the first
+   * scrollable layer.
+   * Can be called any time.
+   */
+  Layer* GetPrimaryScrollableLayer();
+
+  /**
    * CONSTRUCTION PHASE ONLY
    * Called when a managee has mutated.
    * Subclasses overriding this method must first call their
@@ -1089,7 +1096,7 @@ public:
     // preserved exactly
     NS_ASSERTION(!residual.HasNonTranslation(),
                  "Residual transform can only be a translation");
-    if (residual.GetTranslation() != mResidualTranslation) {
+    if (!residual.GetTranslation().WithinEpsilonOf(mResidualTranslation, 1e-3f)) {
       mResidualTranslation = residual.GetTranslation();
       NS_ASSERTION(-0.5 <= mResidualTranslation.x && mResidualTranslation.x < 0.5 &&
                    -0.5 <= mResidualTranslation.y && mResidualTranslation.y < 0.5,

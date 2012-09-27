@@ -84,7 +84,7 @@ public:
   nsresult GetImageContainer(ImageContainer **aContainer);
   nsresult GetImageSize(nsIntSize* aSize);
   nsresult NotifyPainted(void);
-  nsresult UseAsyncPainting(bool* aIsAsync);
+  nsresult GetIsOOP(bool* aIsOOP);
   nsresult SetBackgroundUnknown();
   nsresult BeginUpdateBackground(nsIntRect* aRect, gfxContext** aContext);
   nsresult EndUpdateBackground(gfxContext* aContext, nsIntRect* aRect);
@@ -130,6 +130,8 @@ public:
   void MemoryPressure();
   void NotifyFullScreen(bool aFullScreen);
   void NotifySize(nsIntSize size);
+
+  nsIntSize CurrentSize() { return mCurrentSize; }
 
   bool IsOnScreen() {
     return mOnScreen;
@@ -341,7 +343,6 @@ private:
   // This is only valid when the plugin is actually stopped!
   mozilla::TimeStamp mStopTime;
 
-  bool mUsePluginLayersPref;
 #ifdef MOZ_WIDGET_ANDROID
   void EnsureSharedTexture();
   nsSurfaceTexture* CreateSurfaceTexture();

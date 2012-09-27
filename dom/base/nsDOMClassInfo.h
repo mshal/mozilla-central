@@ -420,7 +420,7 @@ public:
                                           JSMutableHandleValue vp);
   static JSBool SecurityCheckOnSetProp(JSContext *cx, JSHandleObject obj, JSHandleId id,
                                        JSBool strict, JSMutableHandleValue vp);
-  static void InvalidateGlobalScopePolluter(JSContext *cx, JSObject *obj);
+  static JSBool InvalidateGlobalScopePolluter(JSContext *cx, JSObject *obj);
   static nsresult InstallGlobalScopePolluter(JSContext *cx, JSObject *obj,
                                              nsIHTMLDocument *doc);
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
@@ -1512,38 +1512,6 @@ public:
   static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
   {
     return new nsNewDOMBindingSH<T, BaseType>(aData);
-  }
-};
-
-class nsWebGLViewportHandlerSH
-  : public nsNewDOMBindingSH<nsICanvasRenderingContextInternal>
-{
-protected:
-  nsWebGLViewportHandlerSH(nsDOMClassInfoData *aData)
-    : nsNewDOMBindingSH<nsICanvasRenderingContextInternal>(aData)
-  {
-  }
-
-  virtual ~nsWebGLViewportHandlerSH()
-  {
-  }
-
-public:
-  NS_IMETHOD PostCreatePrototype(JSContext * cx, JSObject * proto) {
-    nsresult rv = nsDOMGenericSH::PostCreatePrototype(cx, proto);
-    if (NS_SUCCEEDED(rv)) {
-      if (!::JS_DefineProperty(cx, proto, "VIEWPORT", INT_TO_JSVAL(0x0BA2),
-                               nullptr, nullptr, JSPROP_ENUMERATE))
-      {
-        return NS_ERROR_UNEXPECTED;
-      }
-    }
-    return rv;
-  }
-
-  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
-  {
-    return new nsWebGLViewportHandlerSH(aData);
   }
 };
 

@@ -13,6 +13,11 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/BrowserElementPromptService.jsm");
 
+XPCOMUtils.defineLazyGetter(this, "DOMApplicationRegistry", function () {
+  Cu.import("resource://gre/modules/Webapps.jsm");
+  return DOMApplicationRegistry;
+});
+
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
 const BROWSER_FRAMES_ENABLED_PREF = "dom.mozBrowserFramesEnabled";
 const TOUCH_EVENTS_ENABLED_PREF = "dom.w3c_touch_events.enabled";
@@ -250,6 +255,18 @@ function BrowserElementParent(frameLoader, hasRemoteFrame) {
 
   // Insert ourself into the prompt service.
   BrowserElementPromptService.mapFrameToBrowserElementParent(this._frameElement, this);
+
+  // If this browser represents an app then let the Webapps module register for
+  // any messages that it needs.
+  let appManifestURL =
+    this._frameElement.QueryInterface(Ci.nsIMozBrowserFrame).appManifestURL;
+  if (appManifestURL) {
+    let appId =
+      DOMApplicationRegistry.getAppLocalIdByManifestURL(appManifestURL);
+    if (appId != Ci.nsIScriptSecurityManager.NO_APP_ID) {
+      DOMApplicationRegistry.registerBrowserElementParentForApp(this, appId);
+    }
+  }
 }
 
 BrowserElementParent.prototype = {
@@ -322,15 +339,9 @@ BrowserElementParent.prototype = {
     try {
       this._mm.sendAsyncMessage('browser-element-api:' + msg, data);
     } catch (e) {
-      // Ignore NS_ERROR_NOT_INITIALIZED. This exception is thrown when
-      // we call _sendAsyncMsg if our frame is not in the DOM, in which case
-      // we don't have child to receive the message.
-      if (e.result == Cr.NS_ERROR_NOT_INITIALIZED) {
-        debug("Handle NS_ERROR_NOT_INITIALIZED");
-        return;
-      }
-      throw e;
+      return false;
     }
+    return true;
   },
 
   _recvHello: function(data) {
@@ -462,8 +473,11 @@ BrowserElementParent.prototype = {
   _sendDOMRequest: function(msgName) {
     let id = 'req_' + this._domRequestCounter++;
     let req = Services.DOMRequest.createRequest(this._window);
-    this._pendingDOMRequests[id] = req;
-    this._sendAsyncMsg(msgName, {id: id});
+    if (this._sendAsyncMsg(msgName, {id: id})) {
+      this._pendingDOMRequests[id] = req;
+    } else {
+      Services.DOMRequest.fireErrorAsync(req, "fail");
+    }
     return req;
   },
 

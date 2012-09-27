@@ -9,7 +9,12 @@ generated_webidl_files = \
   $(NULL)
 
 webidl_files = \
+  AudioBuffer.webidl \
+  AudioBufferSourceNode.webidl \
   AudioContext.webidl \
+  AudioDestinationNode.webidl \
+  AudioNode.webidl \
+  AudioSourceNode.webidl \
   Blob.webidl \
   CanvasRenderingContext2D.webidl \
   ClientRectList.webidl \
@@ -20,6 +25,7 @@ webidl_files = \
   EventListener.webidl \
   EventTarget.webidl \
   FileList.webidl \
+  FileReaderSync.webidl \
   HTMLCollection.webidl \
   HTMLOptionsCollection.webidl \
   HTMLPropertiesCollection.webidl \

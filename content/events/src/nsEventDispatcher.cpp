@@ -10,7 +10,6 @@
 #include "nsEventListenerManager.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
-#include "mozilla/FunctionTimer.h"
 #include "nsMutationEvent.h"
 #include NEW_H
 #include "nsFixedSizeAllocator.h"
@@ -461,12 +460,6 @@ nsEventDispatcher::Dispatch(nsISupports* aTarget,
   NS_ENSURE_TRUE(aEvent->message || !aDOMEvent || aTargets,
                  NS_ERROR_DOM_INVALID_STATE_ERR);
 
-#ifdef NS_FUNCTION_TIMER
-  const char* timer_event_name = nsDOMEvent::GetEventName(aEvent->message);
-  NS_TIME_FUNCTION_MIN_FMT(20, "Dispatching '%s' event",
-                           timer_event_name ? timer_event_name : "<other>");
-#endif
-
   nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(aTarget);
 
   bool retargeted = false;
@@ -760,9 +753,6 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
     case NS_SIMPLE_GESTURE_EVENT:
       return NS_NewDOMSimpleGestureEvent(aDOMEvent, aPresContext,
                                          static_cast<nsSimpleGestureEvent*>(aEvent));
-    case NS_MOZTOUCH_EVENT:
-      return NS_NewDOMMozTouchEvent(aDOMEvent, aPresContext,
-                                    static_cast<nsMozTouchEvent*>(aEvent));
     case NS_TOUCH_EVENT:
       return NS_NewDOMTouchEvent(aDOMEvent, aPresContext,
                                  static_cast<nsTouchEvent*>(aEvent));
@@ -843,8 +833,6 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
     return NS_NewDOMBeforeUnloadEvent(aDOMEvent, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("pagetransition"))
     return NS_NewDOMPageTransitionEvent(aDOMEvent, aPresContext, nullptr);
-  if (aEventType.LowerCaseEqualsLiteral("moztouchevent"))
-    return NS_NewDOMMozTouchEvent(aDOMEvent, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("scrollareaevent"))
     return NS_NewDOMScrollAreaEvent(aDOMEvent, aPresContext, nullptr);
   // FIXME: Should get spec to say what the right string is here!  This

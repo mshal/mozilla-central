@@ -516,22 +516,23 @@ ContextStack::popFrameAfterOverflow()
 }
 
 inline JSScript *
-ContextStack::currentScript(jsbytecode **ppc) const
+ContextStack::currentScript(jsbytecode **ppc,
+                            MaybeAllowCrossCompartment allowCrossCompartment) const
 {
     if (ppc)
         *ppc = NULL;
 
     if (!hasfp())
         return NULL;
-		
+
     FrameRegs &regs = this->regs();
     StackFrame *fp = regs.fp();
 
 #ifdef JS_ION
     if (fp->beginsIonActivation()) {
-        JSScript *script = NULL;
+        RootedScript script(cx_);
         ion::GetPcScript(cx_, &script, ppc);
-        if (script->compartment() != cx_->compartment)
+        if (!allowCrossCompartment && script->compartment() != cx_->compartment)
             return NULL;
         return script;
     }
@@ -544,7 +545,7 @@ ContextStack::currentScript(jsbytecode **ppc) const
         JS_ASSERT(inlined->inlineIndex < chunk->nInlineFrames);
         mjit::InlineFrame *frame = &chunk->inlineFrames()[inlined->inlineIndex];
         JSScript *script = frame->fun->script();
-        if (script->compartment() != cx_->compartment)
+        if (!allowCrossCompartment && script->compartment() != cx_->compartment)
             return NULL;
         if (ppc)
             *ppc = script->code + inlined->pcOffset;
@@ -553,7 +554,7 @@ ContextStack::currentScript(jsbytecode **ppc) const
 #endif
 
     JSScript *script = fp->script();
-    if (script->compartment() != cx_->compartment)
+    if (!allowCrossCompartment && script->compartment() != cx_->compartment)
         return NULL;
 
     if (ppc)

@@ -835,7 +835,7 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
 }
 
 JSObject *
-js_InitExceptionClasses(JSContext *cx, JSObject *obj)
+js_InitExceptionClasses(JSContext *cx, HandleObject obj)
 {
     JS_ASSERT(obj->isGlobal());
     JS_ASSERT(obj->isNative());
@@ -1135,8 +1135,8 @@ js_ReportUncaughtException(JSContext *cx)
         report.exnType = int16_t(JSEXN_NONE);
         report.column = (unsigned) column;
         if (str) {
-            if (JSFixedString *fixed = str->ensureFixed(cx))
-                report.ucmessage = fixed->chars();
+            if (JSStableString *stable = str->ensureStable(cx))
+                report.ucmessage = stable->chars();
         }
     }
 

@@ -334,7 +334,7 @@ SetPropertyOperation(JSContext *cx, jsbytecode *pc, HandleValue lval, HandleValu
 
             if (shape->hasDefaultSetter() && shape->hasSlot()) {
                 /* Fast path for, e.g., plain Object instance properties. */
-                obj->nativeSetSlotWithType(cx, shape, rval);
+                JSObject::nativeSetSlotWithType(cx, obj, shape, rval);
             } else {
                 RootedValue rref(cx, rval);
                 bool strict = cx->stack.currentScript()->strictModeCode;
@@ -706,7 +706,7 @@ GetObjectElementOperation(JSContext *cx, JSOp op, HandleObject obj, const Value 
         if (!cx->fp()->beginsIonActivation()) {
             // Don't update getStringElement if called from Ion code, since
             // ion::GetPcScript is expensive.
-            JSScript *script;
+            RootedScript script(cx);
             jsbytecode *pc;
             types::TypeScript::GetPcScript(cx, &script, &pc);
 
@@ -803,13 +803,13 @@ SetObjectElementOperation(JSContext *cx, Handle<JSObject*> obj, HandleId id, con
                     if (js_PrototypeHasIndexedProperties(cx, obj))
                         break;
                     if ((uint32_t)i >= obj->getArrayLength())
-                        obj->setArrayLength(cx, i + 1);
+                        JSObject::setArrayLength(cx, obj, i + 1);
                 }
-                obj->setDenseArrayElementWithType(cx, i, value);
+                JSObject::setDenseArrayElementWithType(cx, obj, i, value);
                 return true;
             } else {
                 if (!cx->fp()->beginsIonActivation()) {
-                    JSScript *script;
+                    RootedScript script(cx);
                     jsbytecode *pc;
                     types::TypeScript::GetPcScript(cx, &script, &pc);
 

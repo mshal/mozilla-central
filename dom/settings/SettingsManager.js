@@ -209,7 +209,7 @@ SettingsLock.prototype = {
 };
 
 const SETTINGSMANAGER_CONTRACTID = "@mozilla.org/settingsManager;1";
-const SETTINGSMANAGER_CID        = Components.ID("{0694f5e0-f777-11e1-a21f-0800200c9a66}");
+const SETTINGSMANAGER_CID        = Components.ID("{c40b1c70-00fb-11e2-a21f-0800200c9a66}");
 const nsIDOMSettingsManager      = Ci.nsIDOMSettingsManager;
 
 let myGlobal = this;
@@ -237,10 +237,14 @@ SettingsManager.prototype = {
   },
 
   set onsettingchange(aCallback) {
-    if (this.hasPrivileges)
+    if (this.hasPrivileges) {
+      if (!this._onsettingchange) {
+        cpmm.sendAsyncMessage("Settings:RegisterForMessages");
+      }
       this._onsettingchange = aCallback;
-    else
+    } else {
       throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+    }
   },
 
   get onsettingchange() {
@@ -257,11 +261,6 @@ SettingsManager.prototype = {
       myGlobal );
     this.nextTick(function() { this._open = false; }, lock);
     return lock;
-  },
-
-  getLock: function() {
-    dump("WARNING: Use createLock instead of getLock!");
-    return this.createLock();
   },
 
   receiveMessage: function(aMessage) {
@@ -299,8 +298,10 @@ SettingsManager.prototype = {
 
   addObserver: function addObserver(aName, aCallback) {
     debug("addObserver " + aName);
-    if (!this._callbacks)
+    if (!this._callbacks) {
+      cpmm.sendAsyncMessage("Settings:RegisterForMessages");
       this._callbacks = {};
+    }
     if (!this._callbacks[aName]) {
       this._callbacks[aName] = [aCallback];
     } else {
@@ -341,6 +342,7 @@ SettingsManager.prototype = {
   observe: function(aSubject, aTopic, aData) {
     debug("Topic: " + aTopic);
     if (aTopic == "inner-window-destroyed") {
+      cpmm.sendAsyncMessage("Settings:UnregisterForMessages");
       let wId = aSubject.QueryInterface(Ci.nsISupportsPRUint64).data;
       if (wId == this.innerWindowID) {
         Services.obs.removeObserver(this, "inner-window-destroyed");

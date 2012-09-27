@@ -40,7 +40,6 @@
 #include "nsIUploadChannel2.h"
 #include "nsXULAppAPI.h"
 
-#include "mozilla/FunctionTimer.h"
 
 #if defined(XP_WIN) || defined(MOZ_PLATFORM_MAEMO)
 #include "nsNativeConnectionHelper.h"
@@ -157,8 +156,6 @@ nsIOService::nsIOService()
 nsresult
 nsIOService::Init()
 {
-    NS_TIME_FUNCTION;
-
     nsresult rv;
 
     // We need to get references to the DNS service so that we can shut it
@@ -171,8 +168,6 @@ nsIOService::Init()
         return rv;
     }
 
-    NS_TIME_FUNCTION_MARK("got DNS Service");
-
     // XXX hack until xpidl supports error info directly (bug 13423)
     nsCOMPtr<nsIErrorService> errorService = do_GetService(NS_ERRORSERVICE_CONTRACTID);
     if (errorService) {
@@ -181,8 +176,6 @@ nsIOService::Init()
     else
         NS_WARNING("failed to get error service");
     
-    NS_TIME_FUNCTION_MARK("got Error Service");
-
     // setup our bad port list stuff
     for(int i=0; gBadPortList[i]; i++)
         mRestrictedPortList.AppendElement(gBadPortList[i]);
@@ -209,14 +202,10 @@ nsIOService::Init()
     }
     else
         NS_WARNING("failed to get observer service");
-        
-    NS_TIME_FUNCTION_MARK("Registered observers");
 
     gIOService = this;
 
     InitializeNetworkLinkService();
- 
-    NS_TIME_FUNCTION_MARK("Set up network link service");
 
     return NS_OK;
 }
@@ -230,8 +219,6 @@ nsIOService::~nsIOService()
 nsresult
 nsIOService::InitializeSocketTransportService()
 {
-    NS_TIME_FUNCTION;
-
     nsresult rv = NS_OK;
 
     if (!mSocketTransportService) {
@@ -245,6 +232,7 @@ nsIOService::InitializeSocketTransportService()
         rv = mSocketTransportService->Init();
         NS_ASSERTION(NS_SUCCEEDED(rv), "socket transport service init failed");
         mSocketTransportService->SetAutodialEnabled(mAutoDialEnabled);
+        mSocketTransportService->SetOffline(false);
     }
 
     return rv;
@@ -253,8 +241,6 @@ nsIOService::InitializeSocketTransportService()
 nsresult
 nsIOService::InitializeNetworkLinkService()
 {
-    NS_TIME_FUNCTION;
-
     nsresult rv = NS_OK;
 
     if (mNetworkLinkServiceInitialized)
@@ -742,41 +728,36 @@ nsIOService::SetOffline(bool offline)
         }
     }
 
+    nsIIOService *subject = static_cast<nsIIOService *>(this);
+    nsresult rv;
     while (mSetOfflineValue != mOffline) {
         offline = mSetOfflineValue;
 
-        nsresult rv;
         if (offline && !mOffline) {
             NS_NAMED_LITERAL_STRING(offlineString, NS_IOSERVICE_OFFLINE);
             mOffline = true; // indicate we're trying to shutdown
 
-            // don't care if notification fails
-            // this allows users to attempt a little cleanup before dns and socket transport are shut down.
+            // don't care if notifications fail
             if (observerService)
-                observerService->NotifyObservers(static_cast<nsIIOService *>(this),
+                observerService->NotifyObservers(subject,
                                                  NS_IOSERVICE_GOING_OFFLINE_TOPIC,
                                                  offlineString.get());
 
-            // be sure to try and shutdown both (even if the first fails)...
-            // shutdown dns service first, because it has callbacks for socket transport
-            if (mDNSService) {
-                rv = mDNSService->Shutdown();
-                NS_ASSERTION(NS_SUCCEEDED(rv), "DNS service shutdown failed");
-            }
-            if (mSocketTransportService) {
-                rv = mSocketTransportService->Shutdown();
-                NS_ASSERTION(NS_SUCCEEDED(rv), "socket transport service shutdown failed");
-            }
+            if (mDNSService)
+                mDNSService->SetOffline(true);
 
-            // don't care if notification fails
+            if (mSocketTransportService)
+                mSocketTransportService->SetOffline(true);
+
             if (observerService)
-                observerService->NotifyObservers(static_cast<nsIIOService *>(this),
+                observerService->NotifyObservers(subject,
                                                  NS_IOSERVICE_OFFLINE_STATUS_TOPIC,
                                                  offlineString.get());
         }
         else if (!offline && mOffline) {
             // go online
             if (mDNSService) {
+                mDNSService->SetOffline(false);
                 rv = mDNSService->Init();
                 NS_ASSERTION(NS_SUCCEEDED(rv), "DNS service init failed");
             }
@@ -790,9 +771,23 @@ nsIOService::SetOffline(bool offline)
 
             // don't care if notification fails
             if (observerService)
-                observerService->NotifyObservers(static_cast<nsIIOService *>(this),
+                observerService->NotifyObservers(subject,
                                                  NS_IOSERVICE_OFFLINE_STATUS_TOPIC,
                                                  NS_LITERAL_STRING(NS_IOSERVICE_ONLINE).get());
+        }
+    }
+
+    // Don't notify here, as the above notifications (if used) suffice.
+    if (mShutdown && mOffline) {
+        // be sure to try and shutdown both (even if the first fails)...
+        // shutdown dns service first, because it has callbacks for socket transport
+        if (mDNSService) {
+            rv = mDNSService->Shutdown();
+            NS_ASSERTION(NS_SUCCEEDED(rv), "DNS service shutdown failed");
+        }
+        if (mSocketTransportService) {
+            rv = mSocketTransportService->Shutdown();
+            NS_ASSERTION(NS_SUCCEEDED(rv), "socket transport service shutdown failed");
         }
     }
 

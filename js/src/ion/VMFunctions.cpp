@@ -39,13 +39,12 @@ InvokeFunction(JSContext *cx, JSFunction *fun, uint32 argc, Value *argv, Value *
         JSScript *script = GetTopIonJSScript(cx);
         if (script->hasIonScript() && ++script->ion->slowCallCount >= js_IonOptions.slowCallLimit) {
             AutoFlushCache afc("InvokeFunction");
-            Invalidate(cx, script, false);
 
-            // Finally, poison the script so we don't try to run it again
-            ForbidCompilation(script);
+            // Poison the script so we don't try to run it again. This will
+            // trigger invalidation.
+            ForbidCompilation(cx, script);
         }
     }
-
 
     // TI will return false for monitorReturnTypes, meaning there is no
     // TypeBarrier or Monitor instruction following this. However, we need to
@@ -237,8 +236,9 @@ IteratorMore(JSContext *cx, HandleObject obj, JSBool *res)
 }
 
 JSObject*
-NewInitArray(JSContext *cx, uint32_t count, types::TypeObject *type)
+NewInitArray(JSContext *cx, uint32_t count, types::TypeObject *typeArg)
 {
+    RootedTypeObject type(cx, typeArg);
     RootedObject obj(cx, NewDenseAllocatedArray(cx, count));
     if (!obj)
         return NULL;
@@ -327,6 +327,18 @@ ArrayShiftDense(JSContext *cx, HandleObject obj, MutableHandleValue rval)
     if (rval.isUndefined())
         types::TypeScript::Monitor(cx, rval);
     return true;
+}
+
+JSFlatString *
+StringFromCharCode(JSContext *cx, int32_t code)
+{
+    jschar c = jschar(code);
+
+    if (StaticStrings::hasUnit(c))
+        return cx->runtime->staticStrings.getUnit(c);
+
+    return js_NewStringCopyN(cx, &c, 1);
+
 }
 
 bool

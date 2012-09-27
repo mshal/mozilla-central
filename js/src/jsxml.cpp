@@ -1180,7 +1180,10 @@ ParseNodeToQName(Parser *parser, ParseNode *pn,
     JSLinearString *nsprefix;
 
     JS_ASSERT(pn->isArity(PN_NULLARY));
-    JSAtom *str = pn->pn_atom;
+    JSAtom *atom = pn->pn_atom;
+    JSStableString *str = atom->ensureStable(cx);
+    if (!str)
+        return NULL;
     start = str->chars();
     length = str->length();
     JS_ASSERT(length != 0 && *start != '@');
@@ -1258,7 +1261,7 @@ ParseNodeToQName(Parser *parser, ParseNode *pn,
             }
             prefix = uri->empty() ? parser->context->runtime->emptyString : NULL;
         }
-        localName = str;
+        localName = atom;
     }
 
     return NewXMLQName(parser->context, uri, prefix, localName);
@@ -7324,7 +7327,7 @@ js_GetXMLObject(JSContext *cx, JSXML *xmlArg)
 }
 
 JSObject *
-js_InitNamespaceClass(JSContext *cx, JSObject *obj)
+js_InitNamespaceClass(JSContext *cx, HandleObject obj)
 {
     cx->runtime->gcExactScanningEnabled = false;
 
@@ -7358,7 +7361,7 @@ js_InitNamespaceClass(JSContext *cx, JSObject *obj)
 }
 
 JSObject *
-js_InitQNameClass(JSContext *cx, JSObject *obj)
+js_InitQNameClass(JSContext *cx, HandleObject obj)
 {
     cx->runtime->gcExactScanningEnabled = false;
 
@@ -7391,7 +7394,7 @@ js_InitQNameClass(JSContext *cx, JSObject *obj)
 }
 
 JSObject *
-js_InitXMLClass(JSContext *cx, JSObject *obj)
+js_InitXMLClass(JSContext *cx, HandleObject obj)
 {
     cx->runtime->gcExactScanningEnabled = false;
     Rooted<GlobalObject *> global(cx, &obj->asGlobal());
@@ -7453,7 +7456,7 @@ js_InitXMLClass(JSContext *cx, JSObject *obj)
 }
 
 JSObject *
-js_InitXMLClasses(JSContext *cx, JSObject *obj)
+js_InitXMLClasses(JSContext *cx, HandleObject obj)
 {
     if (!js_InitNamespaceClass(cx, obj))
         return NULL;

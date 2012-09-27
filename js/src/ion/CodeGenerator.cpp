@@ -197,7 +197,7 @@ CodeGenerator::visitPolyInlineDispatch(LPolyInlineDispatch *lir)
 bool
 CodeGenerator::visitIntToString(LIntToString *lir)
 {
-    typedef JSFixedString *(*pf)(JSContext *, int);
+    typedef JSFlatString *(*pf)(JSContext *, int);
     static const VMFunction IntToStringInfo = FunctionInfo<pf>(Int32ToString);
 
     pushArg(ToRegister(lir->input()));
@@ -1096,8 +1096,9 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
                 return false;
 
             JS_ASSERT(ArgumentsRectifierReg != objreg);
+            masm.movePtr(ImmGCPtr(argumentsRectifier), objreg); // Necessary for GC marking.
+            masm.movePtr(Address(objreg, IonCode::OffsetOfCode()), objreg);
             masm.movePtr(argcreg, ArgumentsRectifierReg);
-            masm.movePtr(ImmWord(argumentsRectifier->raw()), objreg);
         }
 
         masm.bind(&rejoin);
@@ -2046,30 +2047,19 @@ CodeGenerator::visitFromCharCode(LFromCharCode *lir)
     Register code = ToRegister(lir->code());
     Register output = ToRegister(lir->output());
 
-    // This static variable would be used by js_NewString as an initial buffer.
-    Label fast;
-    masm.cmpPtr(code, ImmWord(StaticStrings::UNIT_STATIC_LIMIT));
-    masm.j(Assembler::Below, &fast);
-
-    // Store the code in the tmpString. This assume that jitted codes are not
-    // running concurently.
-    static jschar tmpString[2] = {0, 0};
-    Register tmpStringAddr = output;
-    masm.movePtr(ImmWord(tmpString), tmpStringAddr);
-    masm.store16(code, Address(tmpStringAddr, 0));
-
-    // Copy the tmpString to a newly allocated string.
-    typedef JSFixedString *(*pf)(JSContext *, const jschar *, size_t);
-    static const VMFunction newStringCopyNInfo = FunctionInfo<pf>(js_NewStringCopyN);
-    OutOfLineCode *ool = oolCallVM(newStringCopyNInfo, lir, (ArgList(), tmpStringAddr, Imm32(1)),
-                                   StoreRegisterTo(output));
+    typedef JSFlatString *(*pf)(JSContext *, int32_t);
+    static const VMFunction Info = FunctionInfo<pf>(ion::StringFromCharCode);
+    OutOfLineCode *ool = oolCallVM(Info, lir, (ArgList(), code), StoreRegisterTo(output));
     if (!ool)
         return false;
 
-    masm.jump(ool->entry());
-    masm.bind(&fast);
+    // OOL path if code >= UNIT_STATIC_LIMIT.
+    masm.branch32(Assembler::AboveOrEqual, code, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
+                  ool->entry());
+
     masm.movePtr(ImmWord(&gen->compartment->rt->staticStrings.unitStaticTable), output);
     masm.loadPtr(BaseIndex(output, code, ScalePointer), output);
+
     masm.bind(ool->rejoin());
     return true;
 }
@@ -2655,7 +2645,7 @@ CodeGenerator::visitIteratorNext(LIteratorNext *lir)
     const Register temp = ToRegister(lir->temp());
     const ValueOperand output = ToOutValue(lir);
 
-    typedef bool (*pf)(JSContext *, JSObject *, MutableHandleValue);
+    typedef bool (*pf)(JSContext *, HandleObject, MutableHandleValue);
     static const VMFunction Info = FunctionInfo<pf>(js_IteratorNext);
 
     OutOfLineCode *ool = oolCallVM(Info, lir, (ArgList(), obj), StoreValueTo(output));
@@ -2713,7 +2703,7 @@ CodeGenerator::visitIteratorEnd(LIteratorEnd *lir)
     const Register temp1 = ToRegister(lir->temp1());
     const Register temp2 = ToRegister(lir->temp2());
 
-    typedef bool (*pf)(JSContext *, JSObject *);
+    typedef bool (*pf)(JSContext *, HandleObject);
     static const VMFunction Info = FunctionInfo<pf>(CloseIterator);
 
     OutOfLineCode *ool = oolCallVM(Info, lir, (ArgList(), obj), StoreNothing());
@@ -2826,7 +2816,7 @@ CodeGenerator::generate()
                                  bailouts_.length(), graph.numConstants(),
                                  safepointIndices_.length(), osiIndices_.length(),
                                  cacheList_.length(), barrierOffsets_.length(),
-                                 safepoints_.size());
+                                 safepoints_.size(), graph.mir().numScripts());
     if (!script->ion)
         return false;
     invalidateEpilogueData_.fixup(&masm);
@@ -2861,6 +2851,9 @@ CodeGenerator::generate()
         script->ion->copyPrebarrierEntries(&barrierOffsets_[0], masm);
     if (safepoints_.size())
         script->ion->copySafepoints(&safepoints_);
+
+    JS_ASSERT(graph.mir().numScripts() > 0);
+    script->ion->copyScriptEntries(graph.mir().scripts());
 
     linkAbsoluteLabels();
 

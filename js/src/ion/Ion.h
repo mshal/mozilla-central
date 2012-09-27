@@ -216,9 +216,9 @@ IonContext *GetIonContext();
 
 bool SetIonContext(IonContext *ctx);
 
-MethodStatus CanEnterAtBranch(JSContext *cx, JSScript *script,
+MethodStatus CanEnterAtBranch(JSContext *cx, HandleScript script,
                               StackFrame *fp, jsbytecode *pc);
-MethodStatus CanEnter(JSContext *cx, JSScript *script, StackFrame *fp, bool newType);
+MethodStatus CanEnter(JSContext *cx, HandleScript script, StackFrame *fp, bool newType);
 
 enum IonExecStatus
 {
@@ -252,7 +252,7 @@ static inline bool IsEnabled(JSContext *cx)
     return cx->hasRunOption(JSOPTION_ION) && cx->typeInferenceEnabled();
 }
 
-void ForbidCompilation(JSScript *script);
+void ForbidCompilation(JSContext *cx, JSScript *script);
 uint32_t UsesBeforeIonRecompile(JSScript *script, jsbytecode *pc);
 
 } // namespace ion

@@ -13,10 +13,13 @@ Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 Cu.import('resource://gre/modules/ContactService.jsm');
 Cu.import('resource://gre/modules/SettingsChangeNotifier.jsm');
-Cu.import('resource://gre/modules/Webapps.jsm');
+#ifdef MOZ_B2G_FM
+Cu.import('resource://gre/modules/DOMFMRadioParent.jsm');
+#endif
 Cu.import('resource://gre/modules/AlarmService.jsm');
 Cu.import('resource://gre/modules/ActivitiesService.jsm');
 Cu.import('resource://gre/modules/PermissionPromptHelper.jsm');
+Cu.import('resource://gre/modules/PermissionSettings.jsm');
 Cu.import('resource://gre/modules/ObjectWrapper.jsm');
 Cu.import('resource://gre/modules/accessibility/AccessFu.jsm');
 Cu.import('resource://gre/modules/Payment.jsm');
@@ -74,11 +77,6 @@ var shell = {
     if (Services.prefs.getBoolPref('app.reportCrashes') &&
         crashID) {
 
-      if (!Services.io.offline) {
-        this.CrashSubmit.submit(crashID);
-        return;
-      }
-
       Services.obs.addObserver(function observer(subject, topic, state) {
           if (topic != "network:offline-status-changed")
             return;
@@ -111,6 +109,19 @@ var shell = {
    },
 
   start: function shell_start() {
+
+    // Dogfood id. We might want to remove it in the future.
+    // see bug 789466
+    try {
+      let dogfoodId = Services.prefs.getCharPref('prerelease.dogfood.id');
+      if (dogfoodId != "") {
+        let cr = Cc["@mozilla.org/xre/app-info;1"]
+                   .getService(Ci.nsICrashReporter);
+        cr.annotateCrashReport("Email", dogfoodId);
+      }
+    }
+    catch (e) { }
+
     let homeURL = this.homeURL;
     if (!homeURL) {
       let msg = 'Fatal error during startup: No homescreen found: try setting B2G_HOMESCREEN';
@@ -297,6 +308,9 @@ var shell = {
         let chromeWindow = window.QueryInterface(Ci.nsIDOMChromeWindow);
         chromeWindow.browserDOMWindow = new nsBrowserAccess();
 
+        Cu.import('resource://gre/modules/Webapps.jsm');
+        DOMApplicationRegistry.allAppsLaunchable = true;
+
         this.sendEvent(window, 'ContentStart');
         break;
       case 'MozApplicationManifest':
@@ -367,7 +381,8 @@ var shell = {
       name: 'view',
       data: {
         type: handler.type,
-        url: handler.url
+        url: handler.url,
+        extras: handler.extras
       }
     });
   }
@@ -424,6 +439,16 @@ Services.obs.addObserver(function(aSubject, aTopic, aData) {
 Services.obs.addObserver(function onWebappsReady(subject, topic, data) {
   shell.sendChromeEvent({ type: 'webapps-registry-ready' });
 }, 'webapps-registry-ready', false);
+
+Services.obs.addObserver(function onBluetoothVolumeChange(subject, topic, data) {
+  if (data == 'up') {
+    shell.sendChromeEvent({ type: 'volume-up-button-press' });
+    shell.sendChromeEvent({ type: 'volume-up-button-release' });
+  } else if (data == 'down') {
+    shell.sendChromeEvent({ type: 'volume-down-button-press' });
+    shell.sendChromeEvent({ type: 'volume-down-button-release' });
+  }
+}, 'bluetooth-volume-change', false);
 
 (function Repl() {
   if (!Services.prefs.getBoolPref('b2g.remote-js.enabled')) {
@@ -568,7 +593,6 @@ var WebappsHelper = {
   init: function webapps_init() {
     Services.obs.addObserver(this, "webapps-launch", false);
     Services.obs.addObserver(this, "webapps-ask-install", false);
-    DOMApplicationRegistry.allAppsLaunchable = true;
   },
 
   registerInstaller: function webapps_registerInstaller(data) {
@@ -594,6 +618,8 @@ var WebappsHelper = {
 
   observe: function webapps_observe(subject, topic, data) {
     let json = JSON.parse(data);
+    json.mm = subject;
+
     switch(topic) {
       case "webapps-launch":
         DOMApplicationRegistry.getManifestFor(json.origin, function(aManifest) {

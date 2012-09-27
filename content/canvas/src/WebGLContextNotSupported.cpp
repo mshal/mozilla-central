@@ -10,7 +10,6 @@
 
 DUMMY(NS_NewCanvasRenderingContextWebGL, nsIDOMWebGLRenderingContext)
 
-DOMCI_DATA(WebGLRenderingContext, void)
 DOMCI_DATA(WebGLBuffer, void)
 DOMCI_DATA(WebGLTexture, void)
 DOMCI_DATA(WebGLProgram, void)
@@ -25,4 +24,6 @@ DOMCI_DATA(WebGLExtensionStandardDerivatives, void)
 DOMCI_DATA(WebGLExtensionTextureFilterAnisotropic, void)
 DOMCI_DATA(WebGLExtensionLoseContext, void)
 DOMCI_DATA(WebGLExtensionCompressedTextureS3TC, void)
+DOMCI_DATA(WebGLExtensionCompressedTextureATC, void)
+DOMCI_DATA(WebGLExtensionCompressedTexturePVRTC, void)
 DOMCI_DATA(WebGLExtensionDepthTexture, void)

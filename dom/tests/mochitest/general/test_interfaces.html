@@ -290,6 +290,8 @@ var interfaceNamesInGlobalScope =
     "CSSPrimitiveValue",
     "SVGStopElement",
     "WebGLExtensionCompressedTextureS3TC",
+    "WebGLExtensionCompressedTextureATC",
+    "WebGLExtensionCompressedTexturePVRTC",
     "XULCommandEvent",
     "HTMLMediaElement",
     "SVGPathSegLinetoHorizontalAbs",
@@ -533,10 +535,12 @@ var interfaceNamesInGlobalScope =
     "MozCanvasPrintState",
     "TCPSocket",
     "MozTimeManager",
-    "MozNavigatorTime"
+    "MozNavigatorTime",
+    "PermissionSettings",
+    "DataErrorEvent"
   ]
 
-for (var i in Components.interfaces) {
+for (var i in SpecialPowers.Components.interfaces) {
   var s = i.toString();
   var name = null;
   if (s.indexOf("nsIDOM") == 0) {

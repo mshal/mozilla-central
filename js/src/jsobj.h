@@ -279,7 +279,7 @@ struct JSObject : public js::ObjectImpl
      * Update the last property, keeping the number of allocated slots in sync
      * with the object's new slot span.
      */
-    bool setLastProperty(JSContext *cx, js::Shape *shape);
+    static bool setLastProperty(JSContext *cx, js::HandleObject obj, js::Shape *shape);
 
     /* As above, but does not change the slot span. */
     inline void setLastPropertyInfallible(js::Shape *shape);
@@ -394,13 +394,16 @@ struct JSObject : public js::ObjectImpl
      * The number of allocated slots is not stored explicitly, and changes to
      * the slots must track changes in the slot span.
      */
-    bool growSlots(JSContext *cx, uint32_t oldCount, uint32_t newCount);
-    void shrinkSlots(JSContext *cx, uint32_t oldCount, uint32_t newCount);
+    static bool growSlots(JSContext *cx, js::HandleObject obj, uint32_t oldCount,
+                          uint32_t newCount);
+    static void shrinkSlots(JSContext *cx, js::HandleObject obj, uint32_t oldCount,
+                            uint32_t newCount);
 
     bool hasDynamicSlots() const { return slots != NULL; }
 
   protected:
-    inline bool updateSlotsForSpan(JSContext *cx, size_t oldSpan, size_t newSpan);
+    static inline bool updateSlotsForSpan(JSContext *cx, js::HandleObject obj, size_t oldSpan,
+                                          size_t newSpan);
 
   public:
     /*
@@ -413,7 +416,8 @@ struct JSObject : public js::ObjectImpl
     void rollbackProperties(JSContext *cx, uint32_t slotSpan);
 
     inline void nativeSetSlot(unsigned slot, const js::Value &value);
-    inline void nativeSetSlotWithType(JSContext *cx, js::Shape *shape, const js::Value &value);
+    static inline void nativeSetSlotWithType(JSContext *cx, js::HandleObject, js::Shape *shape,
+                                             const js::Value &value);
 
     inline const js::Value &getReservedSlot(unsigned index) const;
     inline js::HeapSlot &getReservedSlotRef(unsigned index);
@@ -432,6 +436,23 @@ struct JSObject : public js::ObjectImpl
         /* Direct field access for use by GC. */
         return type_;
     }
+
+    /*
+     * We allow the prototype of an object to be lazily computed if the object
+     * is a proxy. In the lazy case, we store (JSObject *)0x1 in the proto field
+     * of the object's TypeObject. We offer three ways of getting the prototype:
+     *
+     * 1. obj->getProto() returns the prototype, but asserts if obj is a proxy.
+     * 2. obj->getTaggedProto() returns a TaggedProto, which can be tested to
+     *    check if the proto is an object, NULL, or lazily computed.
+     * 3. JSObject::getProto(cx, obj, &proto) computes the proto of an object.
+     *    If obj is a proxy and the proto is lazy, this code may allocate or
+     *    GC in order to compute the proto. Currently, it will not run JS code.
+     */
+    inline JSObject *getProto() const;
+    inline js::TaggedProto getTaggedProto() const;
+    static inline bool getProto(JSContext *cx, js::HandleObject obj,
+                                js::MutableHandleObject protop);
 
     inline void setType(js::types::TypeObject *newType);
 
@@ -456,7 +477,7 @@ struct JSObject : public js::ObjectImpl
     bool setNewTypeUnknown(JSContext *cx);
 
     /* Set a new prototype for an object with a singleton type. */
-    bool splicePrototype(JSContext *cx, JSObject *proto);
+    bool splicePrototype(JSContext *cx, js::Handle<js::TaggedProto> proto);
 
     /*
      * For bootstrapping, whether to splice a prototype for Function.prototype
@@ -555,7 +576,7 @@ struct JSObject : public js::ObjectImpl
     bool allocateSlowArrayElements(JSContext *cx);
 
     inline uint32_t getArrayLength() const;
-    inline void setArrayLength(JSContext *cx, uint32_t length);
+    static inline void setArrayLength(JSContext *cx, js::HandleObject obj, uint32_t length);
 
     inline uint32_t getDenseArrayCapacity();
     inline void setDenseArrayLength(uint32_t length);
@@ -563,8 +584,10 @@ struct JSObject : public js::ObjectImpl
     inline void ensureDenseArrayInitializedLength(JSContext *cx, unsigned index, unsigned extra);
     inline void setDenseArrayElement(unsigned idx, const js::Value &val);
     inline void initDenseArrayElement(unsigned idx, const js::Value &val);
-    inline void setDenseArrayElementWithType(JSContext *cx, unsigned idx, const js::Value &val);
-    inline void initDenseArrayElementWithType(JSContext *cx, unsigned idx, const js::Value &val);
+    static inline void setDenseArrayElementWithType(JSContext *cx, js::HandleObject obj,
+                                                    unsigned idx, const js::Value &val);
+    static inline void initDenseArrayElementWithType(JSContext *cx, js::HandleObject obj,
+                                                     unsigned idx, const js::Value &val);
     inline void copyDenseArrayElements(unsigned dstStart, const js::Value *src, unsigned count);
     inline void initDenseArrayElements(unsigned dstStart, const js::Value *src, unsigned count);
     inline void moveDenseArrayElements(unsigned dstStart, unsigned srcStart, unsigned count);
@@ -782,7 +805,7 @@ struct JSObject : public js::ObjectImpl
     bool removeProperty(JSContext *cx, jsid id);
 
     /* Clear the scope, making it empty. */
-    void clear(JSContext *cx);
+    static void clear(JSContext *cx, js::HandleObject obj);
 
     static inline JSBool lookupGeneric(JSContext *cx, js::HandleObject obj,
                                        js::HandleId id,
@@ -1161,6 +1184,9 @@ js_DefineOwnProperty(JSContext *cx, js::HandleObject obj, js::HandleId id,
 
 namespace js {
 
+JSObject *
+CloneObject(JSContext *cx, HandleObject obj, Handle<js::TaggedProto> proto, HandleObject parent);
+
 /*
  * Flags for the defineHow parameter of js_DefineNativeProperty.
  */
@@ -1318,10 +1344,10 @@ extern JSBool
 CheckAccess(JSContext *cx, JSObject *obj, HandleId id, JSAccessMode mode,
             MutableHandleValue v, unsigned *attrsp);
 
-} /* namespace js */
-
 extern bool
-js_IsDelegate(JSContext *cx, JSObject *obj, const js::Value &v);
+IsDelegate(JSContext *cx, HandleObject obj, const Value &v, bool *result);
+
+} /* namespace js */
 
 /*
  * Wrap boolean, number or string as Boolean, Number or String object.
@@ -1394,7 +1420,7 @@ js_GetClassPrototype(JSContext *cx, JSProtoKey protoKey, js::MutableHandleObject
 namespace js {
 
 extern bool
-SetProto(JSContext *cx, HandleObject obj, HandleObject proto, bool checkForCycles);
+SetProto(JSContext *cx, HandleObject obj, Handle<TaggedProto> proto, bool checkForCycles);
 
 extern JSString *
 obj_toStringHelper(JSContext *cx, JSObject *obj);

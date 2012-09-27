@@ -30,15 +30,21 @@ EXPORTS_mozilla/gfx	= \
         Matrix.h \
         Rect.h \
         Types.h \
+        Tools.h \
         UserData.h \
 	$(NULL)
 
 CPPSRCS	= \
-	Factory.cpp \
+        Factory.cpp \
+        Rect.cpp \
         Matrix.cpp \
         DrawTargetCairo.cpp \
         SourceSurfaceCairo.cpp \
         PathCairo.cpp \
+        DrawTargetRecording.cpp \
+        PathRecording.cpp \
+        RecordedEvent.cpp \
+        DrawEventRecorder.cpp \
         Blur.cpp \
         ScaledFontBase.cpp \
         DrawTargetDual.cpp \

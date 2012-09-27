@@ -28,7 +28,6 @@
 #include "jsfriendapi.h"
 #include "nsJSPrincipals.h"
 
-#include "mozilla/FunctionTimer.h"
 #include "mozilla/scache/StartupCache.h"
 #include "mozilla/scache/StartupCacheUtils.h"
 
@@ -113,7 +112,7 @@ mozJSSubScriptLoader::ReadScript(nsIURI *uri, JSContext *cx, JSObject *target_ob
     options.setPrincipals(nsJSPrincipals::get(principal))
            .setFileAndLine(uriStr, 1)
            .setSourcePolicy(JS::CompileOptions::LAZY_SOURCE);
-    JS::RootedObject target_obj_root(cx, target_obj);
+    js::RootedObject target_obj_root(cx, target_obj);
     if (!charset.IsVoid()) {
         nsString script;
         rv = nsScriptLoader::ConvertToUTF16(nullptr, reinterpret_cast<const uint8_t*>(buf.get()), len,
@@ -154,11 +153,6 @@ mozJSSubScriptLoader::LoadSubScript(const nsAString& url,
      */
 
     nsresult rv = NS_OK;
-
-#ifdef NS_FUNCTION_TIMER
-    NS_TIME_FUNCTION_FMT("%s (line %d) (url: %s)", MOZ_FUNCTION_NAME,
-                         __LINE__, NS_LossyConvertUTF16toASCII(url).get());
-#endif
 
     /* set the system principal if it's not here already */
     if (!mSystemPrincipal) {

@@ -150,10 +150,10 @@ IonCompartment::initialize(JSContext *cx)
 void
 ion::FinishOffThreadBuilder(IonBuilder *builder)
 {
-    if (builder->script->isIonCompilingOffThread()) {
-        types::TypeCompartment &types = builder->script->compartment()->types;
+    if (builder->script()->isIonCompilingOffThread()) {
+        types::TypeCompartment &types = builder->script()->compartment()->types;
         builder->recompileInfo.compilerOutput(types)->invalidate();
-        builder->script->ion = NULL;
+        builder->script()->ion = NULL;
     }
     js_delete(builder->temp().lifoAlloc());
 }
@@ -423,6 +423,8 @@ IonScript::IonScript()
     prebarrierEntries_(0),
     safepointsStart_(0),
     safepointsSize_(0),
+    scriptList_(0),
+    scriptEntries_(0),
     refcount_(0),
     slowCallCount(0),
     recompileInfo_()
@@ -433,7 +435,7 @@ IonScript *
 IonScript::New(JSContext *cx, uint32 frameSlots, uint32 frameSize, size_t snapshotsSize,
                size_t bailoutEntries, size_t constants, size_t safepointIndices,
                size_t osiIndices, size_t cacheEntries, size_t prebarrierEntries,
-               size_t safepointsSize)
+               size_t safepointsSize, size_t scriptEntries)
 {
     if (snapshotsSize >= MAX_BUFFER_SIZE ||
         (bailoutEntries >= MAX_BUFFER_SIZE / sizeof(uint32)))
@@ -454,6 +456,7 @@ IonScript::New(JSContext *cx, uint32 frameSlots, uint32 frameSize, size_t snapsh
     size_t paddedPrebarrierEntriesSize =
         AlignBytes(prebarrierEntries * sizeof(CodeOffsetLabel), DataAlignment);
     size_t paddedSafepointSize = AlignBytes(safepointsSize, DataAlignment);
+    size_t paddedScriptSize = AlignBytes(scriptEntries * sizeof(JSScript *), DataAlignment);
     size_t bytes = paddedSnapshotsSize +
                    paddedBailoutSize +
                    paddedConstantsSize +
@@ -461,7 +464,8 @@ IonScript::New(JSContext *cx, uint32 frameSlots, uint32 frameSize, size_t snapsh
                    paddedOsiIndicesSize +
                    paddedCacheEntriesSize +
                    paddedPrebarrierEntriesSize +
-                   paddedSafepointSize;
+                   paddedSafepointSize +
+                   paddedScriptSize;
     uint8 *buffer = (uint8 *)cx->malloc_(sizeof(IonScript) + bytes);
     if (!buffer)
         return NULL;
@@ -502,6 +506,10 @@ IonScript::New(JSContext *cx, uint32 frameSlots, uint32 frameSize, size_t snapsh
     script->safepointsStart_ = offsetCursor;
     script->safepointsSize_ = safepointsSize;
     offsetCursor += paddedSafepointSize;
+
+    script->scriptList_ = offsetCursor;
+    script->scriptEntries_ = scriptEntries;
+    offsetCursor += paddedScriptSize;
 
     script->frameSlots_ = frameSlots;
     script->frameSize_ = frameSize;
@@ -549,6 +557,13 @@ IonScript::copyConstants(const HeapValue *vp)
 {
     for (size_t i = 0; i < constantEntries_; i++)
         constants()[i].init(vp[i]);
+}
+
+void
+IonScript::copyScriptEntries(JSScript **scripts)
+{
+    for (size_t i = 0; i < scriptEntries_; i++)
+        scriptList()[i] = scripts[i];
 }
 
 void
@@ -888,17 +903,17 @@ class AutoDestroyAllocator
 bool
 TestCompiler(IonBuilder *builder, MIRGraph *graph, AutoDestroyAllocator &autoDestroy)
 {
-    JS_ASSERT(!builder->script->ion);
+    JS_ASSERT(!builder->script()->ion);
     JSContext *cx = GetIonContext()->cx;
 
-    IonSpewNewFunction(graph, builder->script);
+    IonSpewNewFunction(graph, builder->script());
 
     if (!builder->build())
         return false;
     builder->clearForBackEnd();
 
     if (js_IonOptions.parallelCompilation) {
-        builder->script->ion = ION_COMPILING_SCRIPT;
+        builder->script()->ion = ION_COMPILING_SCRIPT;
 
         if (!StartOffThreadIonCompile(cx, builder))
             return false;
@@ -940,7 +955,7 @@ AttachFinishedCompilations(JSContext *cx)
         IonBuilder *builder = compilations.popCopy();
 
         if (builder->lir) {
-            JSScript *script = builder->script;
+            JSScript *script = builder->script();
             IonContext ictx(cx, cx->compartment, &builder->temp());
 
             CodeGenerator codegen(builder, *builder->lir);
@@ -1032,7 +1047,7 @@ TestIonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osr
 {
     if (!IonCompile<TestCompiler>(cx, script, fun, osrPc, constructing)) {
         if (!cx->isExceptionPending())
-            ForbidCompilation(script);
+            ForbidCompilation(cx, script);
         return false;
     }
     return true;
@@ -1164,7 +1179,7 @@ Compile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, boo
 // Decide if a transition from interpreter execution to Ion code should occur.
 // May compile or recompile the target JSScript.
 MethodStatus
-ion::CanEnterAtBranch(JSContext *cx, JSScript *script, StackFrame *fp, jsbytecode *pc)
+ion::CanEnterAtBranch(JSContext *cx, HandleScript script, StackFrame *fp, jsbytecode *pc)
 {
     JS_ASSERT(ion::IsEnabled(cx));
     JS_ASSERT((JSOp)*pc == JSOP_LOOPENTRY);
@@ -1187,7 +1202,7 @@ ion::CanEnterAtBranch(JSContext *cx, JSScript *script, StackFrame *fp, jsbytecod
 
     // Mark as forbidden if frame can't be handled.
     if (!CheckFrame(fp)) {
-        ForbidCompilation(script);
+        ForbidCompilation(cx, script);
         return Method_CantCompile;
     }
 
@@ -1196,7 +1211,7 @@ ion::CanEnterAtBranch(JSContext *cx, JSScript *script, StackFrame *fp, jsbytecod
     MethodStatus status = Compile<TestCompiler>(cx, script, fun, pc, false);
     if (status != Method_Compiled) {
         if (status == Method_CantCompile)
-            ForbidCompilation(script);
+            ForbidCompilation(cx, script);
         return status;
     }
 
@@ -1214,7 +1229,7 @@ ion::CanEnterAtBranch(JSContext *cx, JSScript *script, StackFrame *fp, jsbytecod
 }
 
 MethodStatus
-ion::CanEnter(JSContext *cx, JSScript *script, StackFrame *fp, bool newType)
+ion::CanEnter(JSContext *cx, HandleScript script, StackFrame *fp, bool newType)
 {
     JS_ASSERT(ion::IsEnabled(cx));
 
@@ -1243,7 +1258,7 @@ ion::CanEnter(JSContext *cx, JSScript *script, StackFrame *fp, bool newType)
 
     // Mark as forbidden if frame can't be handled.
     if (!CheckFrame(fp)) {
-        ForbidCompilation(script);
+        ForbidCompilation(cx, script);
         return Method_CantCompile;
     }
 
@@ -1252,7 +1267,7 @@ ion::CanEnter(JSContext *cx, JSScript *script, StackFrame *fp, bool newType)
     MethodStatus status = Compile<TestCompiler>(cx, script, fun, NULL, fp->isConstructing());
     if (status != Method_Compiled) {
         if (status == Method_CantCompile)
-            ForbidCompilation(script);
+            ForbidCompilation(cx, script);
         return status;
     }
 
@@ -1619,7 +1634,9 @@ ion::Invalidate(JSContext *cx, JSScript *script, bool resetUses)
     JS_ASSERT(script->hasIonScript());
 
     Vector<types::RecompileInfo> scripts(cx);
-    scripts.append(script->ionScript()->recompileInfo());
+    if (!scripts.append(script->ionScript()->recompileInfo()))
+        return false;
+
     Invalidate(cx, scripts, resetUses);
     return true;
 }
@@ -1652,17 +1669,19 @@ ion::MarkFromIon(JSCompartment *comp, Value *vp)
 }
 
 void
-ion::ForbidCompilation(JSScript *script)
+ion::ForbidCompilation(JSContext *cx, JSScript *script)
 {
     IonSpew(IonSpew_Abort, "Disabling Ion compilation of script %s:%d",
             script->filename, script->lineno);
 
-    if (script->hasIonScript() && script->compartment()->needsBarrier()) {
-        // We're about to remove edges from the JSScript to gcthings
-        // embedded in the IonScript. Perform one final trace of the
-        // IonScript for the incremental GC, as it must know about
-        // those edges.
-        IonScript::Trace(script->compartment()->barrierTracer(), script->ion);
+    if (script->hasIonScript()) {
+        // It is only safe to modify script->ion if the script is not currently
+        // running, because IonFrameIterator needs to tell what ionScript to
+        // use (either the one on the JSScript, or the one hidden in the
+        // breadcrumbs Invalidation() leaves). Therefore, if invalidation
+        // fails, we cannot disable the script.
+        if (!Invalidate(cx, script, false))
+            return;
     }
 
     script->ion = ION_DISABLED_SCRIPT;

@@ -977,7 +977,8 @@ nsIFrame::IsTransformed() const
            IsSVGTransformed() ||
            (mContent &&
             nsLayoutUtils::HasAnimationsForCompositor(mContent,
-                                                      eCSSProperty_transform))));
+                                                      eCSSProperty_transform) &&
+            mContent->GetPrimaryFrame() == this)));
 }
 
 bool
@@ -985,7 +986,8 @@ nsIFrame::HasOpacity() const
 {
   return GetStyleDisplay()->mOpacity < 1.0f || (mContent &&
            nsLayoutUtils::HasAnimationsForCompositor(mContent,
-                                                     eCSSProperty_opacity));
+                                                     eCSSProperty_opacity) &&
+           mContent->GetPrimaryFrame() == this);
 }
 
 bool
@@ -5409,7 +5411,7 @@ DebugListFrameTree(nsIFrame* aFrame)
 
 // Debugging
 NS_IMETHODIMP
-nsFrame::List(FILE* out, int32_t aIndent) const
+nsFrame::List(FILE* out, int32_t aIndent, uint32_t aFlags) const
 {
   IndentBy(out, aIndent);
   ListTag(out);

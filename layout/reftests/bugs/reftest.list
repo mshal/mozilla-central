@@ -1586,7 +1586,7 @@ skip-if(!browserIsRemote) == 593243-2.html 593243-2-ref.html # bug 593168
 == 594624-1.html 594624-1-ref.html
 == 594737-1.html 594737-1-ref.html
 == 597721-1.html 597721-1-ref.html
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) needs-focus == 598726-1.html 598726-1-ref.html # Fails on Win7, bug 782196
+random-if(winWidget) needs-focus == 598726-1.html 598726-1-ref.html # Fails on Windows, bug 782196
 == 599113-1.html 599113-1-ref.html
 fails-if(!haveTestPlugin) == 599476.html 599476-ref.html
 == 600045-1.html 600045-1-ref.html
@@ -1630,7 +1630,7 @@ HTTP(..) == 621253-2-externalFilter.html 621253-2-ref.html
 fails-if(Android) HTTP(..) == 619511-1.html 619511-1-ref.html
 random-if(winWidget) fuzzy-if(OSX==10.8,19,17) == 621918-1.svg 621918-1-ref.svg # 1-pixel diacritic positioning discrepancy in rotated text (may depend on platform fonts)
 random-if(winWidget) HTTP(..) == 621918-2.svg 621918-2-ref.svg # same 1px issue as above, and HTTP(..) for filters.svg, used to mask antialiasing issues where glyphs touch
-== 622585-1.html 622585-1-ref.html
+fuzzy-if(d2d,5,1) == 622585-1.html 622585-1-ref.html # bug 789402
 fails-if(Android) == 625409-1.html 625409-1-ref.html
 == 627393-1.html about:blank
 == 630835-1.html about:blank

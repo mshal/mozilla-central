@@ -354,6 +354,10 @@ pref("browser.dom.window.dump.enabled", false);
 // installable apps or wifi support.
 pref("security.fileuri.strict_origin_policy", false);
 
+// Default Content Security Policy to apply to privileged and certified apps
+pref("security.apps.privileged.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
+pref("security.apps.certified.CSP.default", "options inline-script eval-script; default-src *; script-src 'self'; object-src 'none'; style-src 'self'");
+
 // Temporarily force-enable GL compositing.  This is default-disabled
 // deep within the bowels of the widgetry system.  Remove me when GL
 // compositing isn't default disabled in widget/android.
@@ -387,6 +391,7 @@ pref("dom.mozAlarms.enabled", true);
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
+pref("dom.mozPermissionSettings.enabled", true);
 
 // controls if we want camera support
 pref("device.camera.enabled", true);
@@ -435,6 +440,9 @@ pref("marionette.defaultPrefs.port", 2828);
 #endif
 
 #ifdef MOZ_UPDATER
+// When we're applying updates, we can't let anything hang us on
+// quit+restart.  The user has no recourse.
+pref("shutdown.watchdog.timeoutSecs", 5);
 // Timeout before the update prompt automatically installs the update
 pref("b2g.update.apply-prompt-timeout", 60000); // milliseconds
 // Optional timeout the user can wait before getting another update prompt
@@ -465,6 +473,10 @@ pref("app.update.download.backgroundInterval", 0);
 // Enable update logging for now, to diagnose growing pains in the
 // field.
 pref("app.update.log", true);
+#else
+// Explicitly disable the shutdown watchdog.  It's enabled by default.
+// When the updater is disabled, we want to know about shutdown hangs.
+pref("shutdown.watchdog.timeoutSecs", -1);
 #endif
 
 // Extensions preferences
@@ -533,6 +545,10 @@ pref("dom.disable_window_open_dialog_feature", true);
 
 // Screen reader support
 pref("accessibility.accessfu.activate", 2);
+
+// Enable hit-target fluffing
+pref("ui.touch.radius.enabled", true);
+pref("ui.mouse.radius.enabled", true);
 
 // Disable native prompt
 pref("browser.prompt.allowNative", false);

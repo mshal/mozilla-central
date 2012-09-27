@@ -36,21 +36,21 @@ namespace ion {
 class DtoaCache {
     double        d;
     int         base;
-    JSFixedString *s;      // if s==NULL, d and base are not valid
+    JSFlatString *s;      // if s==NULL, d and base are not valid
+
   public:
     DtoaCache() : s(NULL) {}
     void purge() { s = NULL; }
 
-    JSFixedString *lookup(int base, double d) {
+    JSFlatString *lookup(int base, double d) {
         return this->s && base == this->base && d == this->d ? this->s : NULL;
     }
 
-    void cache(int base, double d, JSFixedString *s) {
+    void cache(int base, double d, JSFlatString *s) {
         this->base = base;
         this->d = d;
         this->s = s;
     }
-
 };
 
 /* If HashNumber grows, need to change WrapperHasher. */
@@ -299,12 +299,10 @@ struct JSCompartment
     js::types::TypeObjectSet     lazyTypeObjects;
     void sweepNewTypeObjectTable(js::types::TypeObjectSet &table);
 
-    js::ReadBarriered<js::types::TypeObject> emptyTypeObject;
+    js::types::TypeObject *getNewType(JSContext *cx, js::TaggedProto proto,
+                                      JSFunction *fun = NULL, bool isDOM = false);
 
-    /* Get the default 'new' type for objects with a NULL prototype. */
-    inline js::types::TypeObject *getEmptyType(JSContext *cx);
-
-    js::types::TypeObject *getLazyType(JSContext *cx, JSObject *proto);
+    js::types::TypeObject *getLazyType(JSContext *cx, js::Handle<js::TaggedProto> proto);
 
     /*
      * Keeps track of the total number of malloc bytes connected to a

@@ -32,7 +32,6 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsMathUtils.h"
 #include "mozilla/storage.h"
-#include "mozilla/FunctionTimer.h"
 #include "mozilla/Util.h"
 #include "mozilla/Preferences.h"
 
@@ -290,8 +289,6 @@ nsNavHistory::~nsNavHistory()
 nsresult
 nsNavHistory::Init()
 {
-  NS_TIME_FUNCTION;
-
   LoadPrefs();
 
   mDB = Database::GetDatabase();
@@ -3979,7 +3976,7 @@ nsNavHistory::QueryToSelectClause(nsNavHistoryQuery* aQuery, // const
 
     clause.Condition("b.parent IN(");
     for (nsTArray<int64_t>::size_type i = 0; i < includeFolders.Length(); ++i) {
-      clause.Str(nsPrintfCString("%d", includeFolders[i]).get());
+      clause.Str(nsPrintfCString("%lld", includeFolders[i]).get());
       if (i < includeFolders.Length() - 1) {
         clause.Str(",");
       }

@@ -17,6 +17,10 @@ Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import('resource://gre/modules/ActivitiesService.jsm');
 Cu.import("resource://gre/modules/AppsUtils.jsm");
 
+function debug(aMsg) {
+  //dump("-*-*- Webapps.jsm : " + aMsg + "\n");
+}
+
 const WEBAPP_RUNTIME = Services.appinfo.ID == "webapprt@mozilla.org";
 
 XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
@@ -56,62 +60,52 @@ let DOMApplicationRegistry = {
 
   init: function() {
     this.messages = ["Webapps:Install", "Webapps:Uninstall",
-                     "Webapps:GetSelf",
+                     "Webapps:GetSelf", "Webapps:IsInstalled",
                      "Webapps:GetInstalled", "Webapps:GetNotInstalled",
                      "Webapps:Launch", "Webapps:GetAll",
                      "Webapps:InstallPackage", "Webapps:GetBasePath",
-                     "Webapps:GetList"];
+                     "Webapps:GetList", "Webapps:RegisterForMessages",
+                     "Webapps:UnregisterForMessages",
+                     "Webapps:CancelDownload", "Webapps:CheckForUpdate"];
+
+    this.frameMessages = ["Webapps:ClearBrowserData"];
 
     this.messages.forEach((function(msgName) {
       ppmm.addMessageListener(msgName, this);
     }).bind(this));
+
+    cpmm.addMessageListener("Activities:Register:OK", this);
 
     Services.obs.addObserver(this, "xpcom-shutdown", false);
 
     this.appsFile = FileUtils.getFile(DIRECTORY_NAME,
                                       ["webapps", "webapps.json"], true);
 
-    let dirList = [DIRECTORY_NAME];
+    this.loadAndUpdateApps();
+  },
 
-#ifdef MOZ_WIDGET_GONK
-    dirList.push("coreAppsDir");
-#endif
-    let currentId = 1;
-    this.dirsToLoad = dirList.length;
-    this.dirsLoaded = 0;
-    dirList.forEach((function(dir) {
-      let curFile;
-      try {
-        // getFile calls getDir with |shouldCreate = true|, so we have
-        // to wrap in a try..catch in case the file does not exist on a
-        // read-only partition.
-        curFile = FileUtils.getFile(dir, ["webapps", "webapps.json"], false);
-      } catch(e) { }
-      if (curFile && curFile.exists()) {
-        let appDir = FileUtils.getDir(dir, ["webapps"], false);
-        this._loadJSONAsync(curFile, (function(aData) {
-          if (!aData) {
-            return;
-          }
-#ifdef MOZ_SYS_MSG
-          let ids = [];
-#endif
-          // Add new apps to the merged list.
-          for (let id in aData) {
-            this.webapps[id] = aData[id];
-            this.webapps[id].basePath = appDir.path;
-            this.webapps[id].removable = (dir == DIRECTORY_NAME);
-#ifdef MOZ_SYS_MSG
-            ids.push({ id: id });
-#endif
-            // local ids must be stable between restarts.
-            // We partition the ids in two buckets:
-            // - 1 to 1000 for the core apps.
-            // - 1001 to Inf for installed apps.
-            // This way, a gecko update with new core apps will not lead to
-            // changes for installed apps ids.
-            if (!this.webapps[id].removable) {
-              this.webapps[id].localId = currentId++;
+  // loads the current registry, that could be empty on first run.
+  // aNext() is called after we load the current webapps list.
+  loadCurrentRegistry: function loadCurrentRegistry(aNext) {
+    let file = FileUtils.getFile(DIRECTORY_NAME, ["webapps", "webapps.json"], false);
+    if (file && file.exists) {
+      this._loadJSONAsync(file, (function loadRegistry(aData) {
+        if (aData) {
+          this.webapps = aData;
+          let appDir = FileUtils.getDir(DIRECTORY_NAME, ["webapps"], false);
+          for (let id in this.webapps) {
+            // Make sure we have a localId
+            if (this.webapps[id].localId === undefined) {
+              this.webapps[id].localId = this._nextLocalId();
+            }
+
+            if (this.webapps[id].basePath === undefined) {
+              this.webapps[id].basePath = appDir.path;
+            }
+
+            // Default to removable apps.
+            if (this.webapps[id].removable === undefined) {
+              this.webapps[id].removable = true;
             }
 
             // Default to a non privileged status.
@@ -119,14 +113,107 @@ let DOMApplicationRegistry = {
               this.webapps[id].appStatus = Ci.nsIPrincipal.APP_STATUS_INSTALLED;
             }
           };
+        }
+        aNext();
+      }).bind(this));
+    } else {
+      aNext();
+    }
+  },
+
+  // We are done with loading and initializing. Notify and
+  // save a copy of the registry.
+  onInitDone: function onInitDone() {
+    Services.obs.notifyObservers(this, "webapps-registry-ready", null);
+    this._saveApps();
+  },
+
+  // registers all the activities and system messages
+  registerAppsHandlers: function registerAppsHandlers() {
 #ifdef MOZ_SYS_MSG
-          this._processManifestForIds(ids);
+    let ids = [];
+    for (let id in this.webapps) {
+      ids.push({ id: id });
+    }
+    this._processManifestForIds(ids);
+#else
+    // Nothing else to do but notifying we're ready.
+    this.onInitDone();
 #endif
+  },
+
+  // Implements the core of bug 787439
+  // 1. load the apps from the current registry.
+  // 2. if at first run, go through these steps:
+  //   a. load the core apps registry.
+  //   b. uninstall any core app from the current registry but not in the
+  //      new core apps registry.
+  //   c. for all apps in the new core registry, install them if they are not
+  //      yet in the current registry, and run installPermissions()
+  loadAndUpdateApps: function loadAndUpdateApps() {
+    let runUpdate = Services.prefs.getBoolPref("dom.mozApps.runUpdate");
+    Services.prefs.setBoolPref("dom.mozApps.runUpdate", false);
+
+    // 1.
+    this.loadCurrentRegistry((function() {
+#ifdef MOZ_WIDGET_GONK
+    // if first run, merge the system apps.
+    if (runUpdate) {
+      let file;
+      try {
+        file = FileUtils.getFile("coreAppsDir", ["webapps", "webapps.json"], false);
+      } catch(e) { }
+
+      if (file && file.exists) {
+        // 2.a
+        this._loadJSONAsync(file, (function loadCoreRegistry(aData) {
+          if (!aData) {
+            this.registerAppsHandlers();
+            return;
+          }
+
+          // 2.b : core apps are not removable.
+          for (let id in this.webapps) {
+            if (id in aData || this.webapps[id].removable)
+              continue;
+            let localId = this.webapps[id].localId;
+            delete this.webapps[id];
+            // XXXX once bug 758269 is ready, revoke perms for this app
+            // removePermissions(localId);
+          }
+
+          let appDir = FileUtils.getDir("coreAppsDir", ["webapps"], false);
+          // 2.c
+          for (let id in aData) {
+            // Core apps have ids matching their domain name (eg: dialer.gaiamobile.org)
+            // Use that property to check if they are new or not.
+            if (!(id in this.webapps)) {
+              this.webapps[id] = aData[id];
+              this.webapps[id].basePath = appDir.path;
+
+              // Create a new localId.
+              this.webapps[id].localId = this._nextLocalId();
+
+              // Core apps are not removable.
+              if (this.webapps[id].removable === undefined) {
+                this.webapps[id].removable = false;
+              }
+            }
+            // XXXX once bug 758269 is ready, revoke perms for this app
+            // let localId = this.webapps[id].localId;
+            // installPermissions(localId);
+          }
+          this.registerAppsHandlers();
         }).bind(this));
       } else {
-        // The directory we're trying to load from doesn't exist.
-        this.dirsToLoad--;
+        this.registerAppsHandlers();
       }
+    } else {
+      this.registerAppsHandlers();
+    }
+#else
+    this.registerAppsHandlers();
+#endif
     }).bind(this));
   },
 
@@ -199,6 +286,7 @@ let DOMApplicationRegistry = {
         "icon": manifest.iconURLForSize(128),
         "description": description
       }
+      this.activitiesToRegister++;
       cpmm.sendAsyncMessage("Activities:Register", json);
 
       let launchPath =
@@ -253,6 +341,9 @@ let DOMApplicationRegistry = {
   },
 
   _processManifestForIds: function(aIds) {
+    this.activitiesToRegister = 0;
+    this.activitiesRegistered = 0;
+    this.allActivitiesSent = false;
     this._readManifests(aIds, (function registerManifests(aResults) {
       aResults.forEach(function registerManifest(aResult) {
         let app = this.webapps[aResult.id];
@@ -261,10 +352,7 @@ let DOMApplicationRegistry = {
         this._registerSystemMessages(manifest, app);
         this._registerActivities(manifest, app);
       }, this);
-      this.dirsLoaded++;
-      if (this.dirsLoaded == this.dirsToLoad) {
-        Services.obs.notifyObservers(this, "webapps-registry-ready", null);
-      }
+      this.allActivitiesSent = true;
     }).bind(this));
   },
 #endif
@@ -306,7 +394,8 @@ let DOMApplicationRegistry = {
           if (aCallback)
             aCallback(data);
         } catch (ex) {
-          Cu.reportError("DOMApplicationRegistry: Could not parse JSON: " + ex);
+          Cu.reportError("DOMApplicationRegistry: Could not parse JSON: " +
+                         aFile.path + " " + ex);
           if (aCallback)
             aCallback(null);
         }
@@ -319,50 +408,122 @@ let DOMApplicationRegistry = {
     }
   },
 
+  addMessageListener: function(aMsgNames, aMm) {
+    aMsgNames.forEach(function (aMsgName) {
+      if (!(aMsgName in this.children)) {
+        this.children[aMsgName] = [];
+      }
+      this.children[aMsgName].push(aMm);
+    }, this);
+  },
+
+  removeMessageListener: function(aMsgNames, aMm) {
+    aMsgNames.forEach(function (aMsgName) {
+      if (!(aMsgName in this.children)) {
+        return;
+      }
+
+      let index;
+      if ((index = this.children[aMsgName].indexOf(aMm)) != -1) {
+        this.children[aMsgName].splice(index, 1);
+      }
+    }, this);
+  },
+
   receiveMessage: function(aMessage) {
     // nsIPrefBranch throws if pref does not exist, faster to simply write
     // the pref instead of first checking if it is false.
     Services.prefs.setBoolPref("dom.mozApps.used", true);
 
     let msg = aMessage.json;
+    let mm = aMessage.target;
+    msg.mm = mm;
 
     switch (aMessage.name) {
       case "Webapps:Install":
         // always ask for UI to install
-        Services.obs.notifyObservers(this, "webapps-ask-install", JSON.stringify(msg));
+        Services.obs.notifyObservers(mm, "webapps-ask-install", JSON.stringify(msg));
         break;
       case "Webapps:GetSelf":
-        this.getSelf(msg);
+        this.getSelf(msg, mm);
         break;
       case "Webapps:Uninstall":
-        Services.obs.notifyObservers(this, "webapps-uninstall", JSON.stringify(msg));
+        Services.obs.notifyObservers(mm, "webapps-uninstall", JSON.stringify(msg));
         this.uninstall(msg);
         break;
       case "Webapps:Launch":
-        Services.obs.notifyObservers(this, "webapps-launch", JSON.stringify(msg));
+        this.launchApp(msg, mm);
+        break;
+      case "Webapps:IsInstalled":
+        this.isInstalled(msg, mm);
         break;
       case "Webapps:GetInstalled":
-        this.getInstalled(msg);
+        this.getInstalled(msg, mm);
         break;
       case "Webapps:GetNotInstalled":
-        this.getNotInstalled(msg);
+        this.getNotInstalled(msg, mm);
         break;
       case "Webapps:GetAll":
         if (msg.hasPrivileges)
-          this.getAll(msg);
+          this.getAll(msg, mm);
         else
-          ppmm.broadcastAsyncMessage("Webapps:GetAll:Return:KO", msg);
+          mm.sendAsyncMessage("Webapps:GetAll:Return:KO", msg);
         break;
       case "Webapps:InstallPackage":
-        this.installPackage(msg);
+        this.installPackage(msg, mm);
         break;
       case "Webapps:GetBasePath":
         return this.webapps[msg.id].basePath;
         break;
+      case "Webapps:RegisterForMessages":
+        this.addMessageListener(msg, mm);
+        break;
+      case "Webapps:UnregisterForMessages":
+        this.removeMessageListener(msg, mm);
+        break;
       case "Webapps:GetList":
-        this.children.push(aMessage.target);
+        this.addMessageListener(["Webapps:AddApp", "Webapps:RemoveApp"], mm);
         return this.webapps;
+      case "Webapps:CancelDownload":
+        this.cancelDowload(msg.manifestURL);
+        break;
+      case "Webapps:CheckForUpdate":
+        this.checkForUpdate(msg, mm);
+        break;
+      case "Activities:Register:OK":
+        this.activitiesRegistered++;
+        if (this.allActivitiesSent &&
+            this.activitiesRegistered === this.activitiesToRegister) {
+          this.onInitDone();
+        }
+        break;
     }
+  },
+
+  // Some messages can be listened by several content processes:
+  // Webapps:AddApp
+  // Webapps:RemoveApp
+  // Webapps:Install:Return:OK
+  // Webapps:Uninstall:Return:OK
+  // Webapps:OfflineCache
+  broadcastMessage: function broadcastMessage(aMsgName, aContent) {
+    if (!(aMsgName in this.children)) {
+      return;
+    }
+    let i;
+    for (i = this.children[aMsgName].length - 1; i >= 0; i -= 1) {
+      let msgMgr = this.children[aMsgName][i];
+      try {
+        msgMgr.sendAsyncMessage(aMsgName, aContent);
+      } catch (e) {
+        // Remove once 777508 lands.
+        let index;
+        if ((index = this.children[aMsgName].indexOf(msgMgr)) != -1) {
+          this.children[aMsgName].splice(index, 1);
+          dump("Remove dead MessageManager!\n");
+        }
+      }
+    };
   },
 
   _getAppDir: function(aId) {
@@ -386,6 +547,157 @@ let DOMApplicationRegistry = {
     });
   },
 
+  launchApp: function launchApp(aData, aMm) {
+    let app = this.getAppByManifestURL(aData.manifestURL);
+    if (!app) {
+      aMm.sendAsyncMessage("Webapps:Launch:Return:KO", aData);
+      return;
+    }
+
+    // Fire an error when trying to launch an app that is not
+    // yet fully installed.
+    if (app.installState == "pending") {
+      aMm.sendAsyncMessage("Webapps:Launch:Return:KO", aData);
+      return;
+    }
+
+    Services.obs.notifyObservers(aMm, "webapps-launch", JSON.stringify(aData));
+  },
+
+  cancelDownload: function cancelDowload(aManifestURL) {
+    // We can't cancel appcache dowloads for now.
+  },
+
+  startOfflineCacheDownload: function startOfflineCacheDownload(aManifest, aApp, aProfileDir) {
+    // if the manifest has an appcache_path property, use it to populate the appcache
+    if (aManifest.appcache_path) {
+      let appcacheURI = Services.io.newURI(aManifest.fullAppcachePath(), null, null);
+      let updateService = Cc["@mozilla.org/offlinecacheupdate-service;1"]
+                            .getService(Ci.nsIOfflineCacheUpdateService);
+      let docURI = Services.io.newURI(aManifest.fullLaunchPath(), null, null);
+      let cacheUpdate = aProfileDir ? updateService.scheduleCustomProfileUpdate(appcacheURI, docURI, aProfileDir)
+                                    : updateService.scheduleUpdate(appcacheURI, docURI, null);
+      cacheUpdate.addObserver(new AppcacheObserver(aApp), false);
+      if (aOfflineCacheObserver) {
+        cacheUpdate.addObserver(aOfflineCacheObserver, false);
+      }
+    }
+  },
+
+  checkForUpdate: function(aData, aMm) {
+    let app = this.getAppByManifestURL(aData.manifestURL);
+    if (!app) {
+      aData.error = "NO_SUCH_APP";
+      aMm.sendAsyncMessage("Webapps:CheckForUpdate:Return:KO", aData);
+      return;
+    }
+
+    function sendError(aError) {
+      aData.error = aError;
+      aMm.sendAsyncMessage("Webapps:CheckForUpdate:Return:KO", aData);
+    }
+
+    function updatePackagedApp(aManifest) {
+      debug("updatePackagedApp");
+    }
+
+    function updateHostedApp(aManifest) {
+      debug("updateHostedApp");
+      let id = this._appId(app.origin);
+
+#ifdef MOZ_SYS_MSG
+      // Update the Web Activities
+      this._readManifests([{ id: id }], (function unregisterManifest(aResult) {
+        this._unregisterActivities(aResult[0].manifest, app);
+        this._registerSystemMessages(aManifest, app);
+        this._registerActivities(aManifest, app);
+      }).bind(this));
+#endif
+
+      // Store the new manifest.
+      let dir = FileUtils.getDir(DIRECTORY_NAME, ["webapps", id], true, true);
+      let manFile = dir.clone();
+      manFile.append("manifest.webapp");
+      this._writeFile(manFile, JSON.stringify(aManifest), function() { });
+
+      let manifest = new DOMApplicationManifest(aManifest, app.origin);
+
+      if (manifest.appcache_path) {
+        app.installState = "updating";
+        app.downloadAvailable = true;
+        app.downloading = true;
+        app.downloadsize = 0;
+        app.readyToApplyDownload = false;
+      } else {
+        app.installState = "installed";
+        app.downloadAvailable = false;
+        app.downloading = false;
+        app.readyToApplyDownload = false;
+      }
+
+      app.name = aManifest.name;
+
+      // Update the registry.
+      this.webapps[id] = app;
+
+      this._saveApps((function() {
+        // XXX Should we fire notifications ?
+      }).bind(this));
+
+      // Preload the appcache if needed.
+      this.startOfflineCacheDownload(manifest, app);
+    }
+
+    // First, we download the manifest.
+    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+                .createInstance(Ci.nsIXMLHttpRequest);
+    xhr.open("GET", aData.manifestURL, true);
+    if (aData.etag) {
+      xhr.setRequestHeader("If-None-Match", aData.etag);
+    }
+
+    xhr.addEventListener("load", (function() {
+      if (xhr.status == 200) {
+        let manifest;
+        try {
+          JSON.parse(xhr.responseText, installOrigin);
+        } catch(e) {
+          sendError("MANIFEST_PARSE_ERROR");
+          return;
+        }
+        if (!AppsUtils.checkManifest(manifest, installOrigin)) {
+          sendError("INVALID_MANIFEST");
+        } else {
+          app.etag = xhr.getResponseHeader("Etag");
+          app.lastCheckedUpdate = Date.now();
+          if (package_path in manifest) {
+            updatePackagedApp(manifest);
+          } else {
+            updateHostedApp(manifest);
+          }
+        }
+        this._saveApps();
+      } else if (xhr.status == 304) {
+        // The manifest has not changed. We just update lastCheckedUpdate.
+        app.lastCheckedUpdate = Date.now();
+        aData.event = "downloadapplied";
+        aData.app = {
+          lastCheckedUpdate: app.lastCheckedUpdate
+        }
+        aMm.sendAsyncMessage("Webapps:CheckForUpdate:Return:OK", aData);
+        this._saveApps();
+      } else {
+        sendError("MANIFEST_URL_ERROR");
+      }
+    }).bind(this), false);
+
+    xhr.addEventListener("error", (function() {
+      sendError(request, "NETWORK_ERROR");
+    }).bind(this), false);
+
+    xhr.send(null);
+  },
+
   denyInstall: function(aData) {
     let packageId = aData.app.packageId;
     if (packageId) {
@@ -396,7 +708,7 @@ let DOMApplicationRegistry = {
       } catch(e) {
       }
     }
-    ppmm.broadcastAsyncMessage("Webapps:Install:Return:KO", aData);
+    aData.mm.sendAsyncMessage("Webapps:Install:Return:KO", aData);
   },
 
   confirmInstall: function(aData, aFromSync, aProfileDir, aOfflineCacheObserver) {
@@ -425,6 +737,7 @@ let DOMApplicationRegistry = {
     let appObject = AppsUtils.cloneAppObject(app);
     appObject.appStatus = app.appStatus || Ci.nsIPrincipal.APP_STATUS_INSTALLED;
     appObject.installTime = app.installTime = Date.now();
+    appObject.lastUpdateCheck = app.lastUpdateCheck = Date.now();
     let appNote = JSON.stringify(appObject);
     appNote.id = id;
 
@@ -449,20 +762,31 @@ let DOMApplicationRegistry = {
         }
       }
     });
-    this.webapps[id] = appObject;
-
-    appObject.status = "installed";
-    appObject.name = app.manifest.name;
 
     let manifest = new DOMApplicationManifest(app.manifest, app.origin);
 
+    if (manifest.appcache_path) {
+      appObject.installState = "pending";
+      appObject.downloadAvailable = true;
+      appObject.downloading = true;
+      appObject.downloadsize = 0;
+      appObject.readyToApplyDownload = false;
+    } else {
+      appObject.installState = "installed";
+      appObject.downloadAvailable = false;
+      appObject.downloading = false;
+      appObject.readyToApplyDownload = false;
+    }
+
+    appObject.name = app.manifest.name;
+
+    this.webapps[id] = appObject;
+
     if (!aFromSync)
       this._saveApps((function() {
-        ppmm.broadcastAsyncMessage("Webapps:Install:Return:OK", aData);
+        this.broadcastMessage("Webapps:Install:Return:OK", aData);
         Services.obs.notifyObservers(this, "webapps-sync-install", appNote);
-        this.children.forEach(function(aMsgMgr) {
-          aMsgMgr.sendAsyncMessage("Webapps:AddApp", { id: id, app: appObject });
-        });
+        this.broadcastMessage("Webapps:AddApp", { id: id, app: appObject });
       }).bind(this));
 
 #ifdef MOZ_SYS_MSG
@@ -470,19 +794,7 @@ let DOMApplicationRegistry = {
     this._registerActivities(app.manifest, app);
 #endif
 
-    // if the manifest has an appcache_path property, use it to populate the appcache
-    if (manifest.appcache_path) {
-      let appcacheURI = Services.io.newURI(manifest.fullAppcachePath(), null, null);
-      let updateService = Cc["@mozilla.org/offlinecacheupdate-service;1"]
-                            .getService(Ci.nsIOfflineCacheUpdateService);
-      let docURI = Services.io.newURI(manifest.fullLaunchPath(), null, null);
-      let cacheUpdate = aProfileDir ? updateService.scheduleCustomProfileUpdate(appcacheURI, docURI, aProfileDir)
-                                    : updateService.scheduleUpdate(appcacheURI, docURI, null);
-      cacheUpdate.addObserver(new AppcacheObserver(appObject), false);
-      if (aOfflineCacheObserver) {
-        cacheUpdate.addObserver(aOfflineCacheObserver, false);
-      }
-    }
+    this.startOfflineCacheDownload(manifest, appObject, aProfileDir);
   },
 
   _nextLocalId: function() {
@@ -505,7 +817,7 @@ let DOMApplicationRegistry = {
   },
 
   _saveApps: function(aCallback) {
-    this._writeFile(this.appsFile, JSON.stringify(this.webapps), function() {
+    this._writeFile(this.appsFile, JSON.stringify(this.webapps, null, 2), function() {
       if (aCallback)
         aCallback();
     });
@@ -539,7 +851,7 @@ let DOMApplicationRegistry = {
     }).bind(this));
   },
 
-  installPackage: function(aData) {
+  installPackage: function(aData, aMm) {
     // Here are the steps when installing a package:
     // - create a temp directory where to store the app.
     // - download the zip in this directory.
@@ -564,30 +876,15 @@ let DOMApplicationRegistry = {
 
     let dir = FileUtils.getDir("TmpD", ["webapps", id], true, true);
 
-    /** from https://developer.mozilla.org/en/OpenWebApps/The_Manifest
-     * only the name property is mandatory
-     */
-    function checkManifest(aManifest) {
-      if (aManifest.name == undefined)
-        return false;
-
-      if (aManifest.installs_allowed_from) {
-        return aManifest.installs_allowed_from.some(function(aOrigin) {
-          return aOrigin == "*" || aOrigin == aData.installOrigin;
-        });
-      }
-      return true;
-    }
-
     // Removes the directory we created, and sends an error to the DOM side.
     function cleanup(aError) {
       try {
         dir.remove(true);
       } catch (e) { }
-      ppmm.broadcastAsyncMessage("Webapps:Install:Return:KO",
-                            { oid: aData.oid,
-                              requestID: aData.requestID,
-                              error: aError });
+      aMm.sendAsyncMessage("Webapps:Install:Return:KO",
+                           { oid: aData.oid,
+                             requestID: aData.requestID,
+                             error: aError });
     }
 
     function getInferedStatus() {
@@ -675,7 +972,7 @@ let DOMApplicationRegistry = {
           let istream = zipReader.getInputStream("manifest.webapp");
           msg.app.manifest = JSON.parse(NetUtil.readInputStreamToString(istream,
                                         istream.available()) || "");
-          if (!checkManifest(msg.app.manifest)) {
+          if (!AppsUtils.checkManifest(msg.app.manifest, aData.installOrigin)) {
             throw "INVALID_MANIFEST";
           }
 
@@ -711,11 +1008,11 @@ let DOMApplicationRegistry = {
       let appNote = JSON.stringify(AppsUtils.cloneAppObject(app));
       appNote.id = id;
 
-      this._readManifests([{ id: id }], (function unregisterManifest(aResult) {
 #ifdef MOZ_SYS_MSG
+      this._readManifests([{ id: id }], (function unregisterManifest(aResult) {
         this._unregisterActivities(aResult[0].manifest, app);
-#endif
       }).bind(this));
+#endif
 
       let dir = this._getAppDir(id);
       try {
@@ -725,38 +1022,65 @@ let DOMApplicationRegistry = {
       delete this.webapps[id];
 
       this._saveApps((function() {
-        ppmm.broadcastAsyncMessage("Webapps:Uninstall:Return:OK", aData);
+        this.broadcastMessage("Webapps:Uninstall:Return:OK", aData);
         Services.obs.notifyObservers(this, "webapps-sync-uninstall", appNote);
-        this.children.forEach(function(aMsgMgr) {
-          aMsgMgr.broadcastAsyncMessage("Webapps:RemoveApp", { id: id });
-        });
+        this.broadcastMessage("Webapps:RemoveApp", { id: id });
       }).bind(this));
     }
 
     if (!found) {
-      ppmm.broadcastAsyncMessage("Webapps:Uninstall:Return:KO", aData);
+      aData.mm.sendAsyncMessage("Webapps:Uninstall:Return:KO", aData);
     }
   },
 
-  getSelf: function(aData) {
+  getSelf: function(aData, aMm) {
     aData.apps = [];
-    let tmp = [];
-    let id = this._appId(aData.origin);
 
-    if (id && this._isLaunchable(this.webapps[id].origin)) {
-      let app = AppsUtils.cloneAppObject(this.webapps[id]);
-      aData.apps.push(app);
-      tmp.push({ id: id });
+    if (aData.appId == Ci.nsIScriptSecurityManager.NO_APP_ID ||
+        aData.appId == Ci.nsIScriptSecurityManager.UNKNOWN_APP_ID) {
+      aMm.sendAsyncMessage("Webapps:GetSelf:Return:OK", aData);
+      return;
+    }
+
+    let tmp = [];
+
+    for (let id in this.webapps) {
+      if (this.webapps[id].origin == aData.origin &&
+          this.webapps[id].localId == aData.appId &&
+          this._isLaunchable(this.webapps[id].origin)) {
+        let app = AppsUtils.cloneAppObject(this.webapps[id]);
+        aData.apps.push(app);
+        tmp.push({ id: id });
+        break;
+      }
+    }
+
+    if (!aData.apps.length) {
+      aMm.sendAsyncMessage("Webapps:GetSelf:Return:OK", aData);
+      return;
     }
 
     this._readManifests(tmp, (function(aResult) {
       for (let i = 0; i < aResult.length; i++)
         aData.apps[i].manifest = aResult[i].manifest;
-      ppmm.broadcastAsyncMessage("Webapps:GetSelf:Return:OK", aData);
+      aMm.sendAsyncMessage("Webapps:GetSelf:Return:OK", aData);
     }).bind(this));
   },
 
-  getInstalled: function(aData) {
+  isInstalled: function(aData, aMm) {
+    aData.installed = false;
+
+    for (let appId in this.webapps) {
+      if (this.webapps[appId].manifestURL == aData.manifestURL) {
+        aData.installed = true;
+        break;
+      }
+    }
+
+    aMm.sendAsyncMessage("Webapps:IsInstalled:Return:OK", aData);
+  },
+
+  getInstalled: function(aData, aMm) {
     aData.apps = [];
     let tmp = [];
 
@@ -771,11 +1095,11 @@ let DOMApplicationRegistry = {
     this._readManifests(tmp, (function(aResult) {
       for (let i = 0; i < aResult.length; i++)
         aData.apps[i].manifest = aResult[i].manifest;
-      ppmm.broadcastAsyncMessage("Webapps:GetInstalled:Return:OK", aData);
+      aMm.sendAsyncMessage("Webapps:GetInstalled:Return:OK", aData);
     }).bind(this));
   },
 
-  getNotInstalled: function(aData) {
+  getNotInstalled: function(aData, aMm) {
     aData.apps = [];
     let tmp = [];
 
@@ -789,11 +1113,11 @@ let DOMApplicationRegistry = {
     this._readManifests(tmp, (function(aResult) {
       for (let i = 0; i < aResult.length; i++)
         aData.apps[i].manifest = aResult[i].manifest;
-      ppmm.broadcastAsyncMessage("Webapps:GetNotInstalled:Return:OK", aData);
+      aMm.sendAsyncMessage("Webapps:GetNotInstalled:Return:OK", aData);
     }).bind(this));
   },
 
-  getAll: function(aData) {
+  getAll: function(aData, aMm) {
     aData.apps = [];
     let tmp = [];
 
@@ -809,7 +1133,7 @@ let DOMApplicationRegistry = {
     this._readManifests(tmp, (function(aResult) {
       for (let i = 0; i < aResult.length; i++)
         aData.apps[i].manifest = aResult[i].manifest;
-      ppmm.broadcastAsyncMessage("Webapps:GetAll:Return:OK", aData);
+      aMm.sendAsyncMessage("Webapps:GetAll:Return:OK", aData);
     }).bind(this));
   },
 
@@ -883,7 +1207,7 @@ let DOMApplicationRegistry = {
           dir.remove(true);
         } catch (e) {
         }
-        ppmm.broadcastAsyncMessage("Webapps:Uninstall:Return:OK", { origin: origin });
+        this.broadcastMessage("Webapps:Uninstall:Return:OK", { origin: origin });
       } else {
         if (this.webapps[record.id]) {
           this.webapps[record.id] = record.value;
@@ -891,7 +1215,7 @@ let DOMApplicationRegistry = {
         } else {
           let data = { app: record.value };
           this.confirmInstall(data, true);
-          ppmm.broadcastAsyncMessage("Webapps:Install:Return:OK", data);
+          this.broadcastMessage("Webapps:Install:Return:OK", data);
         }
       }
     }
@@ -978,6 +1302,79 @@ let DOMApplicationRegistry = {
     return true;
 #endif
 
+  },
+
+  _notifyCategoryAndObservers: function(subject, topic, data) {
+    const serviceMarker = "service,";
+
+    // First create observers from the category manager.
+    let cm =
+      Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
+    let enumerator = cm.enumerateCategory(topic);
+
+    let observers = [];
+
+    while (enumerator.hasMoreElements()) {
+      let entry =
+        enumerator.getNext().QueryInterface(Ci.nsISupportsCString).data;
+      let contractID = cm.getCategoryEntry(topic, entry);
+
+      let factoryFunction;
+      if (contractID.substring(0, serviceMarker.length) == serviceMarker) {
+        contractID = contractID.substring(serviceMarker.length);
+        factoryFunction = "getService";
+      }
+      else {
+        factoryFunction = "createInstance";
+      }
+
+      try {
+        let handler = Cc[contractID][factoryFunction]();
+        if (handler) {
+          let observer = handler.QueryInterface(Ci.nsIObserver);
+          observers.push(observer);
+        }
+      } catch(e) { }
+    }
+
+    // Next enumerate the registered observers.
+    enumerator = Services.obs.enumerateObservers(topic);
+    while (enumerator.hasMoreElements()) {
+      let observer = enumerator.getNext();
+      if (observers.indexOf(observer) == -1) {
+        observers.push(observer);
+      }
+    }
+
+    observers.forEach(function (observer) {
+      try {
+        observer.observe(subject, topic, data);
+      } catch(e) { }
+    });
+  },
+
+  registerBrowserElementParentForApp: function(bep, appId) {
+    let mm = bep._mm;
+
+    // Make a listener function that holds on to this appId.
+    let listener = this.receiveAppMessage.bind(this, appId);
+
+    this.frameMessages.forEach(function(msgName) {
+      mm.addMessageListener(msgName, listener);
+    });
+  },
+
+  receiveAppMessage: function(appId, message) {
+    switch (message.name) {
+      case "Webapps:ClearBrowserData":
+        let subject = {
+          appId: appId,
+          browserOnly: true,
+          QueryInterface: XPCOMUtils.generateQI([Ci.mozIApplicationClearPrivateDataParams])
+        };
+        this._notifyCategoryAndObservers(subject, "webapps-clear-data", null);
+        break;
+    }
   }
 };
 
@@ -986,6 +1383,7 @@ let DOMApplicationRegistry = {
  */
 let AppcacheObserver = function(aApp) {
   this.app = aApp;
+  this.startStatus = aApp.installState;
 };
 
 AppcacheObserver.prototype = {
@@ -995,25 +1393,33 @@ AppcacheObserver.prototype = {
     let app = this.app;
 
     let setStatus = function appObs_setStatus(aStatus) {
-      mustSave = (app.status != aStatus);
-      app.status = aStatus;
-      ppmm.broadcastAsyncMessage("Webapps:OfflineCache", { manifest: app.manifestURL, status: aStatus });
+      mustSave = (app.installState != aStatus);
+      app.installState = aStatus;
+      DOMApplicationRegistry.broadcastMessage("Webapps:OfflineCache",
+                                              { manifest: app.manifestURL,
+                                                installState: app.installState });
+    }
+
+    let setError = function appObs_setError(aError) {
+      DOMApplicationRegistry.broadcastMessage("Webapps:OfflineCache",
+                                              { manifest: app.manifestURL,
+                                                error: aError });
     }
 
     switch (aState) {
       case Ci.nsIOfflineCacheUpdateObserver.STATE_ERROR:
         aUpdate.removeObserver(this);
-        setStatus("cache-error");
+        setError("APP_CACHE_DOWNLOAD_ERROR");
         break;
       case Ci.nsIOfflineCacheUpdateObserver.STATE_NOUPDATE:
       case Ci.nsIOfflineCacheUpdateObserver.STATE_FINISHED:
         aUpdate.removeObserver(this);
-        setStatus("cached");
+        setStatus("installed");
         break;
       case Ci.nsIOfflineCacheUpdateObserver.STATE_DOWNLOADING:
       case Ci.nsIOfflineCacheUpdateObserver.STATE_ITEMSTARTED:
       case Ci.nsIOfflineCacheUpdateObserver.STATE_ITEMPROGRESS:
-        setStatus("downloading")
+        setStatus(this.startStatus);
         break;
     }
 

@@ -502,7 +502,7 @@ nsXPConnect::NotifyLeaveMainThread()
 {
     NS_ABORT_IF_FALSE(NS_IsMainThread(), "Off main thread");
     JSRuntime *rt = mRuntime->GetJSRuntime();
-    if (JS_IsInRequest(rt) || JS_IsInSuspendedRequest(rt))
+    if (JS_IsInRequest(rt))
         return false;
     JS_ClearRuntimeThread(rt);
     return true;
@@ -893,20 +893,6 @@ nsXPConnectParticipant::TraverseImpl(nsXPConnectParticipant *that, void *p,
     return NS_OK;
 }
 
-unsigned
-nsXPConnect::GetOutstandingRequests(JSContext* cx)
-{
-    unsigned n = js::GetContextOutstandingRequests(cx);
-    XPCCallContext* context = mCycleCollectionContext;
-    // Ignore the contribution from the XPCCallContext we created for cycle
-    // collection.
-    if (context && cx == context->GetJSContext()) {
-        MOZ_ASSERT(n);
-        --n;
-    }
-    return n;
-}
-
 class JSContextParticipant : public nsCycleCollectionParticipant
 {
 public:
@@ -934,11 +920,13 @@ public:
     {
         JSContext *cx = static_cast<JSContext*>(n);
 
-        // Add outstandingRequests to the count, if there are outstanding
-        // requests the context needs to be kept alive and adding unknown
-        // edges will ensure that any cycles this context is in won't be
-        // collected.
-        unsigned refCount = nsXPConnect::GetXPConnect()->GetOutstandingRequests(cx) + 1;
+        // JSContexts do not have an internal refcount and always have a single
+        // owner (e.g., nsJSContext). Thus, the default refcount is 1. However,
+        // in the (abnormal) case of synchronous cycle-collection, the context
+        // may be actively executing code in which case we want to treat it as
+        // rooted by adding an extra refcount.
+        unsigned refCount = js::ContextHasOutstandingRequests(cx) ? 2 : 1;
+
         cb.DescribeRefCountedNode(refCount, "JSContext");
         if (JSObject *global = JS_GetGlobalObject(cx)) {
             NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "[global object]");
@@ -1002,7 +990,7 @@ nsXPConnect::InitClasses(JSContext * aJSContext, JSObject * aGlobalJSObj)
 
     scope->RemoveWrappedNativeProtos();
 
-    if (!nsXPCComponents::AttachComponentsObject(ccx, scope, aGlobalJSObj))
+    if (!nsXPCComponents::AttachComponentsObject(ccx, scope))
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
     if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, aGlobalJSObj))
@@ -1184,7 +1172,7 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
 
     if (!(aFlags & nsIXPConnect::OMIT_COMPONENTS_OBJECT)) {
         // XPCCallContext gives us an active request needed to save/restore.
-        if (!nsXPCComponents::AttachComponentsObject(ccx, wrappedGlobal->GetScope(), global))
+        if (!nsXPCComponents::AttachComponentsObject(ccx, wrappedGlobal->GetScope()))
             return UnexpectedFailure(NS_ERROR_FAILURE);
 
         if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, global))
@@ -2939,40 +2927,6 @@ JS_EXPORT_API(void) DumpJSEval(uint32_t frameno, const char* text)
         xpc->DebugDumpEvalInJSStackFrame(frameno, text);
     else
         printf("failed to get XPConnect service!\n");
-}
-
-JS_EXPORT_API(void) DumpJSObject(JSObject* obj)
-{
-    xpc_DumpJSObject(obj);
-}
-
-JS_EXPORT_API(void) DumpJSValue(JS::Value val)
-{
-    printf("Dumping 0x%llu.\n", (long long) val.asRawBits());
-    if (val.isNull()) {
-        printf("Value is null\n");
-    } else if (val.isObject()) {
-        printf("Value is an object\n");
-        DumpJSObject(&val.toObject());
-    } else if (val.isNumber()) {
-        printf("Value is a number: ");
-        if (val.isInt32())
-          printf("Integer %i\n", val.toInt32());
-        else if (val.isDouble())
-          printf("Floating-point value %f\n", val.toDouble());
-    } else if (val.isString()) {
-        printf("Value is a string: ");
-        putc('<', stdout);
-        JS_FileEscapedString(stdout, val.toString(), 0);
-        fputs(">\n", stdout);
-    } else if (val.isBoolean()) {
-        printf("Value is boolean: ");
-        printf(val.isTrue() ? "true" : "false");
-    } else if (val.isUndefined()) {
-        printf("Value is undefined\n");
-    } else {
-        printf("No idea what this value is.\n");
-    }
 }
 
 JS_EXPORT_API(void) DumpCompleteHeap()

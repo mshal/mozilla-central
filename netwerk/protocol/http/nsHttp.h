@@ -180,6 +180,17 @@ struct nsHttp
         return ParseInt64(input, &next, result) && *next == '\0';
     }
 
+    // Return whether the HTTP status code represents a permanent redirect
+    static bool IsPermanentRedirect(PRUint32 httpStatus);
+
+    // Return whether upon a redirect code of httpStatus for method, the
+    // request method should be rewritten to GET.
+    static bool ShouldRewriteRedirectToGET(PRUint32 httpStatus, nsHttpAtom method);
+
+    // Return whether the specified method is safe as per RFC 2616,
+    // Section 9.1.1.
+    static bool IsSafeMethod(nsHttpAtom method);
+
     // Declare all atoms
     //
     // The atom names and values are stored in nsHttpAtomList.h and are brought
