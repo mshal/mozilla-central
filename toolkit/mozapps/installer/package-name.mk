@@ -136,14 +136,17 @@ else
 BUILDID = $(shell $(PYTHON) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/platform.ini Build BuildID)
 endif
 
+ifndef INCLUDED_RCS_MK
+  USE_RCS_MK := 1
+  include $(topsrcdir)/config/makefiles/makeutils.mk
+endif
+
+###########################################################################
+# bug: 746277 += $(SPACE): preserve existing functionality. 
+###########################################################################
+MOZ_SOURCE_REPO = $(call getSourceRepo,$(MOZILLA_DIR)$(NULL) $(NULL))
+
 MOZ_SOURCE_STAMP = $(firstword $(shell hg -R $(MOZILLA_DIR) parent --template="{node|short}\n" 2>/dev/null))
-
-# strip a trailing slash from the repo URL because it's not always present,
-# and we want to construct a working URL in the sourcestamp file.
-# make+shell+sed = awful
-_dollar=$$
-MOZ_SOURCE_REPO = $(shell cd $(MOZILLA_DIR) && hg showconfig paths.default 2>/dev/null | head -n1 | sed -e "s/^ssh:/http:/" -e "s/\/$(_dollar)//" )
-
 MOZ_SOURCESTAMP_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_SOURCESTAMP_FILE_BASENAME).txt
 
 # JavaScript Shell

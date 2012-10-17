@@ -1576,7 +1576,6 @@ default all::
 #############################################################################
 # Derived targets and dependencies
 
-include $(topsrcdir)/config/makefiles/autotargets.mk
 ifneq ($(NULL),$(AUTO_DEPS))
   default all libs tools export:: $(AUTO_DEPS)
 endif
