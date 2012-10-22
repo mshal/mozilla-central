@@ -12,7 +12,7 @@ interface nsIDOMMozMobileNetworkInfo;
 interface nsIDOMMozMobileCellInfo;
 interface nsIDOMMozIccManager;
 
-[scriptable, builtinclass, uuid(c07309ee-a424-11e1-a75c-00265511db39)]
+[scriptable, builtinclass, uuid(5362762c-7091-4da9-aecd-ba878bc51b3d)]
 interface nsIDOMMozMobileConnection : nsIDOMEventTarget
 {
   /**
@@ -119,7 +119,12 @@ interface nsIDOMMozMobileConnection : nsIDOMEventTarget
    *   unlockCardLock({lockType: "pin",
    *                   pin: "..."});
    *
-   * (2) Unlocking the PUK and supplying a new PIN:
+   * (2) Network depersonalization. Unlocking the network control key (NCK).
+   *
+   *   unlockCardLock({lockType: "nck",
+   *                   pin: "..."});
+   *
+   * (3) Unlocking the PUK and supplying a new PIN:
    *
    *   unlockCardLock({lockType: "puk",
    *                   puk: "...",
@@ -196,19 +201,29 @@ interface nsIDOMMozMobileConnection : nsIDOMEventTarget
   nsIDOMDOMRequest setCardLock(in jsval info);
 
   /**
-   * Send a USSD message.
+   * Send a MMI message.
    *
-   * The network reply will be reported via onussdreceived event.
+   * @param mmi
+   *        DOMString containing an MMI string that can be associated to a
+   *        USSD request or other RIL functionality.
    *
-   * The 'success' event for the request means the USSD message has been sent
-   * successfully.
+   * @return a nsIDOMDOMRequest
+   *         The request's result will be an object containing information
+   *         about the operation.
+   *
+   * In case that the MMI code requires sending an USSD request, the DOMrequest
+   * 'success' event means that the RIL has successfully processed and sent the
+   * USSD request to the network. The network reply will be reported via
+   * 'onussdreceived' event. If the MMI code is not associated to a USSD but to
+   * other RIL request its result, if one is needed, will be notified via the
+   * returned DOMRequest 'success' or 'error' event.
    */
-  nsIDOMDOMRequest sendUSSD(in DOMString ussd);
+  nsIDOMDOMRequest sendMMI(in DOMString mmi);
 
   /**
-   * Cancel the current USSD session if one exists.
+   * Cancel the current MMI request if one exists.
    */
-  nsIDOMDOMRequest cancelUSSD();
+  nsIDOMDOMRequest cancelMMI();
 
   /**
    * The 'cardstatechange' event is notified when the 'cardState' attribute
@@ -245,6 +260,12 @@ interface nsIDOMMozMobileConnection : nsIDOMEventTarget
    * receives an error from the RIL
    */
   [implicit_jscontext] attribute jsval ondataerror;
+
+  /**
+   * The 'icccardlockerror' event is notified whenever 'unlockCardLock' or
+   * 'setCardLock' fails.
+   */
+  [implicit_jscontext] attribute jsval onicccardlockerror;
 };
 
 [scriptable, uuid(5ea0e4a9-4684-40da-9930-8ebb61d187f3)]

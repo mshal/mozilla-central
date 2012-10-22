@@ -10,7 +10,7 @@ import shutil
 import subprocess
 
 from automation import Automation
-from devicemanager import NetworkTools
+from devicemanager import NetworkTools, DMError
 
 class RemoteAutomation(Automation):
     _devicemanager = None
@@ -74,13 +74,22 @@ class RemoteAutomation(Automation):
         return status
 
     def checkForCrashes(self, directory, symbolsPath):
-        dumpDir = tempfile.mkdtemp()
-        self._devicemanager.getDirectory(self._remoteProfile + '/minidumps/', dumpDir)
-        automationutils.checkForCrashes(dumpDir, symbolsPath, self.lastTestSeen)
-        try:
-          shutil.rmtree(dumpDir)
-        except:
-          print "WARNING: unable to remove directory: %s" % (dumpDir)
+        remoteCrashDir = self._remoteProfile + '/minidumps/'
+        if self._devicemanager.dirExists(remoteCrashDir):
+            dumpDir = tempfile.mkdtemp()
+            self._devicemanager.getDirectory(remoteCrashDir, dumpDir)
+            automationutils.checkForCrashes(dumpDir, symbolsPath,
+                                            self.lastTestSeen)
+            try:
+                shutil.rmtree(dumpDir)
+            except:
+                print "WARNING: unable to remove directory: %s" % dumpDir
+        else:
+            # As of this writing, the minidumps directory is automatically
+            # created when fennec (first) starts, so its lack of presence
+            # is a hint that something went wrong.
+            print "WARNING: No crash directory (%s) on remote " \
+                "device" % remoteCrashDir
 
     def buildCommandLine(self, app, debuggerInfo, profileDir, testURL, extraArgs):
         # If remote profile is specified, use that instead
@@ -157,19 +166,31 @@ class RemoteAutomation(Automation):
 
         @property
         def pid(self):
-            hexpid = self.dm.processExist(self.procName)
-            if (hexpid == None):
-                hexpid = "0x0"
-            return int(hexpid, 0)
+            pid = self.dm.processExist(self.procName)
+            # HACK: we should probably be more sophisticated about monitoring
+            # running processes for the remote case, but for now we'll assume
+            # that this method can be called when nothing exists and it is not
+            # an error
+            if pid is None:
+                return 0
+            return pid
 
         @property
         def stdout(self):
-            t = self.dm.getFile(self.proc)
-            if t == None: return ''
-            tlen = len(t)
-            retVal = t[self.stdoutlen:]
-            self.stdoutlen = tlen
-            return retVal.strip('\n').strip()
+            if self.dm.fileExists(self.proc):
+                try:
+                    t = self.dm.pullFile(self.proc)
+                except DMError:
+                    # we currently don't retry properly in the pullFile
+                    # function in dmSUT, so an error here is not necessarily
+                    # the end of the world
+                    return ''
+                tlen = len(t)
+                retVal = t[self.stdoutlen:]
+                self.stdoutlen = tlen
+                return retVal.strip('\n').strip()
+            else:
+                return ''
 
         def wait(self, timeout = None):
             timer = 0

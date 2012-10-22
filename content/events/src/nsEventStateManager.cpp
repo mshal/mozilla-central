@@ -65,6 +65,7 @@
 #include "nsCaret.h"
 
 #include "nsSubDocumentFrame.h"
+#include "nsIFrameTraversal.h"
 #include "nsLayoutCID.h"
 #include "nsLayoutUtils.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -111,6 +112,10 @@ using namespace mozilla::dom;
 
 #define NS_USER_INTERACTION_INTERVAL 5000 // ms
 
+static const nsIntPoint kInvalidRefPoint = nsIntPoint(-1,-1);
+
+static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
+
 static bool sLeftClickOnly = true;
 static bool sKeyCausesActivation = true;
 static uint32_t sESMInstanceCount = 0;
@@ -120,9 +125,9 @@ bool nsEventStateManager::sNormalLMouseEventInProcess = false;
 nsEventStateManager* nsEventStateManager::sActiveESM = nullptr;
 nsIDocument* nsEventStateManager::sMouseOverDocument = nullptr;
 nsWeakFrame nsEventStateManager::sLastDragOverFrame = nullptr;
-nsIntPoint nsEventStateManager::sLastRefPoint = nsIntPoint(0,0);
+nsIntPoint nsEventStateManager::sLastRefPoint = kInvalidRefPoint;
 nsIntPoint nsEventStateManager::sLastScreenPoint = nsIntPoint(0,0);
-nsIntPoint nsEventStateManager::sSynthCenteringPoint = nsIntPoint(-1,-1);
+nsIntPoint nsEventStateManager::sSynthCenteringPoint = kInvalidRefPoint;
 nsIntPoint nsEventStateManager::sLastClientPoint = nsIntPoint(0,0);
 bool nsEventStateManager::sIsPointerLocked = false;
 // Reference to the pointer locked element.
@@ -3255,11 +3260,17 @@ nsEventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         if (mDocument && fm) {
           nsCOMPtr<nsIDOMWindow> currentWindow;
           fm->GetFocusedWindow(getter_AddRefs(currentWindow));
-          if (currentWindow && currentWindow != mDocument->GetWindow() &&
+          if (currentWindow && mDocument->GetWindow() &&
+              currentWindow != mDocument->GetWindow() &&
               !nsContentUtils::IsChromeDoc(mDocument)) {
+            nsCOMPtr<nsIDOMWindow> currentTop;
+            nsCOMPtr<nsIDOMWindow> newTop;
+            currentWindow->GetTop(getter_AddRefs(currentTop));
+            mDocument->GetWindow()->GetTop(getter_AddRefs(newTop));
             nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(currentWindow);
             nsCOMPtr<nsIDocument> currentDoc = do_QueryInterface(win->GetExtantDocument());
-            if (nsContentUtils::IsChromeDoc(currentDoc)) {
+            if (nsContentUtils::IsChromeDoc(currentDoc) ||
+                (currentTop && newTop && currentTop != newTop)) {
               fm->SetFocusedWindow(mDocument->GetWindow());
             }
           }
@@ -3934,7 +3945,7 @@ public:
       aTarget ? aTarget->OwnerDoc()->GetInnerWindow() : nullptr;
     if (win && win->HasMouseEnterLeaveEventListeners()) {
       mRelatedTarget = aRelatedTarget ?
-        aRelatedTarget->FindFirstNonNativeAnonymous() : nullptr;
+        aRelatedTarget->FindFirstNonChromeOnlyAccessContent() : nullptr;
       nsINode* commonParent = nullptr;
       if (aTarget && aRelatedTarget) {
         commonParent =
@@ -3943,7 +3954,7 @@ public:
       nsIContent* current = aTarget;
       // Note, it is ok if commonParent is null!
       while (current && current != commonParent) {
-        if (!current->IsInNativeAnonymousSubtree()) {
+        if (!current->ChromeOnlyAccess()) {
           mTargets.AppendObject(current);
         }
         // mouseenter/leave is fired only on elements.
@@ -4162,8 +4173,14 @@ nsEventStateManager::GenerateMouseEnterExit(nsGUIEvent* aEvent)
           aEvent->flags |= NS_EVENT_FLAG_STOP_DISPATCH;
           // Clear sSynthCenteringPoint so we don't cancel other events
           // targeted at the center.
-          sSynthCenteringPoint = nsIntPoint(-1,-1);
+          sSynthCenteringPoint = kInvalidRefPoint;
         }
+      } else if (sLastRefPoint == kInvalidRefPoint) {
+        // We don't have a valid previous mousemove refPoint. This is either
+        // the first move we've encountered, or the mouse has just re-entered
+        // the application window. We should report (0,0) movement for this
+        // case, so make the current and previous refPoints the same.
+        aEvent->lastRefPoint = aEvent->refPoint;
       } else {
         aEvent->lastRefPoint = sLastRefPoint;
       }
@@ -4196,6 +4213,10 @@ nsEventStateManager::GenerateMouseEnterExit(nsGUIEvent* aEvent)
         // mLastMouseOverFrame, it's a spurious event for mLastMouseOverFrame
         break;
       }
+
+      // Reset sLastRefPoint, so that we'll know not to report any
+      // movement the next time we re-enter the window.
+      sLastRefPoint = kInvalidRefPoint;
 
       NotifyMouseOut(aEvent, nullptr);
     }
@@ -4865,6 +4886,8 @@ nsEventStateManager::ContentRemoved(nsIDocument* aDocument, nsIContent* aContent
     element->LeaveLink(element->GetPresContext());
   }
 
+  nsIMEStateManager::OnRemoveContent(mPresContext, aContent);
+
   // inform the focus manager that the content is being removed. If this
   // content is focused, the focus will be removed without firing events.
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
@@ -5252,7 +5275,7 @@ nsEventStateManager::DeltaAccumulator::Reset()
 {
   mX = mY = 0.0;
   mPendingScrollAmountX = mPendingScrollAmountY = 0.0;
-  mHandlingDeltaMode = PR_UINT32_MAX;
+  mHandlingDeltaMode = UINT32_MAX;
   mHandlingPixelOnlyDevice = false;
 }
 

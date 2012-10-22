@@ -111,6 +111,7 @@ class IonCache
             Register object;
             PropertyName *name;
             TypedOrValueRegisterSpace output;
+            bool allowGetters;
         } getprop;
         struct {
             Register object;
@@ -256,19 +257,26 @@ class IonCacheGetProperty : public IonCache
                         CodeOffsetLabel cacheLabel,
                         RegisterSet liveRegs,
                         Register object, PropertyName *name,
-                        TypedOrValueRegister output)
+                        TypedOrValueRegister output,
+                        bool allowGetters)
     {
         init(GetProperty, liveRegs, initialJump, rejoinLabel, cacheLabel);
         u.getprop.object = object;
         u.getprop.name = name;
         u.getprop.output.data() = output;
+        u.getprop.allowGetters = allowGetters;
     }
 
     Register object() const { return u.getprop.object; }
     PropertyName *name() const { return u.getprop.name; }
     TypedOrValueRegister output() const { return u.getprop.output.data(); }
+    bool allowGetters() const { return u.getprop.allowGetters; }
 
-    bool attachNative(JSContext *cx, JSObject *obj, JSObject *holder, const Shape *shape);
+    bool attachReadSlot(JSContext *cx, IonScript *ion, JSObject *obj, JSObject *holder,
+                        const Shape *shape);
+    bool attachCallGetter(JSContext *cx, IonScript *ion, JSObject *obj, JSObject *holder,
+                          const Shape *shape,
+                          const SafepointIndex *safepointIndex, void *returnAddr);
 };
 
 class IonCacheSetProperty : public IonCache
@@ -294,9 +302,9 @@ class IonCacheSetProperty : public IonCache
     ConstantOrRegister value() const { return u.setprop.value.data(); }
     bool strict() const { return u.setprop.strict; }
 
-    bool attachNativeExisting(JSContext *cx, JSObject *obj, const Shape *shape);
-    bool attachNativeAdding(JSContext *cx, JSObject *obj, const Shape *oldshape, const Shape *newshape,
-                            const Shape *propshape);
+    bool attachNativeExisting(JSContext *cx, IonScript *ion, JSObject *obj, const Shape *shape);
+    bool attachNativeAdding(JSContext *cx, IonScript *ion, JSObject *obj, const Shape *oldshape,
+                            const Shape *newshape, const Shape *propshape);
 };
 
 class IonCacheGetElement : public IonCache
@@ -337,8 +345,8 @@ class IonCacheGetElement : public IonCache
         u.getelem.hasDenseArrayStub = true;
     }
 
-    bool attachGetProp(JSContext *cx, HandleObject obj, const Value &idval, PropertyName *name);
-    bool attachDenseArray(JSContext *cx, JSObject *obj, const Value &idval);
+    bool attachGetProp(JSContext *cx, IonScript *ion, HandleObject obj, const Value &idval, PropertyName *name);
+    bool attachDenseArray(JSContext *cx, IonScript *ion, JSObject *obj, const Value &idval);
 };
 
 class IonCacheBindName : public IonCache
@@ -367,8 +375,8 @@ class IonCacheBindName : public IonCache
         return u.bindname.output;
     }
 
-    bool attachGlobal(JSContext *cx, JSObject *scopeChain);
-    bool attachNonGlobal(JSContext *cx, JSObject *scopeChain, JSObject *holder);
+    bool attachGlobal(JSContext *cx, IonScript *ion, JSObject *scopeChain);
+    bool attachNonGlobal(JSContext *cx, IonScript *ion, JSObject *scopeChain, JSObject *holder);
 };
 
 class IonCacheName : public IonCache
@@ -401,7 +409,8 @@ class IonCacheName : public IonCache
         return kind_ == NameTypeOf;
     }
 
-    bool attach(JSContext *cx, HandleObject scopeChain, HandleObject obj, Shape *shape);
+    bool attach(JSContext *cx, IonScript *ion, HandleObject scopeChain, HandleObject obj,
+                Shape *shape);
 };
 
 bool

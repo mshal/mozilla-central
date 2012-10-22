@@ -28,6 +28,11 @@ pref("browser.chromeURL", "chrome://browser/content/");
 
 pref("browser.tabs.remote", false);
 
+// If a tab has not been active for this long (seconds), then it may be
+// turned into a zombie tab to preemptively free up memory. -1 disables time-based
+// zombification (low-memory conditions may still require the tab to be zombified).
+pref("browser.tabs.zombieTime", -1);
+
 // From libpref/src/init/all.js, extended to allow a slightly wider zoom range.
 pref("zoom.minPercent", 20);
 pref("zoom.maxPercent", 400);
@@ -60,6 +65,7 @@ pref("browser.cache.memory.capacity", 1024); // kilobytes
 
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
+pref("image.high_quality_downscaling.enabled", false);
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);
@@ -126,12 +132,6 @@ pref("browser.download.manager.openDelay", 0);
 pref("browser.download.manager.focusWhenStarting", false);
 pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
-
-/* download alerts (disabled above) */
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 6000);
-pref("alerts.height", 50);
 
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
@@ -249,6 +249,7 @@ pref("browser.search.updateinterval", 6);
 
 // disable search suggestions by default
 pref("browser.search.suggest.enabled", false);
+pref("browser.search.suggest.prompted", false);
 
 // Tell the search service to load search plugins from the locale JAR
 pref("browser.search.loadFromJars", true);
@@ -322,12 +323,14 @@ pref("gfx.color_management.mode", 0);
 
 // 0=fixed margin, 1=velocity bias, 2=dynamic resolution, 3=no margins, 4=prediction bias
 pref("gfx.displayport.strategy", 1);
+
 // all of the following displayport strategy prefs will be divided by 1000
 // to obtain some multiplier which is then used in the strategy.
 // fixed margin strategy options
 pref("gfx.displayport.strategy_fm.multiplier", -1); // displayport dimension multiplier
 pref("gfx.displayport.strategy_fm.danger_x", -1); // danger zone on x-axis when multiplied by viewport width
 pref("gfx.displayport.strategy_fm.danger_y", -1); // danger zone on y-axis when multiplied by viewport height
+
 // velocity bias strategy options
 pref("gfx.displayport.strategy_vb.multiplier", -1); // displayport dimension multiplier
 pref("gfx.displayport.strategy_vb.threshold", -1); // velocity threshold in inches/frame
@@ -336,8 +339,11 @@ pref("gfx.displayport.strategy_vb.danger_x_base", -1); // danger zone on x-axis 
 pref("gfx.displayport.strategy_vb.danger_y_base", -1); // danger zone on y-axis when multiplied by viewport height
 pref("gfx.displayport.strategy_vb.danger_x_incr", -1); // additional danger zone on x-axis when multiplied by viewport width and velocity
 pref("gfx.displayport.strategy_vb.danger_y_incr", -1); // additional danger zone on y-axis when multiplied by viewport height and velocity
+
 // prediction bias strategy options
 pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inches/frame
+
+pref("gfx.java.screenshot.enabled", true);
 
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);
@@ -492,6 +498,10 @@ pref("browser.search.param.yahoo-fr-ja", "mozff");
 pref("app.update.timerFirstInterval", 30000); // milliseconds
 pref("app.update.timerMinimumDelay", 30); // seconds
 
+// used by update service to decide whether or not to
+// automatically download an update
+pref("app.update.autodownload", "wifi");
+
 #ifdef MOZ_UPDATER
 /* prefs used specifically for updating the app */
 pref("app.update.enabled", false);
@@ -512,6 +522,7 @@ pref("ui.dragThresholdY", 25);
 pref("layers.acceleration.disabled", false);
 pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.async-video.enabled", true);
+pref("layers.progressive-paint", false);
 
 pref("notification.feature.enabled", true);
 
@@ -539,8 +550,8 @@ pref("image.mem.min_discard_timeout_ms", 10000);
 pref("dom.w3c_touch_events.enabled", true);
 
 #ifdef MOZ_SAFE_BROWSING
-pref("browser.safebrowsing.enabled", false);
-pref("browser.safebrowsing.malware.enabled", false);
+pref("browser.safebrowsing.enabled", true);
+pref("browser.safebrowsing.malware.enabled", true);
 pref("browser.safebrowsing.debug", false);
 
 pref("browser.safebrowsing.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
@@ -608,9 +619,6 @@ pref("gfx.show_checkerboard_pattern", true);
 pref("ui.scrolling.friction_slow", -1);
 // This fraction in 1000ths of velocity remains after every animation frame when the velocity is high.
 pref("ui.scrolling.friction_fast", -1);
-// Below this velocity (in pixels per frame), the friction starts increasing from friction_fast
-// to friction_slow.
-pref("ui.scrolling.velocity_threshold", -1);
 // The maximum velocity change factor between events, per ms, in 1000ths.
 // Direction changes are excluded.
 pref("ui.scrolling.max_event_acceleration", -1);
@@ -621,9 +629,6 @@ pref("ui.scrolling.overscroll_snap_limit", -1);
 // The minimum amount of space that must be present for an axis to be considered scrollable,
 // in 1/1000ths of pixels.
 pref("ui.scrolling.min_scrollable_distance", -1);
-// A comma-separated list of float values in the range [0.0, 1.0) that are used as
-// interpolation frames for zoom animations.
-pref("ui.zooming.animation_frames", "");
 
 // Enable accessibility mode if platform accessibility is enabled.
 pref("accessibility.accessfu.activate", 2);
@@ -658,7 +663,7 @@ pref("media.plugins.enabled", true);
 pref("media.stagefright.omxcodec.flags", 0);
 
 // Coalesce touch events to prevent them from flooding the event queue
-pref("dom.event.touch.coalescing.enabled", true);
+pref("dom.event.touch.coalescing.enabled", false);
 
 // default orientation for the app, default to undefined
 // the java GeckoScreenOrientationListener needs this to be defined

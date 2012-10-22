@@ -13,9 +13,6 @@
 #include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
 #include "nsIPresShell.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsIServiceManager.h"
 #include "nsIDOMNode.h"
 #include "nsDisplayList.h"
@@ -114,18 +111,14 @@ nsTableCaptionFrame::GetParentStyleContextFrame() const
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsTableCaptionFrame::CreateAccessible()
+a11y::AccType
+nsTableCaptionFrame::AccessibleType()
 {
   if (!GetRect().IsEmpty()) {
-    nsAccessibilityService* accService = nsIPresShell::AccService();
-    if (accService) {
-      return accService->CreateHTMLCaptionAccessible(mContent,
-                                                     PresContext()->PresShell());
-    }
+    return a11y::eHTMLCaptionAccessible;
   }
 
-  return nullptr;
+  return a11y::eNoAccessible;
 }
 #endif
 
@@ -161,16 +154,10 @@ NS_QUERYFRAME_HEAD(nsTableOuterFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsTableOuterFrame::CreateAccessible()
+a11y::AccType
+nsTableOuterFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLTableAccessible(mContent,
-                                                 PresContext()->PresShell());
-  }
-
-  return nullptr;
+  return a11y::eHTMLTableAccessible;
 }
 #endif
 
@@ -1052,12 +1039,12 @@ NS_METHOD nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
                     innerOrigin.x, innerOrigin.y, 0);
   innerRS->~nsHTMLReflowState();
 
-  nsTableFrame::InvalidateFrame(InnerTableFrame(), origInnerRect,
-                                origInnerVisualOverflow, innerFirstReflow);
+  nsTableFrame::InvalidateTableFrame(InnerTableFrame(), origInnerRect,
+                                     origInnerVisualOverflow, innerFirstReflow);
   if (mCaptionFrames.NotEmpty()) {
-    nsTableFrame::InvalidateFrame(mCaptionFrames.FirstChild(), origCaptionRect,
-                                  origCaptionVisualOverflow,
-                                  captionFirstReflow);
+    nsTableFrame::InvalidateTableFrame(mCaptionFrames.FirstChild(), origCaptionRect,
+                                       origCaptionVisualOverflow,
+                                       captionFirstReflow);
   }
 
   UpdateReflowMetrics(captionSide, aDesiredSize, innerMargin, captionMargin);

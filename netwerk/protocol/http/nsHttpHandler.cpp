@@ -130,14 +130,15 @@ nsHttpHandler::nsHttpHandler()
     , mHttpVersion(NS_HTTP_VERSION_1_1)
     , mProxyHttpVersion(NS_HTTP_VERSION_1_1)
     , mCapabilities(NS_HTTP_ALLOW_KEEPALIVE)
-    , mProxyCapabilities(NS_HTTP_ALLOW_KEEPALIVE)
     , mReferrerLevel(0xff) // by default we always send a referrer
     , mFastFallbackToIPv4(false)
+    , mProxyPipelining(true)
     , mIdleTimeout(PR_SecondsToInterval(10))
     , mSpdyTimeout(PR_SecondsToInterval(180))
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
+    , mPipeliningEnabled(false)
     , mMaxConnections(24)
     , mMaxPersistentConnectionsPerServer(2)
     , mMaxPersistentConnectionsPerProxy(4)
@@ -166,12 +167,14 @@ nsHttpHandler::nsHttpHandler()
     , mDoNotTrackEnabled(false)
     , mTelemetryEnabled(false)
     , mAllowExperiments(true)
+    , mHandlerActive(false)
     , mEnableSpdy(false)
     , mSpdyV2(true)
     , mSpdyV3(true)
     , mCoalesceSpdy(true)
     , mUseAlternateProtocol(false)
     , mSpdySendingChunkSize(ASpdySession::kSendingChunkSize)
+    , mSpdySendBufferSize(ASpdySession::kTCPSendBufferSize)
     , mSpdyPingThreshold(PR_SecondsToInterval(44))
     , mSpdyPingTimeout(PR_SecondsToInterval(8))
     , mConnectTimeout(90000)
@@ -200,6 +203,10 @@ nsHttpHandler::~nsHttpHandler()
     // and it'll segfault.  NeckoChild will get cleaned up by process exit.
 
     nsHttp::DestroyAtomTable();
+    if (mPipelineTestTimer) {
+        mPipelineTestTimer->Cancel();
+        mPipelineTestTimer = nullptr;
+    }
 
     gHttpHandler = nullptr;
 }
@@ -261,6 +268,7 @@ nsHttpHandler::Init()
     }
 
     mSessionStartTime = NowInSeconds();
+    mHandlerActive = true;
 
     rv = mAuthCache.Init();
     if (NS_FAILED(rv)) return rv;
@@ -326,8 +334,7 @@ nsHttpHandler::InitConnectionMgr()
 }
 
 nsresult
-nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
-                                         uint8_t caps)
+nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request)
 {
     nsresult rv;
 
@@ -351,6 +358,20 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
     rv = request->SetHeader(nsHttp::Accept_Encoding, mAcceptEncodings);
     if (NS_FAILED(rv)) return rv;
 
+    // Add the "Do-Not-Track" header
+    if (mDoNotTrackEnabled) {
+      rv = request->SetHeader(nsHttp::DoNotTrack,
+                              NS_LITERAL_CSTRING("1"));
+      if (NS_FAILED(rv)) return rv;
+    }
+
+    return NS_OK;
+}
+
+nsresult
+nsHttpHandler::AddConnectionHeader(nsHttpHeaderArray *request,
+                                   uint8_t caps)
+{
     // RFC2616 section 19.6.2 states that the "Connection: keep-alive"
     // and "Keep-alive" request headers should not be sent by HTTP/1.1
     // user-agents.  But this is not a problem in practice, and the
@@ -362,13 +383,6 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
     const nsACString *connectionType = &close;
     if (caps & NS_HTTP_ALLOW_KEEPALIVE) {
         connectionType = &keepAlive;
-    }
-
-    // Add the "Do-Not-Track" header
-    if (mDoNotTrackEnabled) {
-      rv = request->SetHeader(nsHttp::DoNotTrack,
-                              NS_LITERAL_CSTRING("1"));
-      if (NS_FAILED(rv)) return rv;
     }
 
     return request->SetHeader(nsHttp::Connection, *connectionType);
@@ -860,6 +874,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
                 mCapabilities |=  NS_HTTP_ALLOW_PIPELINING;
             else
                 mCapabilities &= ~NS_HTTP_ALLOW_PIPELINING;
+            mPipeliningEnabled = cVar;
         }
     }
 
@@ -938,12 +953,8 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
 
     if (PREF_CHANGED(HTTP_PREF("proxy.pipelining"))) {
         rv = prefs->GetBoolPref(HTTP_PREF("proxy.pipelining"), &cVar);
-        if (NS_SUCCEEDED(rv)) {
-            if (cVar)
-                mProxyCapabilities |=  NS_HTTP_ALLOW_PIPELINING;
-            else
-                mProxyCapabilities &= ~NS_HTTP_ALLOW_PIPELINING;
-        }
+        if (NS_SUCCEEDED(rv))
+            mProxyPipelining = cVar;
     }
 
     if (PREF_CHANGED(HTTP_PREF("qos"))) {
@@ -1093,6 +1104,14 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
                 PR_SecondsToInterval((uint16_t) clamped(val, 0, 0x7fffffff));
     }
 
+    // The amount of seconds to wait for a spdy ping response before
+    // closing the session.
+    if (PREF_CHANGED(HTTP_PREF("spdy.send-buffer-size"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.send-buffer-size"), &val);
+        if (NS_SUCCEEDED(rv))
+            mSpdySendBufferSize = (uint32_t) clamped(val, 1500, 0x7fffffff);
+    }
+
     // The maximum amount of time to wait for socket transport to be
     // established
     if (PREF_CHANGED(HTTP_PREF("connection-timeout"))) {
@@ -1182,8 +1201,51 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         }
     }
 
+    //
+    // Test HTTP Pipelining (bug796192)
+    // If experiments are allowed and pipelining is Off,
+    // turn it On for just 10 minutes
+    //
+    if (mAllowExperiments && !mPipeliningEnabled &&
+        PREF_CHANGED(HTTP_PREF("pipelining.abtest"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("pipelining.abtest"), &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            // If option is enabled, only test for ~1% of sessions
+            if (cVar && !(rand() % 128)) {
+                mCapabilities |=  NS_HTTP_ALLOW_PIPELINING;
+                if (mPipelineTestTimer)
+                    mPipelineTestTimer->Cancel();
+                mPipelineTestTimer =
+                    do_CreateInstance("@mozilla.org/timer;1", &rv);
+                if (NS_SUCCEEDED(rv)) {
+                    rv = mPipelineTestTimer->InitWithFuncCallback(
+                        TimerCallback, this, 10*60*1000, // 10 minutes
+                        nsITimer::TYPE_ONE_SHOT);
+                }
+            } else {
+                mCapabilities &= ~NS_HTTP_ALLOW_PIPELINING;
+                if (mPipelineTestTimer) {
+                    mPipelineTestTimer->Cancel();
+                    mPipelineTestTimer = nullptr;
+                }
+            }
+        }
+    }
+
 #undef PREF_CHANGED
 #undef MULTI_PREF_CHANGED
+}
+
+
+/**
+ * Static method called by mPipelineTestTimer when it expires.
+ */
+void
+nsHttpHandler::TimerCallback(nsITimer * aTimer, void * aClosure)
+{
+    nsRefPtr<nsHttpHandler> thisObject = static_cast<nsHttpHandler*>(aClosure);
+    if (!thisObject->mPipeliningEnabled)
+        thisObject->mCapabilities &= ~NS_HTTP_ALLOW_PIPELINING;
 }
 
 /**
@@ -1370,7 +1432,7 @@ nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
         }
     }
 
-    return NewProxiedChannel(uri, nullptr, result);
+    return NewProxiedChannel(uri, nullptr, 0, nullptr, result);
 }
 
 NS_IMETHODIMP
@@ -1388,6 +1450,8 @@ nsHttpHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 NS_IMETHODIMP
 nsHttpHandler::NewProxiedChannel(nsIURI *uri,
                                  nsIProxyInfo* givenProxyInfo,
+                                 uint32_t proxyResolveFlags,
+                                 nsIURI *proxyURI,
                                  nsIChannel **result)
 {
     nsRefPtr<HttpBaseChannel> httpChannel;
@@ -1412,13 +1476,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI *uri,
         httpChannel = new nsHttpChannel();
     }
 
-    // select proxy caps if using a non-transparent proxy.  SSL tunneling
-    // should not use proxy settings.
-    int8_t caps;
-    if (proxyInfo && !nsCRT::strcmp(proxyInfo->Type(), "http") && !https)
-        caps = mProxyCapabilities;
-    else
-        caps = mCapabilities;
+    uint8_t caps = mCapabilities;
 
     if (https) {
         // enable pipelining over SSL if requested
@@ -1431,7 +1489,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI *uri,
         }
     }
 
-    rv = httpChannel->Init(uri, caps, proxyInfo);
+    rv = httpChannel->Init(uri, caps, proxyInfo, proxyResolveFlags, proxyURI);
     if (NS_FAILED(rv))
         return rv;
 
@@ -1503,6 +1561,8 @@ nsHttpHandler::Observe(nsISupports *subject,
     }
     else if (strcmp(topic, "profile-change-net-teardown")    == 0 ||
              strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)    == 0) {
+
+        mHandlerActive = false;
 
         // clear cache of all authentication credentials.
         mAuthCache.ClearAll();

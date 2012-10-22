@@ -1271,9 +1271,10 @@ nsHTMLEditRules::WillInsertText(EditAction aAction,
   nsCOMPtr<nsIDOMNode> selNode;
   int32_t selOffset;
 
-  // if the selection isn't collapsed, delete it.
+  // If the selection isn't collapsed, delete it.  Don't delete existing inline
+  // tags, because we're hopefully going to insert text (bug 787432).
   if (!aSelection->Collapsed()) {
-    res = mHTMLEditor->DeleteSelection(nsIEditor::eNone, nsIEditor::eStrip);
+    res = mHTMLEditor->DeleteSelection(nsIEditor::eNone, nsIEditor::eNoStrip);
     NS_ENSURE_SUCCESS(res, res);
   }
 
@@ -4553,9 +4554,11 @@ nsHTMLEditRules::WillAlign(Selection* aSelection,
 
     // Skip insignificant formatting text nodes to prevent
     // unnecessary structure splitting!
+    bool isEmptyTextNode = false;
     if (nsEditor::IsTextNode(curNode) &&
        ((nsHTMLEditUtils::IsTableElement(curParent) && !nsHTMLEditUtils::IsTableCellOrCaption(curParent)) ||
-        nsHTMLEditUtils::IsList(curParent)))
+        nsHTMLEditUtils::IsList(curParent) ||
+        (NS_SUCCEEDED(mHTMLEditor->IsEmptyNode(curNode, &isEmptyTextNode)) && isEmptyTextNode)))
       continue;
 
     // if it's a list item, or a list
@@ -5262,12 +5265,12 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
   if (aWhere == kStart) {
     // some special casing for text nodes
     if (node->IsNodeOfType(nsINode::eTEXT)) {
-      if (!node->GetNodeParent()) {
+      if (!node->GetParentNode()) {
         // Okay, can't promote any further
         return;
       }
-      offset = node->GetNodeParent()->IndexOf(node);
-      node = node->GetNodeParent();
+      offset = node->GetParentNode()->IndexOf(node);
+      node = node->GetParentNode();
     }
 
     // look back through any further inline nodes that aren't across a <br>
@@ -5275,11 +5278,11 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
     nsCOMPtr<nsINode> priorNode =
       mHTMLEditor->GetPriorHTMLNode(node, offset, true);
 
-    while (priorNode && priorNode->GetNodeParent() &&
+    while (priorNode && priorNode->GetParentNode() &&
            !mHTMLEditor->IsVisBreak(priorNode->AsDOMNode()) &&
            !IsBlockNode(priorNode->AsDOMNode())) {
-      offset = priorNode->GetNodeParent()->IndexOf(priorNode);
-      node = priorNode->GetNodeParent();
+      offset = priorNode->GetParentNode()->IndexOf(priorNode);
+      node = priorNode->GetParentNode();
       priorNode = mHTMLEditor->GetPriorHTMLNode(node, offset, true);
     }
 
@@ -5289,7 +5292,7 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
     nsCOMPtr<nsIContent> nearNode =
       mHTMLEditor->GetPriorHTMLNode(node, offset, true);
     while (!nearNode && node->Tag() != nsGkAtoms::body &&
-           node->GetNodeParent()) {
+           node->GetParentNode()) {
       // some cutoffs are here: we don't need to also include them in the
       // aWhere == kEnd case.  as long as they are in one or the other it will
       // work.  special case for outdent: don't keep looking up if we have
@@ -5299,8 +5302,8 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
         break;
       }
 
-      int32_t parentOffset = node->GetNodeParent()->IndexOf(node);
-      nsCOMPtr<nsINode> parent = node->GetNodeParent();
+      int32_t parentOffset = node->GetParentNode()->IndexOf(node);
+      nsCOMPtr<nsINode> parent = node->GetParentNode();
 
       // Don't walk past the editable section. Note that we need to check
       // before walking up to a parent because we need to return the parent
@@ -5327,13 +5330,13 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
   // aWhere == kEnd
   // some special casing for text nodes
   if (node->IsNodeOfType(nsINode::eTEXT)) {
-    if (!node->GetNodeParent()) {
+    if (!node->GetParentNode()) {
       // Okay, can't promote any further
       return;
     }
     // want to be after the text node
-    offset = 1 + node->GetNodeParent()->IndexOf(node);
-    node = node->GetNodeParent();
+    offset = 1 + node->GetParentNode()->IndexOf(node);
+    node = node->GetParentNode();
   }
 
   // look ahead through any further inline nodes that aren't across a <br> from
@@ -5342,9 +5345,9 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
     mHTMLEditor->GetNextHTMLNode(node, offset, true);
 
   while (nextNode && !IsBlockNode(nextNode->AsDOMNode()) &&
-         nextNode->GetNodeParent()) {
-    offset = 1 + nextNode->GetNodeParent()->IndexOf(nextNode);
-    node = nextNode->GetNodeParent();
+         nextNode->GetParentNode()) {
+    offset = 1 + nextNode->GetParentNode()->IndexOf(nextNode);
+    node = nextNode->GetParentNode();
     if (mHTMLEditor->IsVisBreak(nextNode->AsDOMNode())) {
       break;
     }
@@ -5357,9 +5360,9 @@ nsHTMLEditRules::GetPromotedPoint(RulesEndpoint aWhere, nsIDOMNode* aNode,
   nsCOMPtr<nsIContent> nearNode =
     mHTMLEditor->GetNextHTMLNode(node, offset, true);
   while (!nearNode && node->Tag() != nsGkAtoms::body &&
-         node->GetNodeParent()) {
-    int32_t parentOffset = node->GetNodeParent()->IndexOf(node);
-    nsCOMPtr<nsINode> parent = node->GetNodeParent();
+         node->GetParentNode()) {
+    int32_t parentOffset = node->GetParentNode()->IndexOf(node);
+    nsCOMPtr<nsINode> parent = node->GetParentNode();
 
     // Don't walk past the editable section. Note that we need to check before
     // walking up to a parent because we need to return the parent object, so
@@ -6195,13 +6198,13 @@ nsHTMLEditRules::IsInListItem(nsINode* aNode)
     return aNode;
   }
 
-  nsINode* parent = aNode->GetNodeParent();
+  nsINode* parent = aNode->GetParentNode();
   while (parent && mHTMLEditor->IsDescendantOfEditorRoot(parent) &&
          !nsHTMLEditUtils::IsTableElement(parent)) {
     if (nsHTMLEditUtils::IsListItem(parent)) {
       return parent;
     }
-    parent = parent->GetNodeParent();
+    parent = parent->GetParentNode();
   }
   return nullptr;
 }
@@ -7581,11 +7584,11 @@ nsHTMLEditRules::InDifferentTableElements(nsINode* aNode1, nsINode* aNode2)
   MOZ_ASSERT(aNode1 && aNode2);
 
   while (aNode1 && !nsHTMLEditUtils::IsTableElement(aNode1)) {
-    aNode1 = aNode1->GetNodeParent();
+    aNode1 = aNode1->GetParentNode();
   }
 
   while (aNode2 && !nsHTMLEditUtils::IsTableElement(aNode2)) {
-    aNode2 = aNode2->GetNodeParent();
+    aNode2 = aNode2->GetParentNode();
   }
 
   return aNode1 != aNode2;
@@ -7633,7 +7636,7 @@ nsHTMLEditRules::RemoveEmptyNodes()
     nsINode* node = iter->GetCurrentNode();
     NS_ENSURE_TRUE(node, NS_ERROR_FAILURE);
 
-    nsINode* parent = node->GetNodeParent();
+    nsINode* parent = node->GetParentNode();
     
     uint32_t idx = skipList.IndexOf(node);
     if (idx != skipList.NoIndex) {

@@ -129,6 +129,12 @@ struct IonOptions
     // Default: 800
     uint32 inlineMaxTotalBytecodeLength;
 
+    // Minimal ratio between the use counts of the caller and the callee to
+    // enable inlining of functions.
+    //
+    // Default: 128
+    uint32 inlineUseCountRatio;
+
     // Whether functions are compiled immediately.
     //
     // Default: false
@@ -159,7 +165,7 @@ struct IonOptions
         lsra(true),
         inlining(true),
         edgeCaseAnalysis(true),
-        rangeAnalysis(false),
+        rangeAnalysis(true),
         parallelCompilation(false),
         usesBeforeCompile(10240),
         usesBeforeCompileNoJaeger(40),
@@ -170,6 +176,7 @@ struct IonOptions
         smallFunctionUsesBeforeInlining(usesBeforeInlining / 4),
         polyInlineMax(4),
         inlineMaxTotalBytecodeLength(800),
+        inlineUseCountRatio(128),
         eagerCompilation(false),
         slowCallLimit(512)
     {
@@ -219,6 +226,7 @@ bool SetIonContext(IonContext *ctx);
 MethodStatus CanEnterAtBranch(JSContext *cx, HandleScript script,
                               StackFrame *fp, jsbytecode *pc);
 MethodStatus CanEnter(JSContext *cx, HandleScript script, StackFrame *fp, bool newType);
+MethodStatus CanEnterUsingFastInvoke(JSContext *cx, HandleScript script);
 
 enum IonExecStatus
 {
@@ -229,6 +237,9 @@ enum IonExecStatus
 
 IonExecStatus Cannon(JSContext *cx, StackFrame *fp);
 IonExecStatus SideCannon(JSContext *cx, StackFrame *fp, jsbytecode *pc);
+
+// Used to enter Ion from C++ natives like Array.map. Called from FastInvokeGuard.
+IonExecStatus FastInvoke(JSContext *cx, HandleFunction fun, CallArgs &args);
 
 // Walk the stack and invalidate active Ion frames for the invalid scripts.
 void Invalidate(types::TypeCompartment &types, FreeOp *fop,
@@ -241,8 +252,10 @@ void MarkFromIon(JSCompartment *comp, Value *vp);
 void ToggleBarriers(JSCompartment *comp, bool needs);
 
 class IonBuilder;
+class MIRGenerator;
+class LIRGraph;
 
-bool CompileBackEnd(IonBuilder *builder);
+LIRGraph *CompileBackEnd(MIRGenerator *mir);
 void AttachFinishedCompilations(JSContext *cx);
 void FinishOffThreadBuilder(IonBuilder *builder);
 bool TestIonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, bool constructing);

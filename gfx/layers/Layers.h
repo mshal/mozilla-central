@@ -87,20 +87,6 @@ public:
   virtual ~LayerUserData() {}
 };
 
-class LayerManagerLayerBuilder : public LayerUserData {
-public:
-  LayerManagerLayerBuilder(FrameLayerBuilder* aBuilder, bool aDelete = true)
-    : mLayerBuilder(aBuilder)
-    , mDelete(aDelete)
-  {
-    MOZ_COUNT_CTOR(LayerManagerLayerBuilder);
-  }
-  ~LayerManagerLayerBuilder();
-
-  FrameLayerBuilder* mLayerBuilder;
-  bool mDelete;
-};
-
 /*
  * Motivation: For truly smooth animation and video playback, we need to
  * be able to compose frames and render them on a dedicated thread (i.e.
@@ -213,8 +199,7 @@ public:
   };
 
   FrameLayerBuilder* GetLayerBuilder() {
-    LayerManagerLayerBuilder *data = static_cast<LayerManagerLayerBuilder*>(GetUserData(&gLayerManagerLayerBuilder));
-    return data ? data->mLayerBuilder : nullptr;
+    return reinterpret_cast<FrameLayerBuilder*>(GetUserData(&gLayerManagerLayerBuilder));
   }
 
   /**
@@ -403,7 +388,7 @@ public:
   virtual bool CanUseCanvasLayerForSize(const gfxIntSize &aSize) { return true; }
 
   /**
-   * returns the maximum texture size on this layer backend, or PR_INT32_MAX
+   * returns the maximum texture size on this layer backend, or INT32_MAX
    * if there is no maximum
    */
   virtual int32_t GetMaxTextureSize() const = 0;
@@ -483,6 +468,8 @@ public:
 
   void PostPresent();
 
+  void BeginTabSwitch();
+
   static bool IsLogEnabled();
   static PRLogModuleInfo* GetLog() { return sLog; }
 
@@ -510,6 +497,7 @@ protected:
 private:
   TimeStamp mLastFrameTime;
   nsTArray<float> mFrameTimes;
+  TimeStamp mTabSwitchStart;
 };
 
 class ThebesLayer;
@@ -716,11 +704,25 @@ public:
    */
   void SetBaseTransform(const gfx3DMatrix& aMatrix)
   {
+    mPendingTransform = nullptr;
     if (mTransform == aMatrix) {
       return;
     }
     mTransform = aMatrix;
     Mutated();
+  }
+
+  /**
+   * Can be called at any time.
+   *
+   * Like SetBaseTransform(), but can be called before the next
+   * transform (i.e. outside an open transaction).  Semantically, this
+   * method enqueues a new transform value to be set immediately after
+   * the next transaction is opened.
+   */
+  void SetBaseTransformForNextTransaction(const gfx3DMatrix& aMatrix)
+  {
+    mPendingTransform = new gfx3DMatrix(aMatrix);
   }
 
   void SetPostScale(float aXScale, float aYScale)
@@ -778,6 +780,15 @@ public:
 
   AnimationArray& GetAnimations() { return mAnimations; }
   InfallibleTArray<AnimData>& GetAnimationData() { return mAnimationData; }
+
+  /**
+   * DRAWING PHASE ONLY
+   *
+   * Apply pending changes to layers before drawing them, if those
+   * pending changes haven't been overridden by later changes.
+   */
+  void ApplyPendingUpdatesToSubtree();
+
   /**
    * DRAWING PHASE ONLY
    *
@@ -972,6 +983,30 @@ public:
 
   static bool IsLogEnabled() { return LayerManager::IsLogEnabled(); }
 
+  /**
+   * Returns the current area of the layer (in layer-space coordinates)
+   * marked as needed to be recomposited.
+   */
+  const nsIntRegion& GetInvalidRegion() { return mInvalidRegion; }
+
+  /**
+   * Mark the entirety of the layer's visible region as being invalid.
+   */
+  void SetInvalidRectToVisibleRegion() { mInvalidRegion = GetVisibleRegion(); }
+
+  /**
+   * Adds to the current invalid rect.
+   */
+  void AddInvalidRect(const nsIntRect& aRect) { mInvalidRegion.Or(mInvalidRegion, aRect); }
+
+  /**
+   * Clear the invalid rect, marking the layer as being identical to what is currently
+   * composited.
+   */
+  void ClearInvalidRect() { mInvalidRegion.SetEmpty(); }
+
+  void ApplyPendingUpdatesForThisTransaction();
+
 #ifdef DEBUG
   void SetDebugColorIndex(uint32_t aIndex) { mDebugColorIndex = aIndex; }
   uint32_t GetDebugColorIndex() { return mDebugColorIndex; }
@@ -1025,6 +1060,10 @@ protected:
   gfx::UserData mUserData;
   nsIntRegion mVisibleRegion;
   gfx3DMatrix mTransform;
+  // A mutation of |mTransform| that we've queued to be applied at the
+  // end of the next transaction (if nothing else overrides it in the
+  // meantime).
+  nsAutoPtr<gfx3DMatrix> mPendingTransform;
   float mPostXScale;
   float mPostYScale;
   gfx3DMatrix mEffectiveTransform;
@@ -1033,6 +1072,7 @@ protected:
   float mOpacity;
   nsIntRect mClipRect;
   nsIntRect mTileSourceRect;
+  nsIntRegion mInvalidRegion;
   uint32_t mContentFlags;
   bool mUseClipRect;
   bool mUseTileSourceRect;
@@ -1378,7 +1418,27 @@ public:
    * Notify this CanvasLayer that the canvas surface contents have
    * changed (or will change) before the next transaction.
    */
-  void Updated() { mDirty = true; }
+  void Updated() { mDirty = true; SetInvalidRectToVisibleRegion(); }
+
+  /**
+   * Notify this CanvasLayer that the canvas surface contents have
+   * been painted since the last change.
+   */
+  void Painted() { mDirty = false; }
+
+  /**
+   * Returns true if the canvas surface contents have changed since the
+   * last paint.
+   */
+  bool IsDirty() 
+  { 
+    // We can only tell if we are dirty if we're part of the
+    // widget's retained layer tree.
+    if (!mManager || !mManager->IsWidgetLayerManager()) {
+      return true;
+    }
+    return mDirty; 
+  }
 
   /**
    * Register a callback to be called at the end of each transaction.
@@ -1434,6 +1494,8 @@ protected:
   DidTransactionCallback mCallback;
   void* mCallbackData;
   gfxPattern::GraphicsFilter mFilter;
+
+private:
   /**
    * Set to true in Updated(), cleared during a transaction.
    */

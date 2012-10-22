@@ -21,18 +21,6 @@
 
 #include "nsISMILAttr.h"
 
-// This bit is set to indicate that if the text node changes to
-// non-whitespace, we may need to create a frame for it. This bit must
-// not be set on nodes that already have a frame.
-#define NS_CREATE_FRAME_IF_NON_WHITESPACE (1 << NODE_TYPE_SPECIFIC_BITS_OFFSET)
-
-// This bit is set to indicate that if the text node changes to
-// whitespace, we may need to reframe it (or its ancestors).
-#define NS_REFRAME_IF_WHITESPACE (1 << (NODE_TYPE_SPECIFIC_BITS_OFFSET + 1))
-
-// Make sure we have enough space for those bits
-PR_STATIC_ASSERT(NODE_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
-
 class nsIDOMAttr;
 class nsIDOMEventListener;
 class nsIDOMNodeList;
@@ -40,6 +28,25 @@ class nsIFrame;
 class nsIDOMText;
 class nsINodeInfo;
 class nsURI;
+
+#define DATA_NODE_FLAG_BIT(n_) NODE_FLAG_BIT(NODE_TYPE_SPECIFIC_BITS_OFFSET + (n_))
+
+// Data node specific flags
+enum {
+  // This bit is set to indicate that if the text node changes to
+  // non-whitespace, we may need to create a frame for it. This bit must
+  // not be set on nodes that already have a frame.
+  NS_CREATE_FRAME_IF_NON_WHITESPACE =     DATA_NODE_FLAG_BIT(0),
+
+  // This bit is set to indicate that if the text node changes to
+  // whitespace, we may need to reframe it (or its ancestors).
+  NS_REFRAME_IF_WHITESPACE =              DATA_NODE_FLAG_BIT(1)
+};
+
+// Make sure we have enough space for those bits
+PR_STATIC_ASSERT(NODE_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
+
+#undef DATA_NODE_FLAG_BIT
 
 class nsGenericDOMDataNode : public nsIContent
 {
@@ -51,73 +58,9 @@ public:
   nsGenericDOMDataNode(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsGenericDOMDataNode();
 
-  // Implementation for nsIDOMNode
-  nsresult GetNodeName(nsAString& aNodeName)
-  {
-    aNodeName = NodeName();
-    return NS_OK;
-  }
-  nsresult GetNodeType(uint16_t* aNodeType)
-  {
-    *aNodeType = NodeType();
-    return NS_OK;
-  }
-  nsresult GetNodeValue(nsAString& aNodeValue);
-  nsresult SetNodeValue(const nsAString& aNodeValue);
-  nsresult GetAttributes(nsIDOMNamedNodeMap** aAttributes)
-  {
-    NS_ENSURE_ARG_POINTER(aAttributes);
-    *aAttributes = nullptr;
-    return NS_OK;
-  }
-  nsresult HasChildNodes(bool* aHasChildNodes)
-  {
-    NS_ENSURE_ARG_POINTER(aHasChildNodes);
-    *aHasChildNodes = false;
-    return NS_OK;
-  }
-  nsresult HasAttributes(bool* aHasAttributes)
-  {
-    NS_ENSURE_ARG_POINTER(aHasAttributes);
-    *aHasAttributes = false;
-    return NS_OK;
-  }
-  nsresult InsertBefore(nsIDOMNode* aNewChild, nsIDOMNode* aRefChild,
-                        nsIDOMNode** aReturn)
-  {
-    return ReplaceOrInsertBefore(false, aNewChild, aRefChild, aReturn);
-  }
-  nsresult ReplaceChild(nsIDOMNode* aNewChild, nsIDOMNode* aOldChild,
-                        nsIDOMNode** aReturn)
-  {
-    return ReplaceOrInsertBefore(true, aNewChild, aOldChild, aReturn);
-  }
-  nsresult RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aReturn)
-  {
-    return nsINode::RemoveChild(aOldChild, aReturn);
-  }
-  nsresult AppendChild(nsIDOMNode* aNewChild, nsIDOMNode** aReturn)
-  {
-    return InsertBefore(aNewChild, nullptr, aReturn);
-  }
-  nsresult GetNamespaceURI(nsAString& aNamespaceURI);
-  nsresult GetLocalName(nsAString& aLocalName)
-  {
-    aLocalName = LocalName();
-    return NS_OK;
-  }
-  nsresult GetPrefix(nsAString& aPrefix);
-  nsresult IsSupported(const nsAString& aFeature,
-                       const nsAString& aVersion,
-                       bool* aReturn);
-  nsresult CloneNode(bool aDeep, uint8_t aOptionalArgc, nsIDOMNode** aReturn)
-  {
-    if (!aOptionalArgc) {
-      aDeep = true;
-    }
-    
-    return nsNodeUtils::CloneNodeImpl(this, aDeep, true, aReturn);
-  }
+  virtual void GetNodeValueInternal(nsAString& aNodeValue);
+  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
+                                    mozilla::ErrorResult& aError);
 
   // Implementation for nsIDOMCharacterData
   nsresult GetData(nsAString& aData) const;
@@ -135,21 +78,20 @@ public:
   virtual uint32_t GetChildCount() const;
   virtual nsIContent *GetChildAt(uint32_t aIndex) const;
   virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
-  virtual int32_t IndexOf(nsINode* aPossibleChild) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
   virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
-  NS_IMETHOD GetTextContent(nsAString &aTextContent)
+  virtual void GetTextContentInternal(nsAString& aTextContent)
   {
-    nsresult rv = GetNodeValue(aTextContent);
-    NS_ASSERTION(NS_SUCCEEDED(rv), "GetNodeValue() failed?");
-    return rv;
+    GetNodeValue(aTextContent);
   }
-  NS_IMETHOD SetTextContent(const nsAString& aTextContent)
+  virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError)
   {
     // Batch possible DOMSubtreeModified events.
     mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
-    return SetNodeValue(aTextContent);
+    return SetNodeValue(aTextContent, aError);
   }
 
   // Implementation for nsIContent
@@ -237,7 +179,7 @@ public:
 protected:
   virtual mozilla::dom::Element* GetNameSpaceElement()
   {
-    nsINode *parent = GetNodeParent();
+    nsINode *parent = GetParentNode();
 
     return parent && parent->IsElement() ? parent->AsElement() : nullptr;
   }
@@ -269,9 +211,9 @@ protected:
   // Override from nsINode
   virtual nsINode::nsSlots* CreateSlots();
 
-  nsDataSlots *GetDataSlots()
+  nsDataSlots* DataSlots()
   {
-    return static_cast<nsDataSlots*>(GetSlots());
+    return static_cast<nsDataSlots*>(Slots());
   }
 
   nsDataSlots *GetExistingDataSlots() const

@@ -13,6 +13,9 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://gre/modules/JNI.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+
 #ifdef ACCESSIBILITY
 Cu.import("resource://gre/modules/accessibility/AccessFu.jsm");
 #endif
@@ -161,7 +164,6 @@ var BrowserApp = {
 
     getBridge().browserApp = this;
 
-    Services.obs.addObserver(this, "Tab:Add", false);
     Services.obs.addObserver(this, "Tab:Load", false);
     Services.obs.addObserver(this, "Tab:Selected", false);
     Services.obs.addObserver(this, "Tab:Closed", false);
@@ -181,7 +183,6 @@ var BrowserApp = {
     Services.obs.addObserver(this, "Passwords:Init", false);
     Services.obs.addObserver(this, "FormHistory:Init", false);
     Services.obs.addObserver(this, "ToggleProfiling", false);
-    Services.obs.addObserver(this, "Memory:Dump", false);
 
     Services.obs.addObserver(this, "sessionstore-state-purge-complete", false);
 
@@ -230,6 +231,8 @@ var BrowserApp = {
     Reader.init();
     UserAgent.init();
     ExternalApps.init();
+    MemoryObserver.init();
+    Distribution.init();
 #ifdef MOZ_TELEMETRY_REPORTING
     Telemetry.init();
 #endif
@@ -242,8 +245,7 @@ var BrowserApp = {
     // Init FormHistory
     Cc["@mozilla.org/satchel/form-history;1"].getService(Ci.nsIFormHistory2);
 
-    let loadParams = {};
-    let url = "about:home";
+    let url = null;
     let restoreMode = 0;
     let pinned = false;
     if ("arguments" in window) {
@@ -266,9 +268,6 @@ var BrowserApp = {
       SearchEngines.init();
       this.initContextMenu();
     }
-
-    if (url == "about:empty")
-      loadParams.flags = Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY;
 
     // XXX maybe we don't do this if the launch was kicked off from external
     Services.io.offline = false;
@@ -293,12 +292,8 @@ var BrowserApp = {
         }
       });
 
-      // Open any commandline URLs, except the homepage
-      if (url && url != "about:home") {
-        loadParams.pinned = pinned;
-        this.addTab(url, loadParams);
-      } else {
-        // Let the session make a restored tab active
+      // Make the restored tab active if we aren't loading an external URL
+      if (url == null) {
         restoreToFront = true;
       }
 
@@ -324,15 +319,6 @@ var BrowserApp = {
 
       // Start the restore
       ss.restoreLastSession(restoreToFront, restoreMode == 1);
-    } else {
-      loadParams.showProgress = shouldShowProgress(url);
-      loadParams.pinned = pinned;
-      this.addTab(url, loadParams);
-
-      // show telemetry door hanger if we aren't restoring a session
-#ifdef MOZ_TELEMETRY_REPORTING
-      Telemetry.prompt();
-#endif
     }
 
     if (updated)
@@ -355,7 +341,7 @@ var BrowserApp = {
 
 #ifdef MOZ_SAFE_BROWSING
     // Bug 778855 - Perf regression if we do this here. To be addressed in bug 779008.
-    setTimeout(function() { SafeBrowsing.init(); }, 2000);
+    setTimeout(function() { SafeBrowsing.init(); }, 5000);
 #endif
   },
 
@@ -501,7 +487,8 @@ var BrowserApp = {
            contentDisposition = "";
            type = "";
         }
-        ContentAreaUtils.internalSave(aTarget.currentURI.spec, null, null, contentDisposition, type, false, "SaveImageTitle", null, aTarget.ownerDocument.documentURIObject, true, null);
+        ContentAreaUtils.internalSave(aTarget.currentURI.spec, null, null, contentDisposition, type, false, "SaveImageTitle", null,
+                                      aTarget.ownerDocument.documentURIObject, aTarget.ownerDocument, true, null);
       });
   },
 
@@ -528,6 +515,8 @@ var BrowserApp = {
     Reader.uninit();
     UserAgent.uninit();
     ExternalApps.uninit();
+    MemoryObserver.uninit();
+    Distribution.uninit();
 #ifdef MOZ_TELEMETRY_REPORTING
     Telemetry.uninit();
 #endif
@@ -563,13 +552,16 @@ var BrowserApp = {
     if (this._selectedTab == aTab)
       return;
 
-    if (this._selectedTab)
+    if (this._selectedTab) {
+      Tabs.touch(this._selectedTab);
       this._selectedTab.setActive(false);
+    }
 
     this._selectedTab = aTab;
     if (!aTab)
       return;
 
+    Tabs.touch(aTab);
     aTab.setActive(true);
     aTab.setResolution(aTab._zoom, true);
     this.displayedDocumentChanged();
@@ -683,6 +675,8 @@ var BrowserApp = {
     let evt = document.createEvent("UIEvents");
     evt.initUIEvent("TabOpen", true, false, window, null);
     newTab.browser.dispatchEvent(evt);
+
+    Tabs.zombifyLru();
 
     return newTab;
   },
@@ -817,10 +811,11 @@ var BrowserApp = {
         webBrowserPrint.cancel();
       }
     }
+    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(aBrowser.contentWindow);
     let download = dm.addDownload(Ci.nsIDownloadManager.DOWNLOAD_TYPE_DOWNLOAD,
                                   aBrowser.currentURI,
                                   Services.io.newFileURI(file), "", mimeInfo,
-                                  Date.now() * 1000, null, cancelable);
+                                  Date.now() * 1000, null, cancelable, isPrivate);
 
     webBrowserPrint.print(printSettings, download);
   },
@@ -921,6 +916,9 @@ var BrowserApp = {
       else
         MasterPassword.setPassword(json.value);
       return;
+    } else if (json.name == SearchEngines.PREF_SUGGEST_ENABLED) {
+      // Enabling or disabling suggestions will prevent future prompts
+      Services.prefs.setBoolPref(SearchEngines.PREF_SUGGEST_PROMPTED, true);
     }
 
     // when sending to java, we normalized special preferences that use
@@ -1057,8 +1055,6 @@ var BrowserApp = {
 
   observe: function(aSubject, aTopic, aData) {
     let browser = this.selectedBrowser;
-    if (!browser)
-      return;
 
     if (aTopic == "Session:Back") {
       browser.goBack();
@@ -1068,7 +1064,7 @@ var BrowserApp = {
       browser.reload();
     } else if (aTopic == "Session:Stop") {
       browser.stop();
-    } else if (aTopic == "Tab:Add" || aTopic == "Tab:Load") {
+    } else if (aTopic == "Tab:Load") {
       let data = JSON.parse(aData);
 
       // Pass LOAD_FLAGS_DISALLOW_INHERIT_OWNER to prevent any loads from
@@ -1080,7 +1076,10 @@ var BrowserApp = {
       let params = {
         selected: true,
         parentId: ("parentId" in data) ? data.parentId : -1,
-        flags: flags
+        flags: flags,
+        tabID: data.tabID,
+        isPrivate: data.isPrivate,
+        pinned: data.pinned
       };
 
       let url = data.url;
@@ -1097,7 +1096,7 @@ var BrowserApp = {
       if (!shouldShowProgress(url))
         params.showProgress = false;
 
-      if (aTopic == "Tab:Add")
+      if (data.newTab)
         this.addTab(url, params);
       else
         this.loadURI(url, browser, params);
@@ -1147,8 +1146,6 @@ var BrowserApp = {
       } else {
         profiler.StartProfiler(100000, 25, ["stackwalk"], 1);
       }
-    } else if (aTopic == "Memory:Dump") {
-      this.dumpMemoryStats(aData);
     }
   },
 
@@ -1161,82 +1158,6 @@ var BrowserApp = {
   // nsIAndroidBrowserApp
   getBrowserTab: function(tabId) {
     return this.getTabForId(tabId);
-  },
-
-  dumpMemoryStats: function(aLabel) {
-    // TODO once bug 788021 has landed, replace this code and just invoke that instead
-    // currently this code is hijacked from areweslimyet.com, original code can be found at:
-    // https://github.com/Nephyrin/MozAreWeSlimYet/blob/master/mozmill_endurance_test/performance.js
-    var memMgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(Ci.nsIMemoryReporterManager);
-
-    var timestamp = new Date();
-    var memory = {};
-
-    // These *should* be identical to the explicit/resident root node
-    // sum, AND the explicit/resident node explicit value (on newer builds),
-    // but we record all three so we can make sure the data is consistent
-    memory['manager_explicit'] = memMgr.explicit;
-    memory['manager_resident'] = memMgr.resident;
-
-    var knownHeap = 0;
-
-    function addReport(path, amount, kind, units) {
-      if (units !== undefined && units != Ci.nsIMemoryReporter.UNITS_BYTES)
-        // Unhandled. (old builds don't specify units, but use only bytes)
-        return;
-
-      if (memory[path])
-        memory[path] += amount;
-      else
-        memory[path] = amount;
-      if (kind !== undefined && kind == Ci.nsIMemoryReporter.KIND_HEAP
-          && path.indexOf('explicit/') == 0)
-        knownHeap += amount;
-    }
-
-    // Normal reporters
-    var reporters = memMgr.enumerateReporters();
-    while (reporters.hasMoreElements()) {
-      var r = reporters.getNext();
-      r instanceof Ci.nsIMemoryReporter;
-      if (r.path.length) {
-        addReport(r.path, r.amount, r.kind, r.units);
-      }
-    }
-
-    // Multireporters
-    if (memMgr.enumerateMultiReporters) {
-      var multireporters = memMgr.enumerateMultiReporters();
-
-      while (multireporters.hasMoreElements()) {
-        var mr = multireporters.getNext();
-        mr instanceof Ci.nsIMemoryMultiReporter;
-        mr.collectReports(function (proc, path, kind, units, amount, description, closure) {
-          addReport(path, amount, kind, units);
-        }, null);
-      }
-    }
-
-    var heapAllocated = memory['heap-allocated'];
-    // Called heap-used in older builds
-    if (!heapAllocated) heapAllocated = memory['heap-used'];
-    // This is how about:memory calculates derived value heap-unclassified, which
-    // is necessary to get a proper explicit value.
-    if (knownHeap && heapAllocated)
-      memory['explicit/heap-unclassified'] = memory['heap-allocated'] - knownHeap;
-
-    // If the build doesn't have a resident/explicit reporter, but does have
-    // the memMgr.explicit/resident field, use that
-    if (!memory['resident'])
-      memory['resident'] = memory['manager_resident']
-    if (!memory['explicit'])
-      memory['explicit'] = memory['manager_explicit']
-
-    var label = "[AboutMemoryDump|" + aLabel + "] ";
-    dump(label + timestamp);
-    for (var type in memory) {
-      dump(label + type + " = " + memory[type]);
-    }
   },
 };
 
@@ -1251,6 +1172,16 @@ var NativeWindow = {
     Services.obs.removeObserver(this, "Menu:Clicked");
     Services.obs.removeObserver(this, "Doorhanger:Reply");
     this.contextmenus.uninit();
+  },
+
+  loadDex: function(zipFile, implClass) {
+    sendMessageToJava({
+      gecko: {
+        type: "Dex:Load",
+        zipfile: zipFile,
+        impl: implClass || "Main"
+      }
+    });
   },
 
   toast: {
@@ -2109,19 +2040,42 @@ var SelectionHandler = {
     let scrollX = {}, scrollY = {};
     this._view.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).getScrollXY(false, scrollX, scrollY);
 
+    // the checkHidden function tests to see if the given point is hidden inside an
+    // iframe/subdocument. this is so that if we select some text inside an iframe and
+    // scroll the iframe so the selection is out of view, we hide the handles rather
+    // than having them float on top of the main page content.
+    let checkHidden = function(x, y) {
+      return false;
+    };
+    if (this._view.frameElement) {
+      let bounds = this._view.frameElement.getBoundingClientRect();
+      checkHidden = function(x, y) {
+        return x < 0 || y < 0 || x > bounds.width || y > bounds.height;
+      }
+    }
+
     let positions = null;
     if (this._activeType == this.TYPE_CURSOR) {
       let cursor = this._cwu.sendQueryContentEvent(this._cwu.QUERY_CARET_RECT, this._target.selectionEnd, 0, 0, 0);
+      let x = cursor.left;
+      let y = cursor.top + cursor.height;
       positions = [ { handle: this.HANDLE_TYPE_MIDDLE,
-                     left: cursor.left + offset.x + scrollX.value,
-                     top: cursor.top + cursor.height + offset.y + scrollY.value } ];
+                     left: x + offset.x + scrollX.value,
+                     top: y + offset.y + scrollY.value,
+                     hidden: checkHidden(x, y) } ];
     } else {
+      let sx = this.cache.start.x;
+      let sy = this.cache.start.y;
+      let ex = this.cache.end.x;
+      let ey = this.cache.end.y;
       positions = [ { handle: this.HANDLE_TYPE_START,
-                     left: this.cache.start.x + offset.x + scrollX.value,
-                     top: this.cache.start.y + offset.y + scrollY.value },
+                     left: sx + offset.x + scrollX.value,
+                     top: sy + offset.y + scrollY.value,
+                     hidden: checkHidden(sx, sy) },
                    { handle: this.HANDLE_TYPE_END,
-                     left: this.cache.end.x + offset.x + scrollX.value,
-                     top: this.cache.end.y + offset.y + scrollY.value } ];
+                     left: ex + offset.x + scrollX.value,
+                     top: ey + offset.y + scrollY.value,
+                     hidden: checkHidden(ex, ey) } ];
     }
 
     sendMessageToJava({
@@ -2130,6 +2084,29 @@ var SelectionHandler = {
         positions: positions
       }
     });
+  },
+
+  subdocumentScrolled: function sh_subdocumentScrolled(aElement) {
+    if (this._activeType == this.TYPE_NONE) {
+      return;
+    }
+    let scrollView = aElement.ownerDocument.defaultView;
+    let view = this._view;
+    while (true) {
+      if (view == scrollView) {
+        // The selection is in a view (or sub-view) of the view that scrolled.
+        // So we need to reposition the handles.
+        if (this._activeType == this.TYPE_SELECTION) {
+          this.updateCacheForSelection();
+        }
+        this.positionHandles();
+        break;
+      }
+      if (view == view.parent) {
+        break;
+      }
+      view = view.parent;
+    }
   }
 };
 
@@ -2308,8 +2285,6 @@ nsBrowserAccess.prototype = {
 };
 
 
-let gTabIDFactory = 0;
-
 // track the last known screen size so that new tabs
 // get created with the right size rather than being 1x1
 let gScreenWidth = 1;
@@ -2318,6 +2293,7 @@ let gScreenHeight = 1;
 function Tab(aURL, aParams) {
   this.browser = null;
   this.id = 0;
+  this.lastTouchedAt = Date.now();
   this.showProgress = true;
   this._zoom = 1.0;
   this._drawZoom = 1.0;
@@ -2343,10 +2319,20 @@ Tab.prototype = {
     this.browser = document.createElement("browser");
     this.browser.setAttribute("type", "content-targetable");
     this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight);
-    BrowserApp.deck.appendChild(this.browser);
+
+    // Make sure the previously selected panel remains selected. The selected panel of a deck is
+    // not stable when panels are added.
+    let selectedPanel = BrowserApp.deck.selectedPanel;
+    BrowserApp.deck.insertBefore(this.browser, aParams.sibling || null);
+    BrowserApp.deck.selectedPanel = selectedPanel;
 
     // Must be called after appendChild so the docshell has been created.
     this.setActive(false);
+
+    let isPrivate = ("isPrivate" in aParams) && aParams.isPrivate;
+    if (isPrivate) {
+      this.browser.docShell.QueryInterface(Ci.nsILoadContext).usePrivateBrowsing = true;
+    }
 
     this.browser.stop();
 
@@ -2359,25 +2345,38 @@ Tab.prototype = {
       uri = Services.io.newURI(aURL, null, null).spec;
     } catch (e) {}
 
-    this.id = ++gTabIDFactory;
-    this.desktopMode = ("desktopMode" in aParams) ? aParams.desktopMode : false;
-
-    let message = {
-      gecko: {
-        type: "Tab:Added",
-        tabID: this.id,
-        uri: uri,
-        parentId: ("parentId" in aParams) ? aParams.parentId : -1,
-        external: ("external" in aParams) ? aParams.external : false,
-        selected: ("selected" in aParams) ? aParams.selected : true,
-        title: aParams.title || aURL,
-        delayLoad: aParams.delayLoad || false,
-        desktopMode: this.desktopMode
+    if (!aParams.zombifying) {
+      if ("tabID" in aParams) {
+        this.id = aParams.tabID;
+      } else {
+        let jni = new JNI();
+        let cls = jni.findClass("org/mozilla/gecko/Tabs");
+        let method = jni.getStaticMethodID(cls, "getNextTabId", "()I");
+        this.id = jni.callStaticIntMethod(cls, method);
+        jni.close();
       }
-    };
-    sendMessageToJava(message);
 
-    this.overscrollController = new OverscrollController(this);
+      this.desktopMode = ("desktopMode" in aParams) ? aParams.desktopMode : false;
+
+      let message = {
+        gecko: {
+          type: "Tab:Added",
+          tabID: this.id,
+          uri: uri,
+          parentId: ("parentId" in aParams) ? aParams.parentId : -1,
+          external: ("external" in aParams) ? aParams.external : false,
+          selected: ("selected" in aParams) ? aParams.selected : true,
+          title: aParams.title || aURL,
+          delayLoad: aParams.delayLoad || false,
+          desktopMode: this.desktopMode,
+          isPrivate: isPrivate
+        }
+      };
+      sendMessageToJava(message);
+
+      this.overscrollController = new OverscrollController(this);
+    }
+
     this.browser.contentWindow.controllers.insertControllerAt(0, this.overscrollController);
 
     let flags = Ci.nsIWebProgress.NOTIFY_STATE_ALL |
@@ -2481,16 +2480,19 @@ Tab.prototype = {
     this.browser.contentWindow.controllers.removeController(this.overscrollController);
 
     this.browser.removeProgressListener(this);
+    this.browser.sessionHistory.removeSHistoryListener(this);
+
     this.browser.removeEventListener("DOMContentLoaded", this, true);
     this.browser.removeEventListener("DOMLinkAdded", this, true);
     this.browser.removeEventListener("DOMTitleChanged", this, true);
     this.browser.removeEventListener("DOMWindowClose", this, true);
     this.browser.removeEventListener("DOMWillOpenModalDialog", this, true);
     this.browser.removeEventListener("scroll", this, true);
+    this.browser.removeEventListener("MozScrolledAreaChanged", this, true);
     this.browser.removeEventListener("PluginClickToPlay", this, true);
     this.browser.removeEventListener("PluginPlayPreview", this, true);
     this.browser.removeEventListener("PluginNotFound", this, true);
-    this.browser.removeEventListener("MozScrolledAreaChanged", this, true);
+    this.browser.removeEventListener("pageshow", this, true);
 
     Services.obs.removeObserver(this, "before-first-paint");
     Services.prefs.removeObserver("browser.ui.zoom.force-user-scalable", this);
@@ -2725,6 +2727,19 @@ Tab.prototype = {
 
     this.setScrollClampingSize(aViewport.zoom);
 
+    // Adjust the max line box width to be no more than the viewport width, but
+    // only if the reflow-on-zoom preference is enabled.
+    if (BrowserEventHandler.mReflozPref && BrowserEventHandler._mLastPinchData) {
+      let webNav = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebNavigation);
+      let docShell = webNav.QueryInterface(Ci.nsIDocShell);
+      let docViewer = docShell.contentViewer.QueryInterface(Ci.nsIMarkupDocumentViewer);
+      let viewportWidth = gScreenWidth / aViewport.zoom;
+      // We add in a bit of fudge just so that the end characters don't accidentally
+      // get clipped. 15px is an arbitrary choice.
+      docViewer.changeMaxLineBoxWidth(viewportWidth - 15);
+      BrowserEventHandler._mLastPinchData = null;
+    }
+
     let win = this.browser.contentWindow;
     win.scrollTo(x, y);
 
@@ -2837,12 +2852,9 @@ Tab.prototype = {
         // event fires; it's not clear that doing so is worth the effort.
         var backgroundColor = null;
         try {
-          let browser = BrowserApp.selectedBrowser;
-          if (browser) {
-            let { contentDocument, contentWindow } = browser;
-            let computedStyle = contentWindow.getComputedStyle(contentDocument.body);
-            backgroundColor = computedStyle.backgroundColor;
-          }
+          let { contentDocument, contentWindow } = this.browser;
+          let computedStyle = contentWindow.getComputedStyle(contentDocument.body);
+          backgroundColor = computedStyle.backgroundColor;
         } catch (e) {
           // Ignore. Catching and ignoring exceptions here ensures that Talos succeeds.
         }
@@ -3226,18 +3238,6 @@ Tab.prototype = {
     this.shouldShowPluginDoorhanger = true;
     this.clickToPlayPluginsActivated = false;
 
-    // This is where we might check for helper apps.
-    // For now it is special cased to only check for the marketplace urls
-    if (WebappsUI.isMarketplace(aLocationURI)) {
-      // the marketplace app may not actually be installed, so instead we use a custom
-      // callback that will install and launch it for us if necessary
-      HelperApps.showDoorhanger(aLocationURI, function() {
-        WebappsUI.installAndLaunchMarketplace(aLocationURI.spec);
-        if (aRequest)
-          aRequest.cancel(Cr.NS_OK);
-      });
-    }
-
     let message = {
       gecko: {
         type: "Content:LocationChange",
@@ -3576,9 +3576,26 @@ var BrowserEventHandler = {
     BrowserApp.deck.addEventListener("touchstart", this, true);
     BrowserApp.deck.addEventListener("click", InputWidgetHelper, true);
     BrowserApp.deck.addEventListener("click", SelectHelper, true);
+    document.addEventListener("MozMagnifyGestureStart", this, true);
+    document.addEventListener("MozMagnifyGestureUpdate", this, true);
+    document.addEventListener("MozMagnifyGesture", this, true);
+
+    Services.prefs.addObserver("browser.zoom.reflowOnZoom", this, false);
+    this.updateReflozPref();
+  },
+
+  updateReflozPref: function() {
+     this.mReflozPref = Services.prefs.getBoolPref("browser.zoom.reflowOnZoom");
   },
 
   handleEvent: function(aEvent) {
+    if (aEvent.type && (aEvent.type === "MozMagnifyGesture" ||
+                        aEvent.type === "MozMagnifyGestureUpdate" ||
+                        aEvent.type === "MozMagnifyGestureStart")) {
+      this.observe(this, aEvent.type, JSON.stringify({x: aEvent.screenX, y: aEvent.screenY}));
+      return;
+    }
+
     if (!BrowserApp.isBrowserContentDocumentDisplayed() || aEvent.touches.length > 1 || aEvent.defaultPrevented)
       return;
 
@@ -3681,6 +3698,7 @@ var BrowserEventHandler = {
       if (this._elementCanScroll(this._scrollableElement, data.x, data.y)) {
         this._scrollElementBy(this._scrollableElement, data.x, data.y);
         sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: true } });
+        SelectionHandler.subdocumentScrolled(this._scrollableElement);
       } else {
         sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: false } });
       }
@@ -3691,12 +3709,9 @@ var BrowserEventHandler = {
       if (element) {
         try {
           let data = JSON.parse(aData);
-          let isClickable = ElementTouchHelper.isElementClickable(element);
-
-          if (isClickable) {
+          if (ElementTouchHelper.isElementClickable(element)) {
             [data.x, data.y] = this._moveClickPoint(element, data.x, data.y);
             element = ElementTouchHelper.anyElementFromPoint(data.x, data.y);
-            isClickable = ElementTouchHelper.isElementClickable(element);
           }
 
           this._sendMouseEvent("mousemove", element, data.x, data.y);
@@ -3706,9 +3721,6 @@ var BrowserEventHandler = {
           // See if its a input element
           if ((element instanceof HTMLInputElement && element.mozIsTextField(false)) || (element instanceof HTMLTextAreaElement))
              SelectionHandler.showThumb(element);
-  
-          if (isClickable)
-            Haptic.performSimpleAction(Haptic.LongPress);
         } catch(e) {
           Cu.reportError(e);
         }
@@ -3717,9 +3729,17 @@ var BrowserEventHandler = {
     } else if (aTopic == "Gesture:DoubleTap") {
       this._cancelTapHighlight();
       this.onDoubleTap(aData);
+    } else if (aTopic == "MozMagnifyGestureStart" || aTopic == "MozMagnifyGestureUpdate") {
+      this.onPinch(aData);
+    } else if (aTopic == "MozMagnifyGesture") {
+      this.onPinchFinish(aData, this._mLastPinchPoint.x, this._mLastPinchPoint.y);
+    } else if (aTopic == "nsPref:changed") {
+      if (aData == "browser.zoom.reflowOnZoom") {
+        this.updateReflozPref();
+      }
     }
   },
- 
+
   _zoomOut: function() {
     sendMessageToJava({ gecko: { type: "Browser:ZoomToPageWidth"} });
   },
@@ -3809,6 +3829,43 @@ var BrowserEventHandler = {
     }
   },
 
+  _zoomInAndSnapToElement: function(aX, aY, aElement) {
+    let viewport = BrowserApp.selectedTab.getViewport();
+    if (viewport.zoom < 1.0) {
+      // We don't want to do this on zoom out.
+      return;
+    }
+
+    let fudge = 15; // Add a bit of fudge.
+    let win = BrowserApp.selectedBrowser.contentWindow;
+
+    let rect = ElementTouchHelper.getBoundingContentRect(aElement);
+
+    rect.type = "Browser:ZoomToRect";
+    rect.x = Math.max(viewport.cssPageLeft, rect.x  - fudge);
+    rect.y = viewport.cssY;
+    rect.w = viewport.cssWidth;
+    rect.h = viewport.cssHeight;
+
+    sendMessageToJava({ gecko: rect });
+   },
+
+   onPinch: function(aData) {
+     let data = JSON.parse(aData);
+     this._mLastPinchPoint = {x: data.x, y: data.y};
+   },
+
+   onPinchFinish: function(aData, aX, aY) {
+     if (this.mReflozPref) {
+       let data = JSON.parse(aData);
+       let pinchElement = ElementTouchHelper.anyElementFromPoint(aX, aY);
+       data.element = pinchElement;
+       BrowserApp.selectedTab._mLastPinchElement = pinchElement;
+       this._mLastPinchData = data;
+       this._zoomInAndSnapToElement(data.x, data.y, data.element);
+     }
+   },
+
   _shouldZoomToElement: function(aElement) {
     let win = aElement.ownerDocument.defaultView;
     if (win.getComputedStyle(aElement, null).display == "inline")
@@ -3825,6 +3882,8 @@ var BrowserEventHandler = {
   _scrollableElement: null,
 
   _highlightElement: null,
+
+  _mLastPinchData: null,
 
   _doTapHighlight: function _doTapHighlight(aElement) {
     DOMUtils.setContentState(aElement, kStateActive);
@@ -6168,6 +6227,8 @@ OverscrollController.prototype = {
 
 var SearchEngines = {
   _contextMenuId: null,
+  PREF_SUGGEST_ENABLED: "browser.search.suggest.enabled",
+  PREF_SUGGEST_PROMPTED: "browser.search.suggest.prompted",
 
   init: function init() {
     Services.obs.addObserver(this, "SearchEngines:Get", false);
@@ -6181,7 +6242,7 @@ var SearchEngines = {
   },
 
   uninit: function uninit() {
-    Services.obs.removeObserver(this, "SearchEngines:Get", false);
+    Services.obs.removeObserver(this, "SearchEngines:Get");
     if (this._contextMenuId != null)
       NativeWindow.contextmenus.remove(this._contextMenuId);
   },
@@ -6201,20 +6262,22 @@ var SearchEngines = {
 
     let suggestTemplate = null;
     let suggestEngine = null;
-    if (Services.prefs.getBoolPref("browser.search.suggest.enabled")) {
-      let engine = this.getSuggestionEngine();
-      if (engine != null) {
-        suggestEngine = engine.name;
-        suggestTemplate = engine.getSubmission("__searchTerms__", "application/x-suggestions+json").uri.spec;
-      }
+    let engine = this.getSuggestionEngine();
+    if (engine != null) {
+      suggestEngine = engine.name;
+      suggestTemplate = engine.getSubmission("__searchTerms__", "application/x-suggestions+json").uri.spec;
     }
 
     sendMessageToJava({
       gecko: {
         type: "SearchEngines:Data",
         searchEngines: searchEngines,
-        suggestEngine: suggestEngine,
-        suggestTemplate: suggestTemplate
+        suggest: {
+          engine: suggestEngine,
+          template: suggestTemplate,
+          enabled: Services.prefs.getBoolPref(this.PREF_SUGGEST_ENABLED),
+          prompted: Services.prefs.getBoolPref(this.PREF_SUGGEST_PROMPTED)
+        }
       }
     });
   },
@@ -6351,6 +6414,7 @@ var ActivityObserver = {
 var WebappsUI = {
   init: function init() {
     Cu.import("resource://gre/modules/Webapps.jsm");
+    Cu.import("resource://gre/modules/AppsUtils.jsm");
     DOMApplicationRegistry.allAppsLaunchable = true;
 
     Services.obs.addObserver(this, "webapps-ask-install", false);
@@ -6360,7 +6424,7 @@ var WebappsUI = {
     Services.obs.addObserver(this, "webapps-install-error", false);
     Services.obs.addObserver(this, "WebApps:InstallMarketplace", false);
   },
-  
+
   uninit: function unint() {
     Services.obs.removeObserver(this, "webapps-ask-install");
     Services.obs.removeObserver(this, "webapps-launch");
@@ -6403,7 +6467,7 @@ var WebappsUI = {
         DOMApplicationRegistry.getManifestFor(data.origin, (function(aManifest) {
           if (!aManifest)
             return;
-          let manifest = new DOMApplicationManifest(aManifest, data.origin);
+          let manifest = new ManifestHelper(aManifest, data.origin);
           this.openURL(manifest.fullLaunchPath(), data.origin);
         }).bind(this));
         break;
@@ -6412,7 +6476,7 @@ var WebappsUI = {
         DOMApplicationRegistry.getManifestFor(data.origin, (function(aManifest) {
           if (!aManifest)
             return;
-          let manifest = new DOMApplicationManifest(aManifest, data.origin);
+          let manifest = new ManifestHelper(aManifest, data.origin);
 
           let observer = {
             observe: function (aSubject, aTopic) {
@@ -6526,13 +6590,9 @@ var WebappsUI = {
   },
 
   doInstall: function doInstall(aData) {
-    let manifest = new DOMApplicationManifest(aData.app.manifest, aData.app.origin);
+    let manifest = new ManifestHelper(aData.app.manifest, aData.app.origin);
     let name = manifest.name ? manifest.name : manifest.fullLaunchPath();
     let showPrompt = true;
-
-    // skip showing the prompt if this is for the marketplace app
-    if (aData.app.origin == this.MARKETPLACE.URI.prePath)
-      showPrompt = false;
 
     if (!showPrompt || Services.prompt.confirm(null, Strings.browser.GetStringFromName("webapps.installTitle"), name)) {
       // Add a homescreen shortcut -- we can't use createShortcut, since we need to pass
@@ -6548,7 +6608,7 @@ var WebappsUI = {
               uniqueURI: aData.app.origin
             }
           });
-  
+
           // if java returned a profile path to us, try to use it to pre-populate the app cache
           let file = null;
           if (profilePath) {
@@ -6574,7 +6634,7 @@ var WebappsUI = {
               persist.persistFlags |= Ci.nsIWebBrowserPersist.PERSIST_FLAGS_AUTODETECT_APPLY_CONVERSION;
   
               let source = Services.io.newURI(fullsizeIcon, "UTF8", null);
-              persist.saveURI(source, null, null, null, null, iconFile);
+              persist.saveURI(source, null, null, null, null, iconFile, null);
             } catch(ex) {
               console.log(ex);
             }
@@ -6617,9 +6677,8 @@ var WebappsUI = {
   get iconSize() {
     let iconSize = 64;
     try {
-      Cu.import("resource://gre/modules/JNI.jsm");
       let jni = new JNI();
-      let cls = jni.findClass("org.mozilla.gecko.GeckoAppShell");
+      let cls = jni.findClass("org/mozilla/gecko/GeckoAppShell");
       let method = jni.getStaticMethodID(cls, "getPreferredIconSize", "()I");
       iconSize = jni.callStaticIntMethod(cls, method);
       jni.close();
@@ -6779,11 +6838,13 @@ var Telemetry = {
   init: function init() {
     Services.obs.addObserver(this, "Preferences:Set", false);
     Services.obs.addObserver(this, "Telemetry:Add", false);
+    Services.obs.addObserver(this, "Telemetry:Prompt", false);
   },
 
   uninit: function uninit() {
     Services.obs.removeObserver(this, "Preferences:Set");
     Services.obs.removeObserver(this, "Telemetry:Add");
+    Services.obs.removeObserver(this, "Telemetry:Prompt");
   },
 
   observe: function observe(aSubject, aTopic, aData) {
@@ -6797,6 +6858,10 @@ var Telemetry = {
       var telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
       let histogram = telemetry.getHistogramById(json.name);
       histogram.add(json.value);
+    } else if (aTopic == "Telemetry:Prompt") {
+#ifdef MOZ_TELEMETRY_REPORTING
+      this.prompt();
+#endif
     }
   },
 
@@ -7313,4 +7378,184 @@ var ExternalApps = {
     let uri = NativeWindow.contextmenus._getLink(aElement);
     HelperApps.openUriInApp(uri);
   }
-}
+};
+
+var MemoryObserver = {
+  init: function() {
+    Services.obs.addObserver(this, "memory-pressure", false);
+    Services.obs.addObserver(this, "Memory:Dump", false);
+  },
+
+  uninit: function() {
+    Services.obs.removeObserver(this, "memory-pressure");
+    Services.obs.removeObserver(this, "Memory:Dump");
+  },
+
+  observe: function mo_observe(aSubject, aTopic, aData) {
+    if (aTopic == "memory-pressure") {
+      if (aData != "heap-minimize") {
+        this.handleLowMemory();
+      }
+      // The JS engine would normally GC on this notification, but since we
+      // disabled that in favor of this method (bug 669346), we should gc here.
+      // See bug 784040 for when this code was ported from XUL to native Fennec.
+      this.gc();
+    } else if (aTopic == "Memory:Dump") {
+      this.dumpMemoryStats(aData);
+    }
+  },
+
+  handleLowMemory: function() {
+    // do things to reduce memory usage here
+    let tabs = BrowserApp.tabs;
+    let selected = BrowserApp.selectedTab;
+    for (let i = 0; i < tabs.length; i++) {
+      if (tabs[i] != selected) {
+        this.zombify(tabs[i]);
+      }
+    }
+  },
+
+  zombify: function(tab) {
+    dump("Zombifying tab at index [" + tab.id + "]");
+    let browser = tab.browser;
+    let data = browser.__SS_data;
+    let extra = browser.__SS_extdata;
+
+    // We need this data to correctly create and position the new browser
+    // If this browser is already a zombie, fallback to the session data
+    let currentURL = browser.__SS_restore ? data.entries[0].url : browser.currentURI.spec;
+    let sibling = browser.nextSibling;
+
+    tab.destroy();
+    tab.create(currentURL, { sibling: sibling, zombifying: true, delayLoad: true });
+
+    // Reattach session store data and flag this browser so it is restored on select
+    browser = tab.browser;
+    browser.__SS_data = data;
+    browser.__SS_extdata = extra;
+    browser.__SS_restore = true;
+  },
+
+  gc: function() {
+    window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).garbageCollect();
+    Cu.forceGC();
+  },
+
+  dumpMemoryStats: function(aLabel) {
+    let memMgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(Ci.nsIMemoryReporterManager);
+    memMgr.dumpMemoryReportsToFile(aLabel, false, true);
+  },
+};
+
+var Distribution = {
+  _file: null,
+
+  init: function dc_init() {
+    Services.obs.addObserver(this, "Distribution:Set", false);
+
+    // Look for file outside the APK:
+    // /data/data/org.mozilla.fennec/distribution.json
+    this._file = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
+    this._file.append("distribution.json");
+    if (this._file.exists()) {
+      let channel = NetUtil.newChannel(this._file);
+      channel.contentType = "application/json";
+      NetUtil.asyncFetch(channel, function(aStream, aResult) {
+        if (!Components.isSuccessCode(aResult)) {
+          Cu.reportError("Distribution: Could not read from distribution.json file");
+          return;
+        }
+
+        let raw = NetUtil.readInputStreamToString(aStream, aStream.available(), { charset : "UTF-8" }) || "";
+        aStream.close();
+
+        try {
+          this.update(JSON.parse(raw));
+        } catch (ex) {
+          Cu.reportError("Distribution: Could not parse JSON: " + ex);
+        }
+      }.bind(this));
+    } 
+  },
+
+  uninit: function dc_uninit() {
+    Services.obs.removeObserver(this, "Distribution:Set");
+  },
+
+  observe: function dc_observe(aSubject, aTopic, aData) {
+    if (aTopic == "Distribution:Set") {
+      // Update the prefs for this session
+      try {
+        this.update(JSON.parse(aData));
+      } catch (ex) {
+        Cu.reportError("Distribution: Could not parse JSON: " + ex);
+        return;
+      }
+
+      // Save the data for the later sessions
+      let ostream = Cc["@mozilla.org/network/safe-file-output-stream;1"].createInstance(Ci.nsIFileOutputStream);
+      ostream.init(this._file, 0x02 | 0x08 | 0x20, parseInt("600", 8), ostream.DEFER_OPEN);
+
+      let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].createInstance(Ci.nsIScriptableUnicodeConverter);
+      converter.charset = "UTF-8";
+
+      // Asynchronously copy the data to the file.
+      let istream = converter.convertToInputStream(aData);
+      NetUtil.asyncCopy(istream, ostream, function(rc) { });
+    }
+  },
+
+  update: function dc_update(aData) {
+    // Force the distribution preferences on the default branch
+    let defaults = Services.prefs.getDefaultBranch(null);
+    defaults.setCharPref("distribution.id", aData.id);
+    defaults.setCharPref("distribution.version", aData.version);
+  }
+};
+
+var Tabs = {
+  // This object provides functions to manage a most-recently-used list
+  // of tabs. Each tab has a timestamp associated with it that indicates when
+  // it was last touched.
+
+  touch: function(aTab) {
+    aTab.lastTouchedAt = Date.now();
+  },
+
+  zombifyLru: function() {
+    let zombieTimeMs = Services.prefs.getIntPref("browser.tabs.zombieTime") * 1000;
+    if (zombieTimeMs < 0) {
+      // this behaviour is disabled
+      return false;
+    }
+    let tabs = BrowserApp.tabs;
+    let selected = BrowserApp.selectedTab;
+    let lruTab = null;
+    // find the least recently used non-zombie tab
+    for (let i = 0; i < tabs.length; i++) {
+      if (tabs[i] == selected || tabs[i].browser.__SS_restore) {
+        // this tab is selected or already a zombie, skip it
+        continue;
+      }
+      if (lruTab == null || tabs[i].lastTouchedAt < lruTab.lastTouchedAt) {
+        lruTab = tabs[i];
+      }
+    }
+    // if the tab was last touched more than browser.tabs.zombieTime seconds ago,
+    // zombify it
+    if (lruTab && (Date.now() - lruTab.lastTouchedAt) > zombieTimeMs) {
+      MemoryObserver.zombify(lruTab);
+      return true;
+    }
+    return false;
+  },
+
+  // for debugging
+  dump: function(aPrefix) {
+    let tabs = BrowserApp.tabs;
+    for (let i = 0; i < tabs.length; i++) {
+      dump(aPrefix + " | " + "Tab [" + tabs[i].browser.contentWindow.location.href + "]: lastTouchedAt:" + tabs[i].lastTouchedAt + ", zombie:" + tabs[i].browser.__SS_restore);
+    }
+  },
+};

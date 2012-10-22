@@ -439,7 +439,7 @@ class TypeSet
         : flags(0), objectSet(NULL), constraintList(NULL)
     {}
 
-    void print(JSContext *cx);
+    void print();
 
     inline void sweep(JSCompartment *compartment);
     inline size_t computedSizeOfExcludingThis();
@@ -570,6 +570,19 @@ class StackTypeSet : public TypeSet
 
     /* Whether this value may be an object. */
     bool maybeObject() { return unknownObject() || baseObjectCount() > 0; }
+
+    /*
+     * Whether this typeset represents a potentially sentineled object value:
+     * the value may be an object or null or undefined.
+     * Returns false if the value cannot ever be an object.
+     */
+    bool objectOrSentinel() {
+        TypeFlags flags = TYPE_FLAG_UNDEFINED | TYPE_FLAG_NULL | TYPE_FLAG_ANYOBJECT;
+        if (baseFlags() & (~flags & TYPE_FLAG_BASE_MASK))
+            return false;
+
+        return hasAnyFlag(TYPE_FLAG_ANYOBJECT) || baseObjectCount() > 0;
+    }
 
     /* Whether the type set contains objects with any of a set of flags. */
     bool hasObjectFlags(JSContext *cx, TypeObjectFlags flags);
@@ -1007,7 +1020,7 @@ struct TypeObject : gc::Cell
     void clearNewScript(JSContext *cx);
     void getFromPrototypes(JSContext *cx, jsid id, TypeSet *types, bool force = false);
 
-    void print(JSContext *cx);
+    void print();
 
     inline void clearProperties();
     inline void sweep(FreeOp *fop);

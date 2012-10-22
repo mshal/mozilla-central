@@ -27,7 +27,7 @@ namespace mozilla {
 namespace net {
 
 HttpBaseChannel::HttpBaseChannel()
-  : mStartPos(LL_MAXUINT)
+  : mStartPos(UINT64_MAX)
   , mStatus(NS_OK)
   , mLoadFlags(LOAD_NORMAL)
   , mPriority(PRIORITY_NORMAL)
@@ -49,6 +49,8 @@ HttpBaseChannel::HttpBaseChannel()
   , mTimingEnabled(false)
   , mAllowSpdy(true)
   , mSuspendCount(0)
+  , mProxyResolveFlags(0)
+  , mContentDispositionHint(UINT32_MAX)
 {
   LOG(("Creating HttpBaseChannel @%x\n", this));
 
@@ -73,7 +75,9 @@ HttpBaseChannel::~HttpBaseChannel()
 nsresult
 HttpBaseChannel::Init(nsIURI *aURI,
                       uint8_t aCaps,
-                      nsProxyInfo *aProxyInfo)
+                      nsProxyInfo *aProxyInfo,
+                      uint32_t aProxyResolveFlags,
+                      nsIURI *aProxyURI)
 {
   LOG(("HttpBaseChannel::Init [this=%p]\n", this));
 
@@ -86,6 +90,8 @@ HttpBaseChannel::Init(nsIURI *aURI,
   mOriginalURI = aURI;
   mDocumentURI = nullptr;
   mCaps = aCaps;
+  mProxyResolveFlags = aProxyResolveFlags;
+  mProxyURI = aProxyURI;
 
   // Construct connection info object
   nsAutoCString host;
@@ -111,11 +117,6 @@ HttpBaseChannel::Init(nsIURI *aURI,
   if (NS_FAILED(rv)) return rv;
   LOG(("uri=%s\n", mSpec.get()));
 
-  mConnectionInfo = new nsHttpConnectionInfo(host, port,
-                                             aProxyInfo, usingSSL);
-  if (!mConnectionInfo)
-    return NS_ERROR_OUT_OF_MEMORY;
-
   // Set default request method
   mRequestHead.SetMethod(nsHttp::Get);
 
@@ -127,8 +128,13 @@ HttpBaseChannel::Init(nsIURI *aURI,
   rv = mRequestHead.SetHeader(nsHttp::Host, hostLine);
   if (NS_FAILED(rv)) return rv;
 
-  rv = gHttpHandler->
-    AddStandardRequestHeaders(&mRequestHead.Headers(), aCaps);
+  rv = gHttpHandler->AddStandardRequestHeaders(&mRequestHead.Headers());
+  if (NS_FAILED(rv)) return rv;
+
+  nsAutoCString type;
+  if (aProxyInfo && NS_SUCCEEDED(aProxyInfo->GetType(type)) &&
+      !type.EqualsLiteral("unknown"))
+    mProxyInfo = aProxyInfo;
 
   return rv;
 }
@@ -360,11 +366,22 @@ HttpBaseChannel::GetContentDisposition(uint32_t *aContentDisposition)
   nsCString header;
 
   rv = GetContentDispositionHeader(header);
-  if (NS_FAILED(rv))
-    return rv;
+  if (NS_FAILED(rv)) {
+    if (mContentDispositionHint == UINT32_MAX)
+      return rv;
+
+    *aContentDisposition = mContentDispositionHint;
+    return NS_OK;
+  }
 
   *aContentDisposition = NS_GetContentDispositionFromHeader(header, this);
+  return NS_OK;
+}
 
+NS_IMETHODIMP
+HttpBaseChannel::SetContentDisposition(uint32_t aContentDisposition)
+{
+  mContentDispositionHint = aContentDisposition;
   return NS_OK;
 }
 
@@ -372,16 +389,27 @@ NS_IMETHODIMP
 HttpBaseChannel::GetContentDispositionFilename(nsAString& aContentDispositionFilename)
 {
   aContentDispositionFilename.Truncate();
-
   nsresult rv;
   nsCString header;
 
   rv = GetContentDispositionHeader(header);
-  if (NS_FAILED(rv))
-    return rv;
+  if (NS_FAILED(rv)) {
+    if (!mContentDispositionFilename)
+      return rv;
+
+    aContentDispositionFilename = *mContentDispositionFilename;
+    return NS_OK;
+  }
 
   return NS_GetFilenameFromDisposition(aContentDispositionFilename,
                                        header, mURI);
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetContentDispositionFilename(const nsAString& aContentDispositionFilename)
+{
+  mContentDispositionFilename = new nsString(aContentDispositionFilename);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1356,7 +1384,7 @@ HttpBaseChannel::GetEntityID(nsACString& aEntityID)
     return NS_ERROR_NOT_RESUMABLE;
   }
 
-  uint64_t size = LL_MAXUINT;
+  uint64_t size = UINT64_MAX;
   nsAutoCString etag, lastmod;
   if (mResponseHead) {
     // Don't return an entity if the server sent the following header:
@@ -1416,6 +1444,15 @@ HttpBaseChannel::SetNewListener(nsIStreamListener *aListener, nsIStreamListener 
 //-----------------------------------------------------------------------------
 
 void
+HttpBaseChannel::ReleaseListeners()
+{
+  mListener = nullptr;
+  mListenerContext = nullptr;
+  mCallbacks = nullptr;
+  mProgressSink = nullptr;
+}
+
+void
 HttpBaseChannel::DoNotifyListener()
 {
   // Make sure mIsPending is set to false. At this moment we are done from
@@ -1425,14 +1462,12 @@ HttpBaseChannel::DoNotifyListener()
     mListener->OnStartRequest(this, mListenerContext);
     mIsPending = false;
     mListener->OnStopRequest(this, mListenerContext, mStatus);
-    mListener = 0;
-    mListenerContext = 0;
   } else {
     mIsPending = false;
   }
-  // We have to make sure to drop the reference to the callbacks too
-  mCallbacks = nullptr;
-  mProgressSink = nullptr;
+  // We have to make sure to drop the references to listeners and callbacks
+  // no longer  needed
+  ReleaseListeners();
 
   DoNotifyListenerCleanup();
 }
@@ -1495,7 +1530,9 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   // set, then allow the flag to apply to the redirected channel as well.
   // since we force set INHIBIT_PERSISTENT_CACHING on all HTTPS channels,
   // we only need to check if the original channel was using SSL.
-  if (mConnectionInfo->UsingSSL())
+  bool usingSSL = false;
+  nsresult rv = mURI->SchemeIs("https", &usingSSL);
+  if (NS_SUCCEEDED(rv) && usingSSL)
     newLoadFlags &= ~INHIBIT_PERSISTENT_CACHING;
 
   // Do not pass along LOAD_CHECK_OFFLINE_CACHE
@@ -1504,6 +1541,15 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
   newChannel->SetLoadGroup(mLoadGroup); 
   newChannel->SetNotificationCallbacks(mCallbacks);
   newChannel->SetLoadFlags(newLoadFlags);
+
+  // Try to preserve the privacy bit if it has been overridden
+  if (mPrivateBrowsingOverriden) {
+    nsCOMPtr<nsIPrivateBrowsingChannel> newPBChannel =
+      do_QueryInterface(newChannel);
+    if (newPBChannel) {
+      newPBChannel->SetPrivate(mPrivateBrowsing);
+    }
+  }
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
   if (!httpChannel)

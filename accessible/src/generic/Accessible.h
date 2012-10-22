@@ -49,10 +49,24 @@ enum ENameValueFlag {
    * Name either
    *  a) present (not empty): !name.IsEmpty()
    *  b) no name (was missed): name.IsVoid()
-   *  c) was left empty by the author on demand: name.IsEmpty() && !name.IsVoid()
    */
  eNameOK,
- eNameFromTooltip // Tooltip was used as a name
+
+ /**
+  * Name was left empty by the author on purpose:
+  * name.IsEmpty() && !name.IsVoid().
+  */
+ eNoNameOnPurpose,
+
+ /**
+  * Name was computed from the subtree.
+  */
+ eNameFromSubtree,
+
+ /**
+  * Tooltip was used as a name.
+  */
+ eNameFromTooltip
 };
 
 /**
@@ -132,6 +146,9 @@ public:
 
   /**
    * Get the name of this accessible.
+   *
+   * Note: aName.IsVoid() when name was left empty by the author on purpose.
+   * aName.IsEmpty() when the author missed name, AT can try to repair a name.
    */
   virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
 
@@ -147,11 +164,6 @@ public:
   }
 
   /**
-   * Returns the accessible name specified by ARIA.
-   */
-  nsresult GetARIAName(nsAString& aName);
-
-  /**
    * Maps ARIA state attributes to state of accessible. Note the given state
    * argument should hold states for accessible before you pass it into this
    * method.
@@ -159,18 +171,6 @@ public:
    * @param  [in/out] where to fill the states into.
    */
   virtual void ApplyARIAState(uint64_t* aState) const;
-
-  /**
-   * Returns the accessible name provided by native markup. It doesn't take
-   * into account ARIA markup used to specify the name.
-   *
-   * @param  aName             [out] the accessible name
-   *
-   * @return NS_OK_EMPTY_NAME  points empty name was specified by native markup
-   *                           explicitly (see nsIAccessible::name attribute for
-   *                           details)
-   */
-  virtual nsresult GetNameInternal(nsAString& aName);
 
   /**
    * Return enumerated accessible role (see constants in Role.h).
@@ -248,10 +248,9 @@ public:
   virtual bool NativelyUnavailable() const;
 
   /**
-   * Returns attributes for accessible without explicitly setted ARIA
-   * attributes.
+   * Return object attributes for the accessible.
    */
-  virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
+  virtual already_AddRefed<nsIPersistentProperties> Attributes();
 
   /**
    * Return group position (level, position in set and set size).
@@ -452,7 +451,7 @@ public:
    *                        then text form start offset till the end is appended
    */
   virtual void AppendTextTo(nsAString& aText, uint32_t aStartOffset = 0,
-                            uint32_t aLength = PR_UINT32_MAX);
+                            uint32_t aLength = UINT32_MAX);
 
   /**
    * Assert if child not in parent's cache if the cache was initialized at this
@@ -509,6 +508,8 @@ public:
   inline bool IsMenuButton() const { return mFlags & eMenuButtonAccessible; }
 
   inline bool IsMenuPopup() const { return mFlags & eMenuPopupAccessible; }
+
+  inline bool IsProgress() const { return mFlags & eProgressAccessible; }
 
   inline bool IsRoot() const { return mFlags & eRootAccessible; }
   mozilla::a11y::RootAccessible* AsRoot();
@@ -693,15 +694,34 @@ public:
   bool IsInDocument() const { return !(mFlags & eIsNotInDocument); }
 
   /**
-  * Return true if the accessible is primary accessible for the given DOM node.
-  *
-  * Accessible hierarchy may be complex for single DOM node, in this case
-  * these accessibles share the same DOM node. The primary accessible "owns"
-  * that DOM node in terms it gets stored in the accessible to node map.
+   * Return true if the accessible should be contained by document node map.
+   */
+  bool IsNodeMapEntry() const
+    { return HasOwnContent() && !(mFlags & eNotNodeMapEntry); }
+
+  /**
+   * Return true if the accessible has associated DOM content.
+   */
+  bool HasOwnContent() const { return mContent && !(mFlags & eSharedNode); }
+
+  /**
+  * Return true if the accessible has a numeric value.
   */
-  bool IsPrimaryForNode() const { return !(mFlags & eSharedNode); }
+  bool HasNumericValue() const;
 
 protected:
+
+  /**
+   * Return the accessible name provided by native markup. It doesn't take
+   * into account ARIA markup used to specify the name.
+   */
+  virtual mozilla::a11y::ENameValueFlag NativeName(nsString& aName);
+
+  /**
+   * Return object attributes provided by native markup. It doesn't take into
+   * account ARIA.
+   */
+  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes();
 
   //////////////////////////////////////////////////////////////////////////////
   // Initializing, cache and tree traverse methods
@@ -751,7 +771,9 @@ protected:
   enum StateFlags {
     eIsDefunct = 1 << 2, // accessible is defunct
     eIsNotInDocument = 1 << 3, // accessible is not in document
-    eSharedNode = 1 << 4 // accessible shares DOM node from another accessible
+    eSharedNode = 1 << 4, // accessible shares DOM node from another accessible
+    eNotNodeMapEntry = 1 << 5, // accessible shouldn't be in document node map
+    eHasNumericValue = 1 << 6 // accessible has a numeric value
   };
 
   /**
@@ -759,23 +781,24 @@ protected:
    * @note keep these flags in sync with ChildrenFlags and StateFlags
    */
   enum AccessibleTypes {
-    eApplicationAccessible = 1 << 5,
-    eAutoCompleteAccessible = 1 << 6,
-    eAutoCompletePopupAccessible = 1 << 7,
-    eComboboxAccessible = 1 << 8,
-    eDocAccessible = 1 << 9,
-    eHyperTextAccessible = 1 << 10,
-    eHTMLFileInputAccessible = 1 << 11,
-    eHTMLListItemAccessible = 1 << 12,
-    eImageAccessible = 1 << 13,
-    eImageMapAccessible = 1 << 14,
-    eListControlAccessible = 1 << 15,
-    eMenuButtonAccessible = 1 << 16,
-    eMenuPopupAccessible = 1 << 17,
-    eRootAccessible = 1 << 18,
-    eTextLeafAccessible = 1 << 19,
-    eXULDeckAccessible = 1 << 20,
-    eXULTreeAccessible = 1 << 21
+    eApplicationAccessible = 1 << 7,
+    eAutoCompleteAccessible = 1 << 8,
+    eAutoCompletePopupAccessible = 1 << 9,
+    eComboboxAccessible = 1 << 10,
+    eDocAccessible = 1 << 11,
+    eHyperTextAccessible = 1 << 12,
+    eHTMLFileInputAccessible = 1 << 13,
+    eHTMLListItemAccessible = 1 << 14,
+    eImageAccessible = 1 << 15,
+    eImageMapAccessible = 1 << 16,
+    eListControlAccessible = 1 << 17,
+    eMenuButtonAccessible = 1 << 18,
+    eMenuPopupAccessible = 1 << 19,
+    eProgressAccessible = 1 << 20,
+    eRootAccessible = 1 << 21,
+    eTextLeafAccessible = 1 << 22,
+    eXULDeckAccessible = 1 << 23,
+    eXULTreeAccessible = 1 << 24
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -790,14 +813,15 @@ protected:
   // Name helpers
 
   /**
-   * Compute the name of HTML node.
+   * Returns the accessible name specified by ARIA.
    */
-  nsresult GetHTMLName(nsAString& aName);
+  void ARIAName(nsString& aName);
 
   /**
-   * Compute the name for XUL node.
+   * Compute the name of HTML/XUL node.
    */
-  nsresult GetXULName(nsAString& aName);
+  mozilla::a11y::ENameValueFlag GetHTMLName(nsString& aName);
+  mozilla::a11y::ENameValueFlag GetXULName(nsString& aName);
 
   // helper method to verify frames
   static nsresult GetFullKeyName(const nsAString& aModifierName, const nsAString& aKeyName, nsAString& aStringOut);

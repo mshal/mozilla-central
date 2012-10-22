@@ -100,6 +100,11 @@ nsRefreshDriver::~nsRefreshDriver()
   NS_ABORT_IF_FALSE(ObserverCount() == 0,
                     "observers should have unregistered");
   NS_ABORT_IF_FALSE(!mTimer, "timer should be gone");
+  
+  for (uint32_t i = 0; i < mPresShellsToInvalidateIfHidden.Length(); i++) {
+    mPresShellsToInvalidateIfHidden[i]->InvalidatePresShellIfHidden();
+  }
+  mPresShellsToInvalidateIfHidden.Clear();
 }
 
 // Method for testing.  See nsIDOMWindowUtils.advanceTimeAndRefresh
@@ -412,6 +417,11 @@ nsRefreshDriver::Notify(nsITimer *aTimer)
     mRequests.EnumerateEntries(nsRefreshDriver::ImageRequestEnumerator, &parms);
     EnsureTimerStarted(false);
   }
+    
+  for (uint32_t i = 0; i < mPresShellsToInvalidateIfHidden.Length(); i++) {
+    mPresShellsToInvalidateIfHidden[i]->InvalidatePresShellIfHidden();
+  }
+  mPresShellsToInvalidateIfHidden.Clear();
 
   if (mViewManagerFlushIsPending) {
 #ifdef DEBUG_INVALIDATIONS
@@ -454,8 +464,7 @@ nsRefreshDriver::ImageRequestEnumerator(nsISupportsHashKey* aEntry,
   imgIRequest* req = static_cast<imgIRequest*>(aEntry->GetKey());
   NS_ABORT_IF_FALSE(req, "Unable to retrieve the image request");
   nsCOMPtr<imgIContainer> image;
-  req->GetImage(getter_AddRefs(image));
-  if (image) {
+  if (NS_SUCCEEDED(req->GetImage(getter_AddRefs(image)))) {
     image->RequestRefresh(mostRecentRefresh);
   }
 

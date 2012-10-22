@@ -251,6 +251,7 @@ Section "Uninstall"
   ${MUI_INSTALLOPTIONS_READ} $0 "unconfirm.ini" "Field 3" "State"
   ${If} "$0" == "1"
     ${un.DeleteRelativeProfiles} "Mozilla\Firefox"
+    ${un.DeleteRelativeProfiles} "Mozilla\MetroFirefox"
     RmDir "$APPDATA\Mozilla\Extensions\{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
     RmDir "$APPDATA\Mozilla\Extensions"
     RmDir "$APPDATA\Mozilla"
@@ -382,6 +383,9 @@ Section "Uninstall"
   ${If} ${FileExists} "$INSTDIR\updates"
     RmDir /r /REBOOTOK "$INSTDIR\updates"
   ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\updated"
+    RmDir /r /REBOOTOK "$INSTDIR\updated"
+  ${EndIf}
   ${If} ${FileExists} "$INSTDIR\defaults\shortcuts"
     RmDir /r /REBOOTOK "$INSTDIR\defaults\shortcuts"
   ${EndIf}
@@ -410,6 +414,8 @@ Section "Uninstall"
   ; See bug 757978
   RmDir "$INSTDIR\webapprt\components"
   RmDir "$INSTDIR\webapprt"
+
+  RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
 
   ; Remove the installation directory if it is empty
   ${RemoveDir} "$INSTDIR"

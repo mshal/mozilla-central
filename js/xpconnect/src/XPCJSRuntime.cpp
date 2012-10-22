@@ -47,6 +47,7 @@ const char* XPCJSRuntime::mStrings[] = {
     "constructor",          // IDX_CONSTRUCTOR
     "toString",             // IDX_TO_STRING
     "toSource",             // IDX_TO_SOURCE
+    "valueOf",              // IDX_VALUE_OF
     "lastResult",           // IDX_LAST_RESULT
     "returnCode",           // IDX_RETURN_CODE
     "value",                // IDX_VALUE
@@ -416,18 +417,40 @@ SuspectDOMExpandos(nsPtrHashKey<JSObject> *key, void *arg)
 {
     Closure *closure = static_cast<Closure*>(arg);
     JSObject* obj = key->GetKey();
-    nsISupports* native = nullptr;
-    if (dom::oldproxybindings::instanceIsProxy(obj)) {
-        native = static_cast<nsISupports*>(js::GetProxyPrivate(obj).toPrivate());
-    }
-    else {
-        const dom::DOMClass* clasp;
-        dom::DOMObjectSlot slot = GetDOMClass(obj, clasp);
-        MOZ_ASSERT(slot != dom::eNonDOMObject && clasp->mDOMObjectIsISupports);
-        native = dom::UnwrapDOMObject<nsISupports>(obj, slot);
-    }
+    const dom::DOMClass* clasp;
+    dom::DOMObjectSlot slot = GetDOMClass(obj, clasp);
+    MOZ_ASSERT(slot != dom::eNonDOMObject && clasp->mDOMObjectIsISupports);
+    nsISupports* native = dom::UnwrapDOMObject<nsISupports>(obj, slot);
     closure->cb->NoteXPCOMRoot(native);
     return PL_DHASH_NEXT;
+}
+
+bool
+CanSkipWrappedJS(nsXPCWrappedJS *wrappedJS)
+{
+    JSObject *obj = wrappedJS->GetJSObjectPreserveColor();
+    // If traversing wrappedJS wouldn't release it, nor
+    // cause any other objects to be added to the graph, no
+    // need to add it to the graph at all.
+    if (nsCCUncollectableMarker::sGeneration &&
+        (!obj || !xpc_IsGrayGCThing(obj)) &&
+        !wrappedJS->IsSubjectToFinalization() &&
+        wrappedJS->GetRootWrapper() == wrappedJS) {
+        if (!wrappedJS->IsAggregatedToNative()) {
+            return true;
+        } else {
+            nsISupports* agg = wrappedJS->GetAggregatedNativeObject();
+            nsXPCOMCycleCollectionParticipant* cp = nullptr;
+            CallQueryInterface(agg, &cp);
+            nsISupports* canonical = nullptr;
+            agg->QueryInterface(NS_GET_IID(nsCycleCollectionISupports),
+                                reinterpret_cast<void**>(&canonical));
+            if (cp && canonical && cp->CanSkipInCC(canonical)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void
@@ -463,15 +486,8 @@ XPCJSRuntime::AddXPConnectRoots(nsCycleCollectionTraversalCallback &cb)
 
     for (XPCRootSetElem *e = mWrappedJSRoots; e ; e = e->GetNextRoot()) {
         nsXPCWrappedJS *wrappedJS = static_cast<nsXPCWrappedJS*>(e);
-        JSObject *obj = wrappedJS->GetJSObjectPreserveColor();
-        // If traversing wrappedJS wouldn't release it, nor
-        // cause any other objects to be added to the graph, no
-        // need to add it to the graph at all.
-        if (nsCCUncollectableMarker::sGeneration &&
-            !cb.WantAllTraces() && (!obj || !xpc_IsGrayGCThing(obj)) &&
-            !wrappedJS->IsSubjectToFinalization() &&
-            wrappedJS->GetRootWrapper() == wrappedJS &&
-            !wrappedJS->IsAggregatedToNative()) {
+        if (!cb.WantAllTraces() &&
+            CanSkipWrappedJS(wrappedJS)) {
             continue;
         }
 
@@ -528,10 +544,18 @@ DoDeferredRelease(nsTArray<T> &array)
     }
 }
 
+struct DeferredFinalizeFunction
+{
+  XPCJSRuntime::DeferredFinalizeFunction run;
+  void* data;
+};
+
 class XPCIncrementalReleaseRunnable : public nsRunnable
 {
     XPCJSRuntime *runtime;
     nsTArray<nsISupports *> items;
+    nsAutoTArray<DeferredFinalizeFunction, 16> deferredFinalizeFunctions;
+    uint32_t finalizeFunctionToRun;
 
     static const PRTime SliceMillis = 10; /* ms */
 
@@ -544,12 +568,50 @@ class XPCIncrementalReleaseRunnable : public nsRunnable
     NS_DECL_NSIRUNNABLE
 };
 
+bool
+ReleaseSliceNow(int32_t slice, void* data)
+{
+    nsTArray<nsISupports *>* items =
+        static_cast<nsTArray<nsISupports *>*>(data);
+    int32_t counter = 0;
+    while (1) {
+        uint32_t count = items->Length();
+        if (!count) {
+            break;
+        }
+
+        nsISupports *wrapper = items->ElementAt(count - 1);
+        items->RemoveElementAt(count - 1);
+        NS_RELEASE(wrapper);
+
+        if (slice > 0 && ++counter == slice) {
+            return items->IsEmpty();
+        }
+    }
+
+    return true;
+}
+
+
 XPCIncrementalReleaseRunnable::XPCIncrementalReleaseRunnable(XPCJSRuntime *rt,
                                                              nsTArray<nsISupports *> &items)
-  : runtime(rt)
+  : runtime(rt),
+    finalizeFunctionToRun(0)
 {
     nsLayoutStatics::AddRef();
     this->items.SwapElements(items);
+    DeferredFinalizeFunction* function =
+        deferredFinalizeFunctions.AppendElement();
+    function->run = ReleaseSliceNow;
+    function->data = &this->items;
+    for (uint32_t i = 0; i < rt->mDeferredFinalizeFunctions.Length(); ++i) {
+        void* data = (rt->mDeferredFinalizeFunctions[i].start)();
+        if (data) {
+            function = deferredFinalizeFunctions.AppendElement();
+            function->run = rt->mDeferredFinalizeFunctions[i].run;
+            function->data = data;
+        }
+    }
 }
 
 XPCIncrementalReleaseRunnable::~XPCIncrementalReleaseRunnable()
@@ -562,33 +624,39 @@ void
 XPCIncrementalReleaseRunnable::ReleaseNow(bool limited)
 {
     MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(deferredFinalizeFunctions.Length() != 0,
+               "We should have at least ReleaseSliceNow to run");
+    MOZ_ASSERT(finalizeFunctionToRun < deferredFinalizeFunctions.Length(),
+               "No more finalizers to run?");
 
     TimeDuration sliceTime = TimeDuration::FromMilliseconds(SliceMillis);
     TimeStamp started = TimeStamp::Now();
-    uint32_t counter = 0;
-    while (1) {
-        uint32_t count = items.Length();
-        if (!count)
-            break;
-
-        nsISupports *wrapper = items[count - 1];
-        items.RemoveElementAt(count - 1);
-        NS_RELEASE(wrapper);
-
+    bool timeout = false;
+    do {
+        const DeferredFinalizeFunction& function =
+            deferredFinalizeFunctions[finalizeFunctionToRun];
         if (limited) {
-            /* We don't want to read the clock too often. */
-            counter++;
-            if (counter == 100) {
-                counter = 0;
-                if (TimeStamp::Now() - started >= sliceTime)
-                    break;
+            bool done = false;
+            while (!timeout && !done) {
+                /* We don't want to read the clock too often, so we try to
+                   release slices of 100 items. */
+                done = function.run(100, function.data);
+                timeout = TimeStamp::Now() - started >= sliceTime;
             }
+            if (done) {
+                ++finalizeFunctionToRun;
+            }
+            if (timeout) {
+                break;
+            }
+        } else {
+            function.run(-1, function.data);
+            MOZ_ASSERT(!items.Length());
+            ++finalizeFunctionToRun;
         }
-    }
+    } while (finalizeFunctionToRun < deferredFinalizeFunctions.Length());
 
-    MOZ_ASSERT_IF(items.Length(), limited);
-
-    if (!items.Length()) {
+    if (finalizeFunctionToRun == deferredFinalizeFunctions.Length()) {
         MOZ_ASSERT(runtime->mReleaseRunnable == this);
         runtime->mReleaseRunnable = nullptr;
     }
@@ -675,11 +743,17 @@ XPCJSRuntime::GCCallback(JSRuntime *rt, JSGCStatus status)
                 self->mReleaseRunnable->ReleaseNow(false);
 
             // Do any deferred releases of native objects.
-            if (js::WasIncrementalGC(rt))
+            if (js::WasIncrementalGC(rt)) {
                 self->ReleaseIncrementally(self->mNativesToReleaseArray);
-            else
+            } else {
                 DoDeferredRelease(self->mNativesToReleaseArray);
-
+                for (uint32_t i = 0; i < self->mDeferredFinalizeFunctions.Length(); ++i) {
+                    void* data = self->mDeferredFinalizeFunctions[i].start();
+                    if (data) {
+                        self->mDeferredFinalizeFunctions[i].run(-1, data);
+                    }
+                }
+            }
             self->GetXPConnect()->ClearGCBeforeCC();
             break;
         }
@@ -1332,7 +1406,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(XPConnectJSUserCompartmentCount,
 // compartments;  they aggregate any entries smaller than SUNDRIES_THRESHOLD
 // into "gc-heap/sundries" and "other-sundries" entries for the compartment.
 
-static const size_t SUNDRIES_THRESHOLD = 8192;
+#define SUNDRIES_THRESHOLD js::MemoryReportingSundriesThreshold()
 
 #define REPORT(_path, _kind, _units, _amount, _desc)                          \
     do {                                                                      \
@@ -1357,9 +1431,22 @@ static const size_t SUNDRIES_THRESHOLD = 8192;
         gcTotal += amount;                                                    \
     } while (0)
 
+// Report compartment bytes.  Note that _descLiteral must be a literal string.
+//
 // Nb: all non-GC compartment reports are currently KIND_HEAP, and this macro
 // relies on that.
-#define CREPORT_BYTES(_path, _amount, _desc)                                  \
+#define CREPORT_BYTES(_path, _amount, _descLiteral)                           \
+    do {                                                                      \
+        /* Assign _descLiteral plus "" into a char* to prove that it's */     \
+        /* actually a literal. */                                             \
+        const char* unusedDesc = _descLiteral "";                             \
+        (void) unusedDesc;                                                    \
+        CREPORT_BYTES2(_path, _amount, NS_LITERAL_CSTRING(_descLiteral));     \
+    } while (0)
+
+// CREPORT_BYTES2 is identical to CREPORT_BYTES, except the description is a
+// nsCString instead of a literal string.
+#define CREPORT_BYTES2(_path, _amount, _desc)                                 \
     do {                                                                      \
         size_t amount = _amount;  /* evaluate _amount only once */            \
         if (amount >= SUNDRIES_THRESHOLD) {                                   \
@@ -1367,7 +1454,7 @@ static const size_t SUNDRIES_THRESHOLD = 8192;
             rv = cb->Callback(EmptyCString(), _path,                          \
                               nsIMemoryReporter::KIND_HEAP,                   \
                               nsIMemoryReporter::UNITS_BYTES, amount,         \
-                              NS_LITERAL_CSTRING(_desc), closure);            \
+                              _desc, closure);                                \
             NS_ENSURE_SUCCESS(rv, rv);                                        \
         } else {                                                              \
             otherSundries += amount;                                          \
@@ -1513,15 +1600,6 @@ ReportCompartmentStats(const JS::CompartmentStats &cStats,
                   "Memory used by orphan DOM nodes that are only reachable "
                   "from JavaScript objects.");
 
-    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("string-chars"),
-                  cStats.stringChars,
-                  "Memory allocated to hold string "
-                  "characters.  Sometimes more memory is allocated than "
-                  "necessary, to simplify string concatenation.  Each string "
-                  "also includes a header which is stored on the "
-                  "compartment's JavaScript heap;  that header is not counted "
-                  "here, but in 'gc-heap/strings' instead.");
-
     CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("shapes-extra/tree-tables"),
                   cStats.shapesExtraTreeTables,
                   "Memory allocated for the property tables "
@@ -1557,9 +1635,21 @@ ReportCompartmentStats(const JS::CompartmentStats &cStats,
                   "Memory used by the IonMonkey JIT for compilation data: "
                   "IonScripts.");
 
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("compartment-object"),
+                  cStats.compartmentObject,
+                  "Memory used for the JSCompartment object itself.");
+
     CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("cross-compartment-wrappers"),
                   cStats.crossCompartmentWrappers,
                   "Memory used by cross-compartment wrappers.");
+
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("regexp-compartment"),
+                  cStats.regexpCompartment,
+                  "Memory used by the regexp compartment.");
+
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("debuggees-set"),
+                  cStats.debuggeesSet,
+                  "Memory used by the debuggees set.");
 
     CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("type-inference/script-main"),
                   cStats.typeInferenceSizes.scripts,
@@ -1580,6 +1670,42 @@ ReportCompartmentStats(const JS::CompartmentStats &cStats,
                   cStats.typeInferenceSizes.temporary,
                   "Memory used during type inference and compilation to hold "
                   "transient analysis information.  Cleared on GC.");
+
+    CREPORT_BYTES2(cJSPathPrefix + NS_LITERAL_CSTRING("string-chars/non-huge"),
+                   cStats.nonHugeStringChars, nsPrintfCString(
+                   "Memory allocated to hold characters of strings whose "
+                   "characters take up less than than %d bytes of memory.\n\n"
+                   "Sometimes more memory is allocated than necessary, to "
+                   "simplify string concatenation.  Each string also includes a "
+                   "header which is stored on the compartment's JavaScript heap; "
+                   "that header is not counted here, but in 'gc-heap/strings' "
+                   "instead.",
+                   JS::HugeStringInfo::MinSize()));
+
+    for (size_t i = 0; i < cStats.hugeStrings.length(); i++) {
+        const JS::HugeStringInfo& info = cStats.hugeStrings[i];
+
+        nsDependentCString hugeString(info.buffer);
+
+        // Escape / to \/ before we put hugeString into the memory reporter
+        // path, because we don't want any forward slashes in the string to
+        // count as path separators.
+        nsCString escapedString(hugeString);
+        escapedString.ReplaceSubstring("/", "\\/");
+
+        CREPORT_BYTES2(
+            cJSPathPrefix +
+            nsPrintfCString("string-chars/huge/string(length=%d, \"%s...\")",
+                            info.length, escapedString.get()),
+            info.size,
+            nsPrintfCString("Memory allocated to hold characters of "
+            "a length-%d string which begins \"%s\".\n\n"
+            "Sometimes more memory is allocated than necessary, to simplify "
+            "string concatenation.  Each string also includes a header which is "
+            "stored on the compartment's JavaScript heap; that header is not "
+            "counted here, but in 'gc-heap/strings' instead.",
+            info.length, hugeString.get()));
+    }
 
     if (gcHeapSundries > 0) {
         // We deliberately don't use CREPORT_GC_BYTES here.
@@ -1673,11 +1799,15 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   "Memory allocated by one of the JITs to hold the "
                   "runtime's code, but which is currently unused.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack-committed"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stackCommitted,
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stack,
                   "Memory used for the JS call stack.  This is the committed "
-                  "portion of the stack; the uncommitted portion is not "
-                  "measured because it hardly costs anything.");
+                  "portion of the stack on Windows; on *nix, it is the resident "
+                  "portion of the stack.  Therefore, on *nix, if part of the "
+                  "stack is swapped out to disk, we do not count it here.\n\n"
+                  "Note that debug builds usually have stack poisoning enabled, "
+                  "which causes the whole stack to be committed (and likely "
+                  "resident).");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/gc-marker"),
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.gcMarker,
@@ -1694,12 +1824,6 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/script-sources"),
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.scriptSources,
                   "Memory use for storing JavaScript source code.");
-
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/compartment-objects"),
-                  nsIMemoryReporter::KIND_HEAP, rtStats.runtime.compartmentObjects,
-                  "Memory used for JSCompartment objects.  These are fairly "
-                  "small and all the same size, so they're not worth reporting "
-                  "on a per-compartment basis.");
 
     if (rtTotalOut) {
         *rtTotalOut = rtTotal;
@@ -2176,7 +2300,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     // these jsids filled in later when we have a JSContext to work with.
     mStrIDs[0] = JSID_VOID;
 
-    mJSRuntime = JS_NewRuntime(32L * 1024L * 1024L); // pref ?
+    mJSRuntime = JS_NewRuntime(32L * 1024L * 1024L, JS_USE_HELPER_THREADS); // pref ?
     if (!mJSRuntime)
         NS_RUNTIMEABORT("JS_NewRuntime failed.");
 
@@ -2286,7 +2410,6 @@ JSBool
 XPCJSRuntime::OnJSContextNew(JSContext *cx)
 {
     // if it is our first context then we need to generate our string ids
-    JSBool ok = true;
     if (JSID_IS_VOID(mStrIDs[0])) {
         JS_SetGCParameterForThread(cx, JSGC_MAX_CODE_CACHE_BYTES, 16 * 1024 * 1024);
         {
@@ -2297,22 +2420,17 @@ XPCJSRuntime::OnJSContextNew(JSContext *cx)
                 JSString* str = JS_InternString(cx, mStrings[i]);
                 if (!str || !JS_ValueToId(cx, STRING_TO_JSVAL(str), &mStrIDs[i])) {
                     mStrIDs[0] = JSID_VOID;
-                    ok = false;
-                    break;
+                    return false;
                 }
                 mStrJSVals[i] = STRING_TO_JSVAL(str);
             }
         }
 
-        ok = mozilla::dom::DefineStaticJSVals(cx) &&
-             mozilla::dom::oldproxybindings::DefineStaticJSVals(cx);
-        if (!ok)
+        if (!mozilla::dom::DefineStaticJSVals(cx) ||
+            !InternStaticDictionaryJSVals(cx)) {
             return false;
-
-        ok = InternStaticDictionaryJSVals(cx);
+        }
     }
-    if (!ok)
-        return false;
 
     XPCContext* xpc = new XPCContext(this, cx);
     if (!xpc)

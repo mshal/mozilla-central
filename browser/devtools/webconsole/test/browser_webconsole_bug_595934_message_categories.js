@@ -152,7 +152,8 @@ function testNext() {
   pos++;
   if (pos < TESTS.length) {
     waitForSuccess({
-      name: "test #" + pos + " succesful finish",
+      timeout: 10000,
+      name: "test #" + pos + " successful finish",
       validatorFn: function()
       {
         return foundCategory && foundText && pageLoaded && pageError;
@@ -211,6 +212,8 @@ function onDOMNodeInserted(aEvent) {
 }
 
 function test() {
+  requestLongerTimeout(2);
+
   addTab("data:text/html;charset=utf-8,Web Console test for bug 595934 - message categories coverage.");
   browser.addEventListener("load", function onLoad() {
     browser.removeEventListener("load", onLoad, true);

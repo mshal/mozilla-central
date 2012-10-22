@@ -14,20 +14,19 @@
 #include "nsCSSRendering.h"
 #include "nsIContent.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsHTMLParts.h"
 #include "nsGkAtoms.h"
 #include "nsIPresShell.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMHTMLTableCellElement.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsIServiceManager.h"
 #include "nsIDOMNode.h"
 #include "nsINameSpaceManager.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsTextFrame.h"
+#include "FrameLayerBuilder.h"
 
 //TABLECELL SELECTION
 #include "nsFrameSelection.h"
@@ -394,6 +393,21 @@ nsDisplayTableCellBackground::GetBounds(nsDisplayListBuilder* aBuilder,
   // revert from nsDisplayTableItem's implementation ... cell backgrounds
   // don't overflow the cell
   return nsDisplayItem::GetBounds(aBuilder, aSnap);
+}
+
+void nsTableCellFrame::InvalidateFrame(uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrame(aDisplayItemKey);
+  GetParent()->InvalidateFrameWithRect(GetVisualOverflowRect() + GetPosition(), aDisplayItemKey);
+}
+
+void nsTableCellFrame::InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey)
+{
+  nsIFrame::InvalidateFrameWithRect(aRect, aDisplayItemKey);
+  // If we have filters applied that would affects our bounds, then
+  // we get an inactive layer created and this is computed
+  // within FrameLayerBuilder
+  GetParent()->InvalidateFrameWithRect(aRect + GetPosition(), aDisplayItemKey);
 }
 
 static void
@@ -910,8 +924,8 @@ NS_METHOD nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
   FinishReflowChild(firstKid, aPresContext, &kidReflowState, kidSize,
                     kidOrigin.x, kidOrigin.y, 0);
 
-  nsTableFrame::InvalidateFrame(firstKid, origRect, origVisualOverflow,
-                                firstReflow);
+  nsTableFrame::InvalidateTableFrame(firstKid, origRect, origVisualOverflow,
+                                     firstReflow);
 
   // first, compute the height which can be set w/o being restricted by aMaxSize.height
   nscoord cellHeight = kidSize.height;
@@ -947,8 +961,9 @@ NS_METHOD nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
 
   // If our parent is in initial reflow, it'll handle invalidating our
   // entire overflow rect.
-  if (!(GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-    CheckInvalidateSizeChange(aDesiredSize);
+  if (!(GetParent()->GetStateBits() & NS_FRAME_FIRST_REFLOW) &&
+      nsSize(aDesiredSize.width, aDesiredSize.height) != mRect.Size()) {
+    InvalidateFrame();
   }
 
   // remember the desired size for this reflow
@@ -967,16 +982,10 @@ NS_QUERYFRAME_HEAD(nsTableCellFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsTableCellFrame::CreateAccessible()
+a11y::AccType
+nsTableCellFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLTableCellAccessible(mContent,
-                                                     PresContext()->PresShell());
-  }
-
-  return nullptr;
+  return a11y::eHTMLTableCellAccessible;
 }
 #endif
 

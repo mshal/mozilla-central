@@ -8,6 +8,7 @@
 
 #include "nsAutoPtr.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsObjectLoadingContent.h"
 #include "nsGkAtoms.h"
 #include "nsError.h"
@@ -42,30 +43,14 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
   NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFormElement::)
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLFormElement::)
-  NS_IMETHOD Click() {
-    return nsGenericHTMLFormElement::Click();
-  }
-  NS_IMETHOD GetTabIndex(int32_t* aTabIndex);
-  NS_IMETHOD SetTabIndex(int32_t aTabIndex);
-  NS_IMETHOD Focus() {
-    return nsGenericHTMLFormElement::Focus();
-  }
-  NS_IMETHOD GetDraggable(bool* aDraggable) {
-    return nsGenericHTMLFormElement::GetDraggable(aDraggable);
-  }
-  NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
-    return nsGenericHTMLFormElement::GetInnerHTML(aInnerHTML);
-  }
-  NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
-    return nsGenericHTMLFormElement::SetInnerHTML(aInnerHTML);
-  }
+  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFormElement::)
+  virtual int32_t TabIndexDefault() MOZ_OVERRIDE;
 
   // nsIDOMHTMLObjectElement
   NS_DECL_NSIDOMHTMLOBJECTELEMENT
@@ -200,14 +185,13 @@ DOMCI_NODE_DATA(HTMLObjectElement, nsHTMLObjectElement)
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLObjectElement)
   NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(nsHTMLObjectElement)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIDOMHTMLObjectElement)
-    NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, imgIDecoderObserver)
+    NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, imgINotificationObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIRequestObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIStreamListener)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIFrameLoaderOwner)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIObjectLoadingContent)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIImageLoadingContent)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, imgIOnloadBlocker)
-    NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, imgIContainerObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIInterfaceRequestor)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIChannelEventSink)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLObjectElement, nsIConstraintValidation)
@@ -432,12 +416,16 @@ NS_IMPL_STRING_ATTR(nsHTMLObjectElement, Height, height)
 NS_IMPL_INT_ATTR(nsHTMLObjectElement, Hspace, hspace)
 NS_IMPL_STRING_ATTR(nsHTMLObjectElement, Name, name)
 NS_IMPL_STRING_ATTR(nsHTMLObjectElement, Standby, standby)
-NS_IMPL_INT_ATTR_DEFAULT_VALUE(nsHTMLObjectElement, TabIndex, tabindex,
-                               IsFocusableForTabIndex() ? 0 : -1)
 NS_IMPL_STRING_ATTR(nsHTMLObjectElement, Type, type)
 NS_IMPL_STRING_ATTR(nsHTMLObjectElement, UseMap, usemap)
 NS_IMPL_INT_ATTR(nsHTMLObjectElement, Vspace, vspace)
 NS_IMPL_STRING_ATTR(nsHTMLObjectElement, Width, width)
+
+int32_t
+nsHTMLObjectElement::TabIndexDefault()
+{
+  return IsFocusableForTabIndex() ? 0 : -1;
+}
 
 NS_IMETHODIMP
 nsHTMLObjectElement::GetContentDocument(nsIDOMDocument **aContentDocument)

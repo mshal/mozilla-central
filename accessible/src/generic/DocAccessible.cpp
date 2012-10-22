@@ -43,9 +43,10 @@
 #include "nsIURI.h"
 #include "nsIWebNavigation.h"
 #include "nsFocusManager.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/dom/Element.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
@@ -84,9 +85,9 @@ DocAccessible::
   mVirtualCursor(nullptr),
   mPresShell(aPresShell)
 {
-  mFlags |= eDocAccessible;
-  if (mPresShell)
-    mPresShell->SetAccDocument(this);
+  mFlags |= eDocAccessible | eNotNodeMapEntry;
+  MOZ_ASSERT(mPresShell, "should have been given a pres shell");
+  mPresShell->SetDocAccessible(this);
 
   mDependentIDsHash.Init();
   // XXX aaronl should we use an algorithm for the initial cache size?
@@ -271,10 +272,11 @@ DocAccessible::Description(nsString& aDescription)
   if (mParent)
     mParent->Description(aDescription);
 
-  if (aDescription.IsEmpty())
+  if (HasOwnContent() && aDescription.IsEmpty()) {
     nsTextEquivUtils::
       GetTextEquivFromIDRefs(this, nsGkAtoms::aria_describedby,
                              aDescription);
+  }
 }
 
 // Accessible public method
@@ -337,17 +339,24 @@ DocAccessible::ApplyARIAState(uint64_t* aState) const
   // Allow iframe/frame etc. to have final state override via ARIA
   if (mParent)
     mParent->ApplyARIAState(aState);
-
 }
 
-NS_IMETHODIMP
-DocAccessible::GetAttributes(nsIPersistentProperties** aAttributes)
+already_AddRefed<nsIPersistentProperties>
+DocAccessible::Attributes()
 {
-  Accessible::GetAttributes(aAttributes);
-  if (mParent) {
-    mParent->GetAttributes(aAttributes); // Add parent attributes (override inner)
-  }
-  return NS_OK;
+  nsCOMPtr<nsIPersistentProperties> attributes =
+    HyperTextAccessibleWrap::Attributes();
+
+  if (!mParent)
+    return attributes.forget();
+
+  // Override ARIA object attributes from outerdoc.
+  aria::AttrIterator attribIter(mParent->GetContent());
+  nsAutoString name, value, unused;
+  while(attribIter.Next(name, value))
+    attributes->SetStringProperty(NS_ConvertUTF16toUTF8(name), value, unused);
+
+  return attributes.forget();
 }
 
 Accessible*
@@ -607,7 +616,7 @@ DocAccessible::GetAccessible(nsINode* aNode) const
 void
 DocAccessible::Init()
 {
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocCreate))
     logging::DocCreate("document initialize", mDocument, this);
 #endif
@@ -630,12 +639,12 @@ DocAccessible::Shutdown()
   if (!mPresShell) // already shutdown
     return;
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy))
     logging::DocDestroy("document shutdown", mDocument, this);
 #endif
 
-  mPresShell->SetAccDocument(nullptr);
+  mPresShell->SetDocAccessible(nullptr);
 
   if (mNotificationController) {
     mNotificationController->Shutdown();
@@ -856,7 +865,7 @@ DocAccessible::AddScrollListener()
   nsIScrollableFrame* sf = mPresShell->GetRootScrollFrameAsScrollableExternal();
   if (sf) {
     sf->AddScrollPositionListener(this);
-#ifdef DEBUG
+#ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eDocCreate))
       logging::Text("add scroll listener");
 #endif
@@ -1120,6 +1129,14 @@ DocAccessible::AttributeChangedImpl(nsIContent* aContent, int32_t aNameSpaceID, 
     FireDelayedAccessibleEvent(editableChangeEvent);
     return;
   }
+
+  if (aAttribute == nsGkAtoms::value) {
+    Accessible* accessible = GetAccessible(aContent);
+    if(accessible && accessible->IsProgress()) {
+      FireDelayedAccessibleEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE,
+                                 aContent);
+    }
+  }
 }
 
 // DocAccessible protected member
@@ -1230,7 +1247,7 @@ DocAccessible::ARIAActiveDescendantChanged(nsIContent* aElm)
         Accessible* activeDescendant = GetAccessible(activeDescendantElm);
         if (activeDescendant) {
           FocusMgr()->ActiveItemChanged(activeDescendant, false);
-#ifdef DEBUG
+#ifdef A11Y_LOG
           if (logging::IsEnabled(logging::eFocus))
             logging::ActiveItemChangeCausedBy("ARIA activedescedant changed",
                                               activeDescendant);
@@ -1318,7 +1335,7 @@ DocAccessible::ParentChainChanged(nsIContent* aContent)
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 nsresult
 DocAccessible::HandleAccEvent(AccEvent* aEvent)
 {
@@ -1377,7 +1394,7 @@ DocAccessible::GetAccessibleOrContainer(nsINode* aNode)
   nsINode* currNode = aNode;
   Accessible* accessible = nullptr;
   while (!(accessible = GetAccessible(currNode)) &&
-         (currNode = currNode->GetNodeParent()));
+         (currNode = currNode->GetParentNode()));
 
   return accessible;
 }
@@ -1390,7 +1407,7 @@ DocAccessible::BindToDocument(Accessible* aAccessible,
     return false;
 
   // Put into DOM node cache.
-  if (aAccessible->IsPrimaryForNode())
+  if (aAccessible->IsNodeMapEntry())
     mNodeToAccessibleMap.Put(aAccessible->GetNode(), aAccessible);
 
   // Put into unique ID cache.
@@ -1416,14 +1433,14 @@ DocAccessible::UnbindFromDocument(Accessible* aAccessible)
   // from the tree.
   if (FocusMgr()->IsActiveItem(aAccessible)) {
     FocusMgr()->ActiveItemChanged(nullptr);
-#ifdef DEBUG
+#ifdef A11Y_LOG
           if (logging::IsEnabled(logging::eFocus))
             logging::ActiveItemChangeCausedBy("tree shutdown", aAccessible);
 #endif
   }
 
   // Remove an accessible from node-to-accessible map if it exists there.
-  if (aAccessible->IsPrimaryForNode() &&
+  if (aAccessible->IsNodeMapEntry() &&
       mNodeToAccessibleMap.Get(aAccessible->GetNode()) == aAccessible)
     mNodeToAccessibleMap.Remove(aAccessible->GetNode());
 
@@ -1469,6 +1486,14 @@ DocAccessible::ContentRemoved(nsIContent* aContainerNode,
 void
 DocAccessible::RecreateAccessible(nsIContent* aContent)
 {
+#ifdef A11Y_LOG
+  if (logging::IsEnabled(logging::eTree)) {
+    logging::MsgBegin("TREE", "accessible recreated");
+    logging::Node("content", aContent);
+    logging::MsgEnd();
+  }
+#endif
+
   // XXX: we shouldn't recreate whole accessible subtree, instead we should
   // subclass hide and show events to handle them separately and implement their
   // coalescence with normal hide and show events. Note, in this case they
@@ -1578,6 +1603,11 @@ void
 DocAccessible::ProcessLoad()
 {
   mLoadState |= eCompletelyLoaded;
+
+#ifdef A11Y_LOG
+  if (logging::IsEnabled(logging::eDocLoad))
+    logging::DocCompleteLoad(this, IsLoadEventTarget());
+#endif
 
   // Do not fire document complete/stop events for root chrome document
   // accessibles and for frame/iframe documents because
@@ -1764,7 +1794,7 @@ DocAccessible::FireDelayedAccessibleEvent(AccEvent* aEvent)
 {
   NS_ENSURE_ARG(aEvent);
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocLoad))
     logging::DocLoadEventFired(aEvent);
 #endif
@@ -1855,7 +1885,7 @@ DocAccessible::UpdateTree(Accessible* aContainer, nsIContent* aChildNode,
 
   // If child node is not accessible then look for its accessible children.
   Accessible* child = GetAccessible(aChildNode);
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eTree)) {
     logging::MsgBegin("TREE", "process content %s",
                       (aIsInsert ? "insertion" : "removal"));
@@ -2034,7 +2064,7 @@ DocAccessible::UncacheChildrenInSubtree(Accessible* aRoot)
   for (uint32_t idx = 0; idx < count; idx++)
     UncacheChildrenInSubtree(aRoot->ContentChildAt(idx));
 
-  if (aRoot->IsPrimaryForNode() &&
+  if (aRoot->IsNodeMapEntry() &&
       mNodeToAccessibleMap.Get(aRoot->GetNode()) == aRoot)
     mNodeToAccessibleMap.Remove(aRoot->GetNode());
 }
@@ -2064,25 +2094,31 @@ bool
 DocAccessible::IsLoadEventTarget() const
 {
   nsCOMPtr<nsISupports> container = mDocument->GetContainer();
-  nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-    do_QueryInterface(container);
-  NS_ASSERTION(docShellTreeItem, "No document shell for document!");
+  nsCOMPtr<nsIDocShellTreeItem> treeItem = do_QueryInterface(container);
+  NS_ASSERTION(treeItem, "No document shell for document!");
 
   nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
-  docShellTreeItem->GetParent(getter_AddRefs(parentTreeItem));
+  treeItem->GetParent(getter_AddRefs(parentTreeItem));
 
-  // Return true if it's not a root document (either tab document or
-  // frame/iframe document) and its parent document is not in loading state.
-  // Note: we can get notifications while document is loading (and thus
-  // while there's no parent document yet).
+  // Not a root document.
   if (parentTreeItem) {
+    // Return true if it's either:
+    // a) tab document;
+    nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
+    treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
+    if (parentTreeItem == rootTreeItem)
+      return true;
+
+    // b) frame/iframe document and its parent document is not in loading state
+    // Note: we can get notifications while document is loading (and thus
+    // while there's no parent document yet).
     DocAccessible* parentDoc = ParentDocument();
     return parentDoc && parentDoc->HasLoadState(eCompletelyLoaded);
   }
 
   // It's content (not chrome) root document.
   int32_t contentType;
-  docShellTreeItem->GetItemType(&contentType);
+  treeItem->GetItemType(&contentType);
   return (contentType == nsIDocShellTreeItem::typeContent);
 }
 

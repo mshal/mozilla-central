@@ -64,6 +64,7 @@
 
 #include "nsIChannelPolicy.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsCycleCollectionParticipant.h"
 
 
 /**
@@ -2388,6 +2389,78 @@ Loader::StartAlternateLoads()
     --mDatasToNotifyOn;
     LoadSheet(arr[i], eSheetNeedsParser);
   }
+}
+
+static PLDHashOperator
+TraverseSheet(URIPrincipalAndCORSModeHashKey*,
+              nsCSSStyleSheet* aSheet,
+              void* aClosure)
+{
+  nsCycleCollectionTraversalCallback* cb =
+    static_cast<nsCycleCollectionTraversalCallback*>(aClosure);
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "Sheet cache nsCSSLoader");
+  cb->NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIStyleSheet*, aSheet));
+  return PL_DHASH_NEXT;
+}
+
+void
+Loader::TraverseCachedSheets(nsCycleCollectionTraversalCallback& cb)
+{
+  if (mCompleteSheets.IsInitialized()) {
+    mCompleteSheets.EnumerateRead(TraverseSheet, &cb);
+  }
+}
+
+void
+Loader::UnlinkCachedSheets()
+{
+  if (mCompleteSheets.IsInitialized()) {
+    mCompleteSheets.Clear();
+  }
+}
+
+struct SheetMemoryCounter {
+  size_t size;
+  nsMallocSizeOfFun mallocSizeOf;
+};
+
+static size_t
+CountSheetMemory(URIPrincipalAndCORSModeHashKey* /* unused */,
+                 const nsRefPtr<nsCSSStyleSheet>& aSheet,
+                 nsMallocSizeOfFun aMallocSizeOf,
+                 void* /* unused */)
+{
+  // If aSheet has a parent, then its parent will report it so we don't
+  // have to worry about it here.
+  // Likewise, if aSheet has an owning node, then the document that
+  // node is in will report it.
+  if (aSheet->GetOwningNode() || aSheet->GetParentSheet()) {
+    return 0;
+  }
+  return aSheet->SizeOfIncludingThis(aMallocSizeOf);
+}
+
+size_t
+Loader::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t s = aMallocSizeOf(this);
+
+  s += mCompleteSheets.SizeOfExcludingThis(CountSheetMemory, aMallocSizeOf);
+
+  s += mObservers.SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mLoadingDatas: transient, and should be small
+  // - mPendingDatas: transient, and should be small
+  // - mParsingDatas: transient, and should be small
+  // - mPostedEvents: transient, and should be small
+  //
+  // The following members aren't measured:
+  // - mDocument, because it's a weak backpointer
+  // - mPreferredSheet, because it can be a shared string
+
+  return s;
 }
 
 } // namespace css

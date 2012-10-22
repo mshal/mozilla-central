@@ -644,7 +644,7 @@ nsTreeBodyFrame::Invalidate()
   if (mUpdateBatchNest)
     return NS_OK;
 
-  InvalidateOverflowRect();
+  InvalidateFrame();
 
   return NS_OK;
 }
@@ -670,7 +670,7 @@ nsTreeBodyFrame::InvalidateColumn(nsITreeColumn* aCol)
 
   // When false then column is out of view
   if (OffsetForHorzScroll(columnRect, true))
-      nsIFrame::Invalidate(columnRect);
+      InvalidateFrameWithRect(columnRect);
 
   return NS_OK;
 }
@@ -691,7 +691,7 @@ nsTreeBodyFrame::InvalidateRow(int32_t aIndex)
     return NS_OK;
 
   nsRect rowRect(mInnerBox.x, mInnerBox.y+mRowHeight*aIndex, mInnerBox.width, mRowHeight);
-  nsLeafBoxFrame::Invalidate(rowRect);
+  InvalidateFrameWithRect(rowRect);
 
   return NS_OK;
 }
@@ -721,7 +721,7 @@ nsTreeBodyFrame::InvalidateCell(int32_t aIndex, nsITreeColumn* aCol)
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (OffsetForHorzScroll(cellRect, true))
-    nsIFrame::Invalidate(cellRect);
+    InvalidateFrameWithRect(cellRect);
 
   return NS_OK;
 }
@@ -754,7 +754,7 @@ nsTreeBodyFrame::InvalidateRange(int32_t aStart, int32_t aEnd)
 #endif
 
   nsRect rangeRect(mInnerBox.x, mInnerBox.y+mRowHeight*(aStart-mTopRowIndex), mInnerBox.width, mRowHeight*(aEnd-aStart+1));
-  nsIFrame::Invalidate(rangeRect);
+  InvalidateFrameWithRect(rangeRect);
 
   return NS_OK;
 }
@@ -797,7 +797,7 @@ nsTreeBodyFrame::InvalidateColumnRange(int32_t aStart, int32_t aEnd, nsITreeColu
                              &rangeRect);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsIFrame::Invalidate(rangeRect);
+  InvalidateFrameWithRect(rangeRect);
 
   return NS_OK;
 }
@@ -2117,8 +2117,8 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
 
     if ((!(status & imgIRequest::STATUS_LOAD_COMPLETE)) || animated) {
       // We either aren't done loading, or we're animating. Add our row as a listener for invalidations.
-      nsCOMPtr<imgIDecoderObserver> obs;
-      imgReq->GetDecoderObserver(getter_AddRefs(obs));
+      nsCOMPtr<imgINotificationObserver> obs;
+      imgReq->GetNotificationObserver(getter_AddRefs(obs));
 
       if (obs) {
         static_cast<nsTreeImageListener*> (obs.get())->AddCell(aRowIndex, aCol);
@@ -2140,11 +2140,11 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
     }
 
     listener->AddCell(aRowIndex, aCol);
-    nsCOMPtr<imgIDecoderObserver> imgDecoderObserver = listener;
+    nsCOMPtr<imgINotificationObserver> imgNotificationObserver = listener;
 
     nsCOMPtr<imgIRequest> imageRequest;
     if (styleRequest) {
-      styleRequest->Clone(imgDecoderObserver, getter_AddRefs(imageRequest));
+      styleRequest->Clone(imgNotificationObserver, getter_AddRefs(imageRequest));
     } else {
       nsIDocument* doc = mContent->GetDocument();
       if (!doc)
@@ -2169,7 +2169,7 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
                                                 doc,
                                                 mContent->NodePrincipal(),
                                                 doc->GetDocumentURI(),
-                                                imgDecoderObserver,
+                                                imgNotificationObserver,
                                                 nsIRequest::LOAD_NORMAL,
                                                 getter_AddRefs(imageRequest));
         NS_ENSURE_SUCCESS(rv, rv);
@@ -2182,12 +2182,12 @@ nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContex
       return NS_ERROR_FAILURE;
 
     // We don't want discarding/decode-on-draw for xul images
-    imageRequest->RequestDecode();
+    imageRequest->StartDecoding();
     imageRequest->LockImage();
 
     // In a case it was already cached.
     imageRequest->GetImage(aResult);
-    nsTreeImageCacheEntry cacheEntry(imageRequest, imgDecoderObserver);
+    nsTreeImageCacheEntry cacheEntry(imageRequest, imgNotificationObserver);
     mImageCache.Put(imageSrc, cacheEntry);
   }
   return NS_OK;

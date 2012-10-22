@@ -50,7 +50,10 @@ onconnect = function(e) {
         testPort.postMessage({topic:"got-social-panel-visibility", result: event.data.result });
         break;
       case "test-chatbox-open":
-        sidebarPort.postMessage( event.data );
+        sidebarPort.postMessage(event.data);
+        break;
+      case "chatbox-opened":
+        testPort.postMessage(event.data);
         break;
       case "chatbox-message":
         testPort.postMessage({topic:"got-chatbox-message", result: event.data.result});
@@ -87,7 +90,7 @@ onconnect = function(e) {
       case "test-ambient-notification":
         let icon = {
           name: "testIcon",
-          iconURL: "chrome://branding/content/icon48.png",
+          iconURL: "chrome://browser/skin/Info.png",
           contentPanel: "https://example.com/browser/browser/base/content/test/social_panel.html",
           counter: 1
         };

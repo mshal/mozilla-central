@@ -222,6 +222,8 @@ Section "-Application" APP_IDX
   DetailPrint $(STATUS_INSTALL_APP)
   SetDetailsPrint none
 
+  RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
+
   ${LogHeader} "Installing Main Files"
   ${CopyFilesFromDir} "$EXEDIR\core" "$INSTDIR" \
                       "$(ERROR_CREATE_DIRECTORY_PREFIX)" \
@@ -547,10 +549,9 @@ Section "-InstallEndCleanup"
         UAC::ExecCodeSegment $0
       ${EndIf}
     ${EndIf}
+    ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
+    ${MigrateTaskBarShortcut}
   ${EndUnless}
-
-  ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
-  ${MigrateTaskBarShortcut}
 
   ${GetShortcutsLogPath} $0
   WriteIniStr "$0" "TASKBAR" "Migrated" "true"
@@ -723,11 +724,12 @@ Function CheckExistingInstall
 FunctionEnd
 
 Function LaunchApp
+  ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
+
   ClearErrors
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
-    ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
     Exec "$\"$INSTDIR\${FileMainEXE}$\""
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
@@ -736,8 +738,6 @@ Function LaunchApp
 FunctionEnd
 
 Function LaunchAppFromElevatedProcess
-  ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
-
   ; Find the installation directory when launching using GetFunctionAddress
   ; from an elevated installer since $INSTDIR will not be set in this installer
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9

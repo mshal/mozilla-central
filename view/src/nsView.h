@@ -138,7 +138,11 @@ public:
   void RemoveChild(nsView *aChild);
 
   void SetParent(nsView *aParent) { mParent = aParent; }
-  void SetNextSibling(nsView *aSibling) { mNextSibling = aSibling; }
+  void SetNextSibling(nsView *aSibling)
+  {
+    NS_ASSERTION(aSibling != this, "Can't be our own sibling!");
+    mNextSibling = aSibling;
+  }
 
   uint32_t GetViewFlags() const { return mVFlags; }
   void SetViewFlags(uint32_t aFlags) { mVFlags = aFlags; }
@@ -164,7 +168,7 @@ public:
   bool WindowResized(nsIWidget* aWidget, int32_t aWidth, int32_t aHeight);
   bool RequestWindowClose(nsIWidget* aWidget);
   void WillPaintWindow(nsIWidget* aWidget, bool aWillSendDidPaint);
-  bool PaintWindow(nsIWidget* aWidget, nsIntRegion aRegion, bool aSentDidPaint, bool aWillSendDidPaint);
+  bool PaintWindow(nsIWidget* aWidget, nsIntRegion aRegion, uint32_t aFlags);
   void DidPaintWindow();
   nsEventStatus HandleEvent(nsGUIEvent* aEvent, bool aUseAttachedEvents);
 

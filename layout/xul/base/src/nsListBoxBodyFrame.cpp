@@ -907,12 +907,7 @@ nsListBoxBodyFrame::DoInternalPositionChanged(bool aUp, int32_t aDelta)
 
   PRTime end = PR_Now();
 
-  PRTime difTime;
-  LL_SUB(difTime, end, start);
-
-  int32_t newTime;
-  LL_L2I(newTime, difTime);
-  newTime /= aDelta;
+  int32_t newTime = int32_t(end - start) / aDelta;
 
   // average old and new
   mTimePerRow = (newTime + mTimePerRow)/2;

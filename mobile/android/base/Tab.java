@@ -32,7 +32,7 @@ import java.util.HashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class Tab {
+public class Tab {
     private static final String LOGTAG = "GeckoTab";
 
     private static Pattern sColorPattern;
@@ -154,7 +154,7 @@ public final class Tab {
     }
 
     synchronized public ByteBuffer getThumbnailBuffer() {
-        int capacity = getThumbnailWidth() * getThumbnailHeight() * 2 /* 16 bpp */;
+        int capacity = Tabs.getThumbnailWidth() * Tabs.getThumbnailHeight() * 2 /* 16 bpp */;
         if (mThumbnailBuffer != null && mThumbnailBuffer.capacity() == capacity)
             return mThumbnailBuffer;
         freeBuffer();
@@ -165,7 +165,7 @@ public final class Tab {
     public Bitmap getThumbnailBitmap() {
         if (mThumbnailBitmap != null)
             return mThumbnailBitmap;
-        return mThumbnailBitmap = Bitmap.createBitmap(getThumbnailWidth(), getThumbnailHeight(), Bitmap.Config.RGB_565);
+        return mThumbnailBitmap = Bitmap.createBitmap(Tabs.getThumbnailWidth(), Tabs.getThumbnailHeight(), Bitmap.Config.RGB_565);
     }
 
     public void finalize() {
@@ -175,16 +175,6 @@ public final class Tab {
     synchronized void freeBuffer() {
         DirectBufferAllocator.free(mThumbnailBuffer);
         mThumbnailBuffer = null;
-    }
-
-    int getThumbnailWidth() {
-        int desiredWidth = (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_width));
-        return desiredWidth & ~0x1;
-    }
-
-    int getThumbnailHeight() {
-        int desiredHeight = (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_height));
-        return desiredHeight & ~0x1;
     }
 
     public void updateThumbnail(final Bitmap b) {
@@ -288,7 +278,15 @@ public final class Tab {
         });
     }
 
-    private void updateHistory(final String uri, final String title) {
+    protected void addHistory(final String uri) {
+        GeckoAppShell.getHandler().post(new Runnable() {
+            public void run() {
+                GlobalHistory.getInstance().add(uri);
+            }
+        });
+    }
+
+    protected void updateHistory(final String uri, final String title) {
         GeckoAppShell.getHandler().post(new Runnable() {
             public void run() {
                 GlobalHistory.getInstance().update(uri, title);
@@ -454,7 +452,7 @@ public final class Tab {
             return;
 
         mEnteringReaderMode = true;
-        GeckoApp.mAppContext.loadUrl(ReaderModeUtils.getAboutReaderForUrl(getURL(), mId, mReadingListItem));
+        Tabs.getInstance().loadUrl(ReaderModeUtils.getAboutReaderForUrl(getURL(), mId, mReadingListItem));
     }
 
     public boolean isEnteringReaderMode() {
@@ -504,11 +502,7 @@ public final class Tab {
             final String url = message.getString("url");
             mHistoryIndex++;
             mHistorySize = mHistoryIndex + 1;
-            GeckoAppShell.getHandler().post(new Runnable() {
-                public void run() {
-                    GlobalHistory.getInstance().add(url);
-                }
-            });
+            addHistory(url);
         } else if (event.equals("Back")) {
             if (!canDoBack()) {
                 Log.e(LOGTAG, "Received unexpected back notification");
@@ -573,7 +567,7 @@ public final class Tab {
         });
     }
 
-    private void saveThumbnailToDB() {
+    protected void saveThumbnailToDB() {
         try {
             String url = getURL();
             if (url == null)
@@ -659,5 +653,9 @@ public final class Tab {
 
     public boolean getDesktopMode() {
         return mDesktopMode;
+    }
+
+    public boolean isPrivate() {
+        return false;
     }
 }

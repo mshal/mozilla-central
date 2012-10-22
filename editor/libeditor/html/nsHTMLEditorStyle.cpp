@@ -54,6 +54,15 @@ class nsISupports;
 
 using namespace mozilla;
 
+static bool
+IsEmptyTextNode(nsHTMLEditor* aThis, nsINode* aNode)
+{
+  bool isEmptyTextNode = false;
+  return nsEditor::IsTextNode(aNode) &&
+         NS_SUCCEEDED(aThis->IsEmptyNode(aNode, &isEmptyTextNode)) &&
+         isEmptyTextNode;
+}
+
 NS_IMETHODIMP nsHTMLEditor::AddDefaultProperty(nsIAtom *aProperty, 
                                             const nsAString & aAttribute, 
                                             const nsAString & aValue)
@@ -424,7 +433,7 @@ nsHTMLEditor::SetInlinePropertyOnNodeImpl(nsIContent* aNode,
       for (nsIContent* child = aNode->GetFirstChild();
            child;
            child = child->GetNextSibling()) {
-        if (IsEditable(child)) {
+        if (IsEditable(child) && !IsEmptyTextNode(this, child)) {
           arrayOfNodes.AppendObject(child);
         }
       }
@@ -547,13 +556,13 @@ nsHTMLEditor::SetInlinePropertyOnNode(nsIContent* aNode,
 
   nsCOMPtr<nsIContent> previousSibling = aNode->GetPreviousSibling(),
                        nextSibling = aNode->GetNextSibling();
-  nsCOMPtr<nsINode> parent = aNode->GetNodeParent();
+  nsCOMPtr<nsINode> parent = aNode->GetParentNode();
   NS_ENSURE_STATE(parent);
 
   nsresult res = RemoveStyleInside(aNode->AsDOMNode(), aProperty, aAttribute);
   NS_ENSURE_SUCCESS(res, res);
 
-  if (aNode->GetNodeParent()) {
+  if (aNode->GetParentNode()) {
     // The node is still where it was
     return SetInlinePropertyOnNodeImpl(aNode, aProperty,
                                        aAttribute, aValue);
@@ -562,8 +571,8 @@ nsHTMLEditor::SetInlinePropertyOnNode(nsIContent* aNode,
   // It's vanished.  Use the old siblings for reference to construct a
   // list.  But first, verify that the previous/next siblings are still
   // where we expect them; otherwise we have to give up.
-  if ((previousSibling && previousSibling->GetNodeParent() != parent) ||
-      (nextSibling && nextSibling->GetNodeParent() != parent)) {
+  if ((previousSibling && previousSibling->GetParentNode() != parent) ||
+      (nextSibling && nextSibling->GetParentNode() != parent)) {
     return NS_ERROR_UNEXPECTED;
   }
   nsCOMArray<nsIContent> nodesToSet;
@@ -1211,7 +1220,7 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
       text = do_QueryInterface(content);
       
       // just ignore any non-editable nodes
-      if (text && !IsEditable(text)) {
+      if (text && (!IsEditable(text) || IsEmptyTextNode(this, content))) {
         continue;
       }
       if (text) {

@@ -28,8 +28,9 @@ namespace ion {
 struct WorkerThread;
 
 /* Per-runtime state for off thread work items. */
-struct WorkerThreadState
+class WorkerThreadState
 {
+  public:
     /* Available threads. */
     WorkerThread *threads;
     size_t numThreads;
@@ -103,13 +104,19 @@ struct WorkerThread
  * Schedule an Ion compilation for a script, given a builder which has been
  * generated and read everything needed from the VM state.
  */
-bool StartOffThreadIonCompile(JSContext *cx, ion::IonBuilder *builder);
+bool
+StartOffThreadIonCompile(JSContext *cx, ion::IonBuilder *builder);
 
 /*
  * Cancel a scheduled or in progress Ion compilation for script. If script is
  * NULL, all compilations for the compartment are cancelled.
  */
-void CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script);
+void
+CancelOffThreadIonCompile(JSCompartment *compartment, JSScript *script);
+
+/* Return true iff off-thread compilation is possible. */
+bool
+OffThreadCompilationAvailable(JSContext *cx);
 
 class AutoLockWorkerThreadState
 {
@@ -123,6 +130,7 @@ class AutoLockWorkerThreadState
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
 #ifdef JS_PARALLEL_COMPILATION
+        JS_ASSERT(rt->workerThreadState);
         rt->workerThreadState->lock();
 #else
         (void)this->rt;
@@ -149,6 +157,7 @@ class AutoUnlockWorkerThreadState
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
 #ifdef JS_PARALLEL_COMPILATION
+        JS_ASSERT(rt->workerThreadState);
         rt->workerThreadState->unlock();
 #else
         (void)this->rt;

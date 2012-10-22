@@ -31,9 +31,10 @@
 #endif
 
 #include "XPCQuickStubs.h"
-#include "dombindings.h"
 
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/TextDecoderBinding.h"
+#include "mozilla/dom/TextEncoderBinding.h"
 
 #include "nsWrapperCacheInlines.h"
 #include "nsDOMMutationObserver.h"
@@ -396,6 +397,7 @@ struct NoteWeakMapChildrenTracer : public JSTracer
     nsCycleCollectionTraversalCallback &mCb;
     JSObject *mMap;
     void *mKey;
+    void *mKeyDelegate;
 };
 
 static void
@@ -410,7 +412,7 @@ TraceWeakMappingChild(JSTracer *trc, void **thingp, JSGCTraceKind kind)
     if (!xpc_IsGrayGCThing(thing) && !tracer->mCb.WantAllTraces())
         return;
     if (AddToCCKind(kind)) {
-        tracer->mCb.NoteWeakMapping(tracer->mMap, tracer->mKey, thing);
+        tracer->mCb.NoteWeakMapping(tracer->mMap, tracer->mKey, tracer->mKeyDelegate, thing);
     } else {
         JS_TraceChildren(trc, thing, kind);
     }
@@ -453,11 +455,16 @@ TraceWeakMapping(js::WeakMapTracer *trc, JSObject *m,
     if (!AddToCCKind(kkind))
         k = nullptr;
 
+    JSObject *kdelegate = NULL;
+    if (kkind == JSTRACE_OBJECT)
+        kdelegate = js::GetWeakmapKeyDelegate((JSObject *)k);
+
     if (AddToCCKind(vkind)) {
-        tracer->mCb.NoteWeakMapping(m, k, v);
+        tracer->mCb.NoteWeakMapping(m, k, kdelegate, v);
     } else {
         tracer->mChildTracer.mMap = m;
         tracer->mChildTracer.mKey = k;
+        tracer->mChildTracer.mKeyDelegate = kdelegate;
         JS_TraceChildren(&tracer->mChildTracer, v, vkind);
     }
 }
@@ -839,16 +846,17 @@ NoteGCThingXPCOMChildren(js::Class *clasp, JSObject *obj,
              clasp->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) {
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "xpc_GetJSPrivate(obj)");
         cb.NoteXPCOMChild(static_cast<nsISupports*>(xpc_GetJSPrivate(obj)));
-    } else if (oldproxybindings::instanceIsProxy(obj)) {
-        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "js::GetProxyPrivate(obj)");
-        nsISupports *identity =
-            static_cast<nsISupports*>(js::GetProxyPrivate(obj).toPrivate());
-        cb.NoteXPCOMChild(identity);
     } else {
-        nsISupports *identity;
-        if (UnwrapDOMObjectToISupports(obj, identity)) {
+        const DOMClass* domClass;
+        DOMObjectSlot slot = GetDOMClass(obj, domClass);
+        if (slot != eNonDOMObject) {
             NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "UnwrapDOMObject(obj)");
-            cb.NoteXPCOMChild(identity);
+            if (domClass->mDOMObjectIsISupports) {
+                cb.NoteXPCOMChild(UnwrapDOMObject<nsISupports>(obj, slot));
+            } else if (domClass->mParticipant) {
+                cb.NoteNativeChild(UnwrapDOMObject<void>(obj, slot),
+                                   domClass->mParticipant);
+            }
         }
     }
 }
@@ -1095,11 +1103,11 @@ CheckTypeInference(JSContext *cx, JSClass *clasp, nsIPrincipal *principal)
 #define CheckTypeInference(cx, clasp, principal) {}
 #endif
 
+namespace xpc {
+
 nsresult
-xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
-                       nsIPrincipal *principal, nsISupports *ptr,
-                       bool wantXrays, JSObject **global,
-                       JSCompartment **compartment)
+CreateGlobalObject(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
+                   bool wantXrays, JSObject **global, JSCompartment **compartment)
 {
     // Make sure that Type Inference is enabled for everything non-chrome.
     // Sandboxes and compilation scopes are exceptions. See bug 744034.
@@ -1136,6 +1144,8 @@ xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
 
     return NS_OK;
 }
+
+} // namespace xpc
 
 NS_IMETHODIMP
 nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
@@ -1183,6 +1193,12 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
     // XXX Someone who knows why we can assert this should re-check
     //     (after bug 720580).
     MOZ_ASSERT(js::GetObjectClass(global)->flags & JSCLASS_DOM_GLOBAL);
+
+    // Init WebIDL binding constructors wanted on all XPConnect globals.
+    if (!TextDecoderBinding::GetProtoObject(aJSContext, global, global) ||
+        !TextEncoderBinding::GetProtoObject(aJSContext, global, global)) {
+        return UnexpectedFailure(NS_ERROR_FAILURE);
+    }
 
     wrappedGlobal.forget(_retval);
     return NS_OK;
@@ -1401,21 +1417,10 @@ nsXPConnect::GetNativeOfWrapper(JSContext * aJSContext,
     if (obj2)
         return (nsISupports*)xpc_GetJSPrivate(obj2);
 
-    if (mozilla::dom::IsDOMProxy(aJSObj) ||
-        mozilla::dom::oldproxybindings::instanceIsProxy(aJSObj)) {
-        // FIXME: Provide a fast non-refcounting way to get the canonical
-        //        nsISupports from the proxy.
-        nsISupports *supports =
-            static_cast<nsISupports*>(js::GetProxyPrivate(aJSObj).toPrivate());
-        nsCOMPtr<nsISupports> canonical = do_QueryInterface(supports);
-        return canonical.get();
-    }
-
     nsISupports* supports = nullptr;
-    if (mozilla::dom::UnwrapDOMObjectToISupports(aJSObj, supports))
-        return supports;
-
-    return nullptr;
+    mozilla::dom::UnwrapDOMObjectToISupports(aJSObj, supports);
+    nsCOMPtr<nsISupports> canonical = do_QueryInterface(supports);
+    return canonical;
 }
 
 /* JSObjectPtr getJSObjectOfWrapper (in JSContextPtr aJSContext, in JSObjectPtr aJSObj); */
@@ -1444,8 +1449,7 @@ nsXPConnect::GetJSObjectOfWrapper(JSContext * aJSContext,
         *_retval = obj2;
         return NS_OK;
     }
-    if (mozilla::dom::IsDOMProxy(aJSObj) ||
-        mozilla::dom::oldproxybindings::instanceIsProxy(aJSObj)) {
+    if (mozilla::dom::IsDOMObject(aJSObj)) {
         *_retval = aJSObj;
         return NS_OK;
     }
@@ -1535,151 +1539,33 @@ MoveableWrapperFinder(JSDHashTable *table, JSDHashEntryHdr *hdr,
     return JS_DHASH_NEXT;
 }
 
-static nsresult
-MoveWrapper(XPCCallContext& ccx, XPCWrappedNative *wrapper,
-            XPCWrappedNativeScope *newScope, XPCWrappedNativeScope *oldScope)
-{
-    // First, check to see if this wrapper really needs to be
-    // reparented.
-
-    if (wrapper->GetScope() == newScope) {
-        // The wrapper already got moved, nothing to do here.
-        return NS_OK;
-    }
-
-    // For performance reasons, we wait to fix up orphaned wrappers (wrappers
-    // whose parents have moved to another scope) until right before they
-    // threaten to confuse us.
-    //
-    // If this wrapper is an orphan, reunite it with its parent. If, following
-    // that, the wrapper is no longer in the old scope, then we don't need to
-    // reparent it.
-    MOZ_ASSERT(wrapper->GetScope() == oldScope);
-    nsresult rv = wrapper->RescueOrphans(ccx);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (wrapper->GetScope() != oldScope)
-        return NS_OK;
-
-    nsISupports *identity = wrapper->GetIdentityObject();
-    nsCOMPtr<nsIClassInfo> info(do_QueryInterface(identity));
-
-    // ClassInfo is implemented as singleton objects. If the identity
-    // object here is the same object as returned by the QI, then it
-    // is the singleton classinfo, so we don't need to reparent it.
-    if (SameCOMIdentity(identity, info))
-        info = nullptr;
-
-    if (!info)
-        return NS_OK;
-
-    XPCNativeScriptableCreateInfo sciProto;
-    XPCNativeScriptableCreateInfo sci;
-    const XPCNativeScriptableCreateInfo& sciWrapper =
-        XPCWrappedNative::GatherScriptableCreateInfo(identity, info,
-                                                     sciProto, sci);
-
-    // If the wrapper doesn't want precreate, then we don't need to
-    // worry about reparenting it.
-    if (!sciWrapper.GetFlags().WantPreCreate())
-        return NS_OK;
-
-    JSObject *newParent = oldScope->GetGlobalJSObject();
-    rv = sciWrapper.GetCallback()->PreCreate(identity, ccx,
-                                             newParent,
-                                             &newParent);
-    if (NS_FAILED(rv))
-        return rv;
-
-    if (newParent == oldScope->GetGlobalJSObject()) {
-        // The old scope still works for this wrapper. We have to
-        // assume that the wrapper will continue to return the old
-        // scope from PreCreate, so don't move it.
-        return NS_OK;
-    }
-
-    // The wrapper returned a new parent. If the new parent is in a
-    // different scope, then we need to reparent it, otherwise, the
-    // old scope is fine.
-
-    XPCWrappedNativeScope *betterScope =
-        XPCWrappedNativeScope::FindInJSObjectScope(ccx, newParent);
-    if (betterScope == oldScope) {
-        // The wrapper asked for a different object, but that object
-        // was in the same scope. This means that the new parent
-        // simply hasn't been reparented yet, so reparent it first,
-        // and then continue reparenting the wrapper itself.
-
-        if (!IS_WN_WRAPPER_OBJECT(newParent)) {
-            // The parent of wrapper is a slim wrapper, in this case
-            // we need to morph the parent so that we can reparent it.
-
-            NS_ENSURE_STATE(MorphSlimWrapper(ccx, newParent));
-        }
-
-        XPCWrappedNative *parentWrapper =
-            XPCWrappedNative::GetWrappedNativeOfJSObject(ccx, newParent);
-
-        rv = MoveWrapper(ccx, parentWrapper, newScope, oldScope);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        // If the parent wanted to stay in the old scope, we have to stay with
-        // it. This can happen when doing document.write when the old detached
-        // about:blank document is still floating around in the scope. Leave it
-        // behind to die.
-        if (parentWrapper->GetScope() == oldScope)
-            return NS_OK;
-        NS_ASSERTION(parentWrapper->GetScope() == newScope,
-                     "A _third_ scope? Oh dear...");
-
-        newParent = parentWrapper->GetFlatJSObject();
-    } else
-        NS_ASSERTION(betterScope == newScope, "Weird scope returned");
-
-    // Now, reparent the wrapper, since we know that it wants to be
-    // reparented.
-
-    nsRefPtr<XPCWrappedNative> junk;
-    rv = XPCWrappedNative::ReparentWrapperIfFound(ccx, oldScope,
-                                                  newScope, newParent,
-                                                  wrapper->GetIdentityObject(),
-                                                  getter_AddRefs(junk));
-    return rv;
-}
-
-/* void moveWrappers(in JSContextPtr aJSContext, in JSObjectPtr  aOldScope, in JSObjectPtr  aNewScope); */
+/* void rescueOrphansInScope(in JSContextPtr aJSContext, in JSObjectPtr  aScope); */
 NS_IMETHODIMP
-nsXPConnect::MoveWrappers(JSContext *aJSContext,
-                          JSObject *aOldScope,
-                          JSObject *aNewScope)
+nsXPConnect::RescueOrphansInScope(JSContext *aJSContext, JSObject *aScope)
 {
     XPCCallContext ccx(NATIVE_CALLER, aJSContext);
     if (!ccx.IsValid())
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
-    XPCWrappedNativeScope *oldScope =
-        XPCWrappedNativeScope::FindInJSObjectScope(ccx, aOldScope);
-    if (!oldScope)
+    XPCWrappedNativeScope *scope =
+        XPCWrappedNativeScope::FindInJSObjectScope(ccx, aScope);
+    if (!scope)
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
-    XPCWrappedNativeScope *newScope =
-        XPCWrappedNativeScope::FindInJSObjectScope(ccx, aNewScope);
-    if (!newScope)
-        return UnexpectedFailure(NS_ERROR_FAILURE);
-
-    // First, look through the old scope and find all of the wrappers that
-    // we're going to move.
+    // First, look through the old scope and find all of the wrappers that we
+    // might need to rescue.
     nsTArray<nsRefPtr<XPCWrappedNative> > wrappersToMove;
 
     {   // scoped lock
         XPCAutoLock lock(GetRuntime()->GetMapLock());
-        Native2WrappedNativeMap *map = oldScope->GetWrappedNativeMap();
+        Native2WrappedNativeMap *map = scope->GetWrappedNativeMap();
         wrappersToMove.SetCapacity(map->Count());
         map->Enumerate(MoveableWrapperFinder, &wrappersToMove);
     }
 
     // Now that we have the wrappers, reparent them to the new scope.
     for (uint32_t i = 0, stop = wrappersToMove.Length(); i < stop; ++i) {
-        nsresult rv = MoveWrapper(ccx, wrappersToMove[i], newScope, oldScope);
+        nsresult rv = wrappersToMove[i]->RescueOrphans(ccx);
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -1831,42 +1717,16 @@ nsXPConnect::SyncJSContexts(void)
     return NS_OK;
 }
 
-/* nsIXPCFunctionThisTranslator setFunctionThisTranslator (in nsIIDRef aIID, in nsIXPCFunctionThisTranslator aTranslator); */
+/* void setFunctionThisTranslator (in nsIIDRef aIID, in nsIXPCFunctionThisTranslator aTranslator); */
 NS_IMETHODIMP
 nsXPConnect::SetFunctionThisTranslator(const nsIID & aIID,
-                                       nsIXPCFunctionThisTranslator *aTranslator,
-                                       nsIXPCFunctionThisTranslator **_retval)
+                                       nsIXPCFunctionThisTranslator *aTranslator)
 {
     XPCJSRuntime* rt = GetRuntime();
-    nsIXPCFunctionThisTranslator* old;
     IID2ThisTranslatorMap* map = rt->GetThisTranslatorMap();
-
     {
         XPCAutoLock lock(rt->GetMapLock()); // scoped lock
-        if (_retval) {
-            old = map->Find(aIID);
-            NS_IF_ADDREF(old);
-            *_retval = old;
-        }
         map->Add(aIID, aTranslator);
-    }
-    return NS_OK;
-}
-
-/* nsIXPCFunctionThisTranslator getFunctionThisTranslator (in nsIIDRef aIID); */
-NS_IMETHODIMP
-nsXPConnect::GetFunctionThisTranslator(const nsIID & aIID,
-                                       nsIXPCFunctionThisTranslator **_retval)
-{
-    XPCJSRuntime* rt = GetRuntime();
-    nsIXPCFunctionThisTranslator* old;
-    IID2ThisTranslatorMap* map = rt->GetThisTranslatorMap();
-
-    {
-        XPCAutoLock lock(rt->GetMapLock()); // scoped lock
-        old = map->Find(aIID);
-        NS_IF_ADDREF(old);
-        *_retval = old;
     }
     return NS_OK;
 }

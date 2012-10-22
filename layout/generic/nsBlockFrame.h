@@ -158,9 +158,6 @@ public:
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
                               const nsDisplayListSet& aLists);
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                  uint32_t aFlags);
   virtual nsIAtom* GetType() const;
   virtual bool IsFrameOfType(uint32_t aFlags) const
   {
@@ -176,7 +173,7 @@ public:
 #endif
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
   // line cursor methods to speed up searching for the line(s)

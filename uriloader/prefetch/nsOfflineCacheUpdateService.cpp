@@ -63,6 +63,7 @@ typedef mozilla::docshell::OfflineCacheUpdateGlue OfflineCacheUpdateGlue;
 //
 PRLogModuleInfo *gOfflineCacheUpdateLog;
 #endif
+#undef LOG
 #define LOG(args) PR_LOG(gOfflineCacheUpdateLog, 4, args)
 #define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
@@ -576,7 +577,8 @@ OfflineAppPermForURI(nsIURI *aURI,
         return NS_OK;
     }
 
-    if (perm == nsIPermissionManager::ALLOW_ACTION) {
+    if (perm == nsIPermissionManager::ALLOW_ACTION ||
+        perm == nsIOfflineCacheUpdateService::ALLOW_NO_WARN) {
         *aAllowed = true;
     }
 

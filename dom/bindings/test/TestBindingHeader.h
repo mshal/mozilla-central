@@ -112,7 +112,8 @@ public:
                                               ErrorResult&);
   static
   already_AddRefed<TestInterface> Constructor(nsISupports*, uint32_t,
-                                              Nullable<bool>&, ErrorResult&);
+                                              const Nullable<bool>&,
+                                              ErrorResult&);
   static
   already_AddRefed<TestInterface> Constructor(nsISupports*, TestInterface*,
                                               ErrorResult&);
@@ -135,7 +136,7 @@ public:
   int8_t ReceiveByte();
   void PassOptionalByte(const Optional<int8_t>&);
   void PassOptionalByteWithDefault(int8_t);
-  void PassNullableByte(Nullable<int8_t>&);
+  void PassNullableByte(const Nullable<int8_t>&);
   void PassOptionalNullableByte(const Optional< Nullable<int8_t> >&);
 
   int16_t ReadonlyShort();
@@ -276,7 +277,9 @@ public:
   void PassOptionalSequenceOfNullableInts(const Optional<Sequence<Nullable<int32_t> > > &);
   void PassOptionalNullableSequenceOfNullableInts(const Optional<Nullable<Sequence<Nullable<int32_t> > > > &);
   void ReceiveCastableObjectSequence(nsTArray< nsRefPtr<TestInterface> > &);
+  void ReceiveCallbackObjectSequence(nsTArray< nsRefPtr<TestCallbackInterface> > &);
   void ReceiveNullableCastableObjectSequence(nsTArray< nsRefPtr<TestInterface> > &);
+  void ReceiveNullableCallbackObjectSequence(nsTArray< nsRefPtr<TestCallbackInterface> > &);
   void ReceiveCastableObjectNullableSequence(Nullable< nsTArray< nsRefPtr<TestInterface> > >&);
   void ReceiveNullableCastableObjectNullableSequence(Nullable< nsTArray< nsRefPtr<TestInterface> > >&);
   void ReceiveWeakCastableObjectSequence(nsTArray<TestInterface*> &);
@@ -324,7 +327,7 @@ public:
   void PassOptionalNullableString(const Optional<nsAString>&);
   void PassOptionalNullableStringWithDefaultValue(const nsAString&);
 
-  // Enumarated types
+  // Enumerated types
   void PassEnum(TestEnum);
   void PassOptionalEnum(const Optional<TestEnum>&);
   void PassEnumWithDefault(TestEnum);
@@ -334,13 +337,16 @@ public:
   void SetEnumAttribute(TestEnum);
 
   // Callback types
-  void PassCallback(JSContext*, JSObject*);
+  void PassCallback(JSContext*, JSObject&);
   void PassNullableCallback(JSContext*, JSObject*);
-  void PassOptionalCallback(JSContext*, const Optional<JSObject*>&);
+  void PassOptionalCallback(JSContext*, const Optional<NonNull<JSObject> >&);
   void PassOptionalNullableCallback(JSContext*, const Optional<JSObject*>&);
   void PassOptionalNullableCallbackWithDefaultValue(JSContext*, JSObject*);
   JSObject* ReceiveCallback(JSContext*);
   JSObject* ReceiveNullableCallback(JSContext*);
+  void PassNullableTreatAsNullCallback(JSContext*, JSObject*);
+  void PassOptionalNullableTreatAsNullCallback(JSContext*, const Optional<JSObject*>&);
+  void PassOptionalNullableTreatAsNullCallbackWithDefaultValue(JSContext*, JSObject*);
 
   // Any types
   void PassAny(JSContext*, JS::Value);
@@ -435,6 +441,7 @@ private:
   void SetWritableByte(T) MOZ_DELETE;
   template<typename T>
   void PassByte(T) MOZ_DELETE;
+  void PassNullableByte(Nullable<int8_t>&) MOZ_DELETE;
   template<typename T>
   void PassOptionalByte(const Optional<T>&) MOZ_DELETE;
   template<typename T>

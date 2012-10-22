@@ -68,7 +68,6 @@ public:
   virtual ~DocAccessible();
 
   // nsIAccessible
-  NS_IMETHOD GetAttributes(nsIPersistentProperties** aAttributes);
   NS_IMETHOD TakeFocus(void);
 
   // nsIScrollPositionListener
@@ -83,7 +82,7 @@ public:
   virtual void Shutdown();
   virtual nsIFrame* GetFrame() const;
   virtual nsINode* GetNode() const { return mDocument; }
-  virtual nsIDocument* GetDocumentNode() const { return mDocument; }
+  nsIDocument* DocumentNode() const { return mDocument; }
 
   // Accessible
   virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
@@ -94,10 +93,11 @@ public:
   virtual uint64_t NativeInteractiveState() const;
   virtual bool NativelyUnavailable() const;
   virtual void ApplyARIAState(uint64_t* aState) const;
+  virtual already_AddRefed<nsIPersistentProperties> Attributes();
 
   virtual void SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry);
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   virtual nsresult HandleAccEvent(AccEvent* aEvent);
 #endif
 
@@ -269,7 +269,7 @@ public:
    */
   Accessible* GetContainerAccessible(nsINode* aNode)
   {
-    return aNode ? GetAccessibleOrContainer(aNode->GetNodeParent()) : nullptr;
+    return aNode ? GetAccessibleOrContainer(aNode->GetParentNode()) : nullptr;
   }
 
   /**

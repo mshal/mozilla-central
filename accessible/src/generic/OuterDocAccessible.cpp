@@ -10,7 +10,7 @@
 #include "Role.h"
 #include "States.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
@@ -67,19 +67,6 @@ OuterDocAccessible::ChildAtPoint(int32_t aX, int32_t aY,
   return child;
 }
 
-nsresult
-OuterDocAccessible::GetAttributesInternal(nsIPersistentProperties* aAttributes)
-{
-  nsAutoString tag;
-  aAttributes->GetStringProperty(NS_LITERAL_CSTRING("tag"), tag);
-  if (!tag.IsEmpty()) {
-    // We're overriding the ARIA attributes on an sub document, but we don't want to
-    // override the other attributes
-    return NS_OK;
-  }
-  return Accessible::GetAttributesInternal(aAttributes);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // nsIAccessible
 
@@ -123,17 +110,17 @@ OuterDocAccessible::Shutdown()
   // change however the presshell of underlying document isn't destroyed and
   // the document doesn't get pagehide events. Shutdown underlying document if
   // any to avoid hanging document accessible.
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy))
     logging::OuterDocDestroy(this);
 #endif
 
   Accessible* childAcc = mChildren.SafeElementAt(0, nullptr);
   if (childAcc) {
-#ifdef DEBUG
+#ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eDocDestroy)) {
       logging::DocDestroy("outerdoc's child document shutdown",
-                          childAcc->GetDocumentNode());
+                          childAcc->AsDoc()->DocumentNode());
     }
 #endif
     childAcc->Shutdown();
@@ -174,10 +161,10 @@ OuterDocAccessible::AppendChild(Accessible* aAccessible)
   if (!AccessibleWrap::AppendChild(aAccessible))
     return false;
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocCreate)) {
     logging::DocCreate("append document to outerdoc",
-                       aAccessible->GetDocumentNode());
+                       aAccessible->AsDoc()->DocumentNode());
     logging::Address("outerdoc", this);
   }
 #endif
@@ -194,10 +181,10 @@ OuterDocAccessible::RemoveChild(Accessible* aAccessible)
     return false;
   }
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eDocDestroy)) {
-    logging::DocDestroy("remove document from outerdoc", child->GetDocumentNode(),
-                        child->AsDoc());
+    logging::DocDestroy("remove document from outerdoc",
+                        child->AsDoc()->DocumentNode(), child->AsDoc());
     logging::Address("outerdoc", this);
   }
 #endif

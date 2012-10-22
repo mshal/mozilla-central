@@ -485,6 +485,9 @@ MAKEFILES_xulapp="
   toolkit/components/viewsource/Makefile
   toolkit/devtools/Makefile
   toolkit/devtools/sourcemap/Makefile
+  toolkit/forgetaboutsite/Makefile
+  toolkit/forgetaboutsite/test/Makefile
+  toolkit/forgetaboutsite/test/browser/Makefile
   toolkit/identity/Makefile
   toolkit/locales/Makefile
   toolkit/mozapps/downloads/Makefile
@@ -871,6 +874,7 @@ if [ "$ENABLE_TESTS" ]; then
     layout/tools/reftest/Makefile
     layout/xul/base/test/Makefile
     layout/xul/test/Makefile
+    media/webrtc/signaling/test/Makefile
     modules/libjar/test/Makefile
     modules/libjar/test/chrome/Makefile
     modules/libjar/test/mochitest/Makefile
@@ -892,7 +896,6 @@ if [ "$ENABLE_TESTS" ]; then
     services/crypto/component/tests/Makefile
     startupcache/test/Makefile
     storage/test/Makefile
-    testing/firebug/Makefile
     testing/mochitest/Makefile
     testing/mochitest/MochiKit/Makefile
     testing/mochitest/chrome/Makefile
@@ -1583,6 +1586,12 @@ if [ ! "$MOZ_NATIVE_PNG" ]; then
   "
 fi
 
+if [ "$MOZ_DMDV" ]; then
+  add_makefiles "
+    tools/dmdv/Makefile
+  "
+fi
+
 if [ "$MOZ_JPROF" ]; then
   add_makefiles "
     tools/jprof/Makefile
@@ -1715,6 +1724,10 @@ fi
 if [ "$MOZ_WEBRTC" ]; then
  add_makefiles "
    media/webrtc/Makefile
+   media/mtransport/test/Makefile 
+   media/mtransport/build/Makefile
+   media/mtransport/standalone/Makefile
+   media/webrtc/signaling/test/Makefile
  "
 fi
 

@@ -1184,7 +1184,7 @@ ParseNodeToQName(Parser *parser, ParseNode *pn,
     JSStableString *str = atom->ensureStable(cx);
     if (!str)
         return NULL;
-    start = str->chars();
+    start = str->chars().get();
     length = str->length();
     JS_ASSERT(length != 0 && *start != '@');
     JS_ASSERT(length != 1 || *start != '*');
@@ -1753,7 +1753,8 @@ ParseXMLSource(JSContext *cx, HandleString src)
         op = (JSOp) *i.pc();
         if (op == JSOP_TOXML || op == JSOP_TOXMLLIST) {
             filename = i.script()->filename;
-            lineno = PCToLineNumber(i.script(), i.pc());
+            RootedScript script(cx, i.script());
+            lineno = PCToLineNumber(script, i.pc());
             for (endp = srcp + srclen; srcp < endp; srcp++) {
                 if (*srcp == '\n')
                     --lineno;
@@ -1764,7 +1765,7 @@ ParseXMLSource(JSContext *cx, HandleString src)
     {
         CompileOptions options(cx);
         options.setFileAndLine(filename, lineno);
-        Parser parser(cx, options, chars, length, /* foldConstants = */ true);
+        Parser parser(cx, options, StableCharPtr(chars, length), length, /* foldConstants = */ true);
         if (parser.init()) {
             JSObject *scopeChain = GetCurrentScopeChain(cx);
             if (!scopeChain) {
@@ -5124,7 +5125,7 @@ xml_hasInstance(JSContext *cx, HandleObject obj, MutableHandleValue v, JSBool *b
 }
 
 static void
-xml_trace(JSTracer *trc, JSObject *obj)
+xml_trace(JSTracer *trc, RawObject obj)
 {
     JSXML *xml = (JSXML *) obj->getPrivate();
     /*
@@ -7824,7 +7825,7 @@ struct JSXMLFilter
 };
 
 static void
-xmlfilter_trace(JSTracer *trc, JSObject *obj)
+xmlfilter_trace(JSTracer *trc, RawObject obj)
 {
     JSXMLFilter *filter = (JSXMLFilter *) obj->getPrivate();
     if (!filter)
@@ -7844,7 +7845,7 @@ xmlfilter_trace(JSTracer *trc, JSObject *obj)
 }
 
 static void
-xmlfilter_finalize(FreeOp *fop, JSObject *obj)
+xmlfilter_finalize(FreeOp *fop, RawObject obj)
 {
     JSXMLFilter *filter = (JSXMLFilter *) obj->getPrivate();
     if (!filter)

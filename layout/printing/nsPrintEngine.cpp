@@ -2133,9 +2133,11 @@ nsPrintEngine::SetRootView(
     parentView = GetParentViewForRoot();
   }
 
-  if (aPO->mPresShell->GetViewManager()->GetRootView()) {
+  if (aPO->mViewManager->GetRootView()) {
     // Reuse the root view that is already on the root frame.
-    rootView = aPO->mPresShell->GetRootFrame()->GetView();
+    rootView = aPO->mViewManager->GetRootView();
+    // Remove it from its existing parent if necessary
+    aPO->mViewManager->RemoveChild(rootView);
     reinterpret_cast<nsView*>(rootView)->SetParent(reinterpret_cast<nsView*>(parentView));
   } else {
     // Create a child window of the parent that is our "root view/window"
@@ -2374,7 +2376,7 @@ GetEqualNodeInCloneTree(nsIDOMNode* aNode, nsIDocument* aDoc)
   nsINode* current = node;
   NS_ENSURE_TRUE(current, nullptr);
   while (current) {
-    nsINode* parent = current->GetNodeParent();
+    nsINode* parent = current->GetParentNode();
     if (!parent) {
      break;
     }

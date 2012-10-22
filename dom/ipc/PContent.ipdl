@@ -198,6 +198,25 @@ both:
 child:
     PMemoryReportRequest();
 
+    /**
+     * Dump the contents of about:memory to a file in our temp directory.
+     *
+     * For documentation on the args, see
+     * MemoryInfoDumper::dumpMemoryReportsToFile.
+     */
+    async DumpMemoryReportsToFile(nsString identifier,
+                                  bool minimizeMemoryUsage,
+                                  bool dumpChildProcesses);
+
+    /**
+     * Dump this process's GC and CC logs.
+     *
+     * For documentation on the args, see
+     * MemoryInfoDumper::dumpGCAndCCLogsToFile.
+     */
+    async DumpGCAndCCLogsToFile(nsString identifier,
+                                bool dumpChildProcesses);
+
     PTestShell();
 
     RegisterChrome(ChromePackage[] packages, ResourceMapping[] resources,
@@ -335,6 +354,9 @@ parent:
 
     // Notify the parent of the presence or absence of private docshells
     PrivateDocShellsExist(bool aExist);
+
+    // Tell the parent that the child has gone idle for the first time
+    async FirstIdle();
 
 both:
      AsyncMessage(nsString aMessage, ClonedMessageData aData);

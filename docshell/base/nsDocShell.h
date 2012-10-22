@@ -282,10 +282,6 @@ protected:
     // at the parent.
     nsIPrincipal* GetInheritedPrincipal(bool aConsiderCurrentDocument);
 
-    // True if when loading aURI into this docshell, the channel should look
-    // for an appropriate application cache.
-    bool ShouldCheckAppCache(nsIURI * aURI);
-
     // Actually open a channel and perform a URI load.  Note: whatever owner is
     // passed to this function will be set on the channel.  Callers who wish to
     // not have an owner on the channel should just pass null.
@@ -532,12 +528,8 @@ protected:
     static  inline  uint32_t
     PRTimeToSeconds(PRTime t_usec)
     {
-      PRTime usec_per_sec;
-      uint32_t t_sec;
-      LL_I2L(usec_per_sec, PR_USEC_PER_SEC);
-      LL_DIV(t_usec, t_usec, usec_per_sec);
-      LL_L2I(t_sec, t_usec);
-      return t_sec;
+      PRTime usec_per_sec = PR_USEC_PER_SEC;
+      return  uint32_t(t_usec /= usec_per_sec);
     }
 
     bool IsFrame();
@@ -777,6 +769,25 @@ protected:
     int32_t                    mLoadedTransIndex;
 
     uint32_t                   mSandboxFlags;
+
+    // mFullscreenAllowed stores how we determine whether fullscreen is allowed
+    // when GetFullscreenAllowed() is called. Fullscreen is allowed in a
+    // docshell when all containing iframes have the mozallowfullscreen
+    // attribute set to true. When mFullscreenAllowed is CHECK_ATTRIBUTES
+    // we check this docshell's containing frame for the mozallowfullscreen
+    // attribute, and recurse onto the parent docshell to ensure all containing
+    // frames also have the mozallowfullscreen attribute. If we find an ancestor
+    // docshell with mFullscreenAllowed not equal to CHECK_ATTRIBUTES, we've
+    // reached a content boundary, and mFullscreenAllowed denotes whether the
+    // parent across the content boundary has mozallowfullscreen=true in all its
+    // containing iframes. mFullscreenAllowed defaults to CHECK_ATTRIBUTES and
+    // is set otherwise when docshells which are content boundaries are created.
+    enum FullscreenAllowedState {
+        CHECK_ATTRIBUTES,
+        PARENT_ALLOWS,
+        PARENT_PROHIBITS
+    };
+    FullscreenAllowedState     mFullscreenAllowed;
 
     bool                       mCreated;
     bool                       mAllowSubframes;

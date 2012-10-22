@@ -92,10 +92,6 @@ public:
       ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
 
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                  uint32_t aFlags) MOZ_OVERRIDE;
-
 #ifdef DEBUG
   NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
 #endif
@@ -110,7 +106,7 @@ public:
 
     // for accessibility purposes
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible() MOZ_OVERRIDE;
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
     // nsContainerFrame
@@ -130,7 +126,7 @@ public:
 
   virtual void CaptureMouseEvents(bool aGrabMouseEvents) MOZ_OVERRIDE;
   virtual nscoord GetHeightOfARow() MOZ_OVERRIDE;
-  virtual int32_t GetNumberOfOptions() MOZ_OVERRIDE;  
+  virtual uint32_t GetNumberOfOptions() MOZ_OVERRIDE;
   virtual void AboutToDropDown() MOZ_OVERRIDE;
 
   /**

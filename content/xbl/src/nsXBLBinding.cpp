@@ -465,7 +465,8 @@ nsXBLBinding::SetBaseBinding(nsXBLBinding* aBinding)
 }
 
 void
-nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement)
+nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElement,
+                                      bool aChromeOnlyContent)
 {
   // We need to ensure two things.
   // (1) The anonymous content should be fooled into thinking it's in the bound
@@ -484,6 +485,10 @@ nsXBLBinding::InstallAnonymousContent(nsIContent* aAnonParent, nsIContent* aElem
        child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree();
+    if (aChromeOnlyContent) {
+      child->SetFlags(NODE_CHROME_ONLY_ACCESS |
+                      NODE_IS_ROOT_OF_CHROME_ONLY_ACCESS);
+    }
     nsresult rv =
       child->BindToTree(doc, aElement, mBoundElement, allowScripts);
     if (NS_FAILED(rv)) {
@@ -685,7 +690,7 @@ RealizeDefaultContent(nsISupports* aKey,
           return PL_DHASH_STOP;
         }
         nsIDocument *document = insParent->OwnerDoc();
-        nsCOMPtr<nsIDOMNode> clonedNode;
+        nsCOMPtr<nsINode> clonedNode;
         nsCOMArray<nsINode> nodesWithProperties;
         nsNodeUtils::Clone(defContent, true, document->NodeInfoManager(),
                            nodesWithProperties, getter_AddRefs(clonedNode));
@@ -693,7 +698,9 @@ RealizeDefaultContent(nsISupports* aKey,
         // Now that we have the cloned content, install the default content as
         // if it were additional anonymous content.
         nsCOMPtr<nsIContent> clonedContent(do_QueryInterface(clonedNode));
-        binding->InstallAnonymousContent(clonedContent, insParent);
+        binding->InstallAnonymousContent(clonedContent, insParent,
+                                         binding->PrototypeBinding()->
+                                           ChromeOnlyContent());
 
         // Cache the clone so that it can be properly destroyed if/when our
         // other anonymous content is destroyed.
@@ -799,13 +806,14 @@ nsXBLBinding::GenerateAnonymousContent()
     }
 
     if (hasContent || hasInsertionPoints) {
-      nsCOMPtr<nsIDOMNode> clonedNode;
+      nsCOMPtr<nsINode> clonedNode;
       nsCOMArray<nsINode> nodesWithProperties;
       nsNodeUtils::Clone(content, true, doc->NodeInfoManager(),
                          nodesWithProperties, getter_AddRefs(clonedNode));
 
       mContent = do_QueryInterface(clonedNode);
-      InstallAnonymousContent(mContent, mBoundElement);
+      InstallAnonymousContent(mContent, mBoundElement,
+                              mPrototypeBinding->ChromeOnlyContent());
 
       if (hasInsertionPoints) {
         // Now check and see if we have a single insertion point 
@@ -1681,7 +1689,7 @@ nsINodeList*
 nsXBLBinding::GetAnonymousNodes()
 {
   if (mContent) {
-    return mContent->GetChildNodesList();
+    return mContent->ChildNodes();
   }
 
   if (mNextBinding)

@@ -18,7 +18,6 @@
 #include "netCore.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
-#include "prmem.h"
 #include "nsPreloadedStream.h"
 #include "ASpdySession.h"
 #include "mozilla/Telemetry.h"
@@ -488,6 +487,8 @@ nsHttpConnection::Close(nsresult reason)
             mSocketTransport->SetSecurityCallbacks(nullptr);
             mSocketTransport->SetEventSink(nullptr, nullptr);
             mSocketTransport->Close(reason);
+            if (mSocketOut)
+                mSocketOut->AsyncWait(nullptr, 0, 0, nullptr);
         }
         mKeepAlive = false;
     }
@@ -711,7 +712,8 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
     // socket transport.  We pass an error code of NS_ERROR_NET_RESET to
     // trigger the transactions 'restart' mechanism.  We tell it to reset its
     // response headers so that it will be ready to receive the new response.
-    if (responseHead->Status() == 408) {
+    uint16_t responseStatus = responseHead->Status();
+    if (responseStatus == 408) {
         Close(NS_ERROR_NET_RESET);
         *reset = true;
         return NS_OK;
@@ -788,7 +790,7 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
     // classification to general to avoid pipelining more revalidations behind
     // it.
     if (mClassification == nsAHttpTransaction::CLASS_REVALIDATION &&
-        responseHead->Status() != 304) {
+        responseStatus != 304) {
         mClassification = nsAHttpTransaction::CLASS_GENERAL;
     }
     
@@ -841,7 +843,7 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
         NS_ABORT_IF_FALSE(!mUsingSpdyVersion,
                           "SPDY NPN Complete while using proxy connect stream");
         mProxyConnectStream = 0;
-        if (responseHead->Status() == 200) {
+        if (responseStatus == 200) {
             LOG(("proxy CONNECT succeeded! ssl=%s\n",
                  mConnInfo->UsingSSL() ? "true" :"false"));
             *reset = true;
@@ -865,12 +867,14 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
     }
     
     const char *upgradeReq = requestHead->PeekHeader(nsHttp::Upgrade);
-    if (upgradeReq) {
+    // Don't use persistent connection for Upgrade unless there's an auth failure:
+    // some proxies expect to see auth response on persistent connection.
+    if (upgradeReq && responseStatus != 401 && responseStatus != 407) {
         LOG(("HTTP Upgrade in play - disable keepalive\n"));
         DontReuse();
     }
     
-    if (responseHead->Status() == 101) {
+    if (responseStatus == 101) {
         const char *upgradeResp = responseHead->PeekHeader(nsHttp::Upgrade);
         if (!upgradeReq || !upgradeResp ||
             !nsHttp::FindToken(upgradeResp, upgradeReq,

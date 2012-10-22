@@ -20,6 +20,7 @@
 #endif
 
 #include "mozilla/Attributes.h"
+#include "mozilla/MemoryInfoDumper.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
 #include "mozilla/dom/PCrashReporterChild.h"
 #include "mozilla/dom/StorageChild.h"
@@ -102,6 +103,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsDeviceStorage.h"
 
 using namespace base;
 using namespace mozilla::docshell;
@@ -300,12 +302,25 @@ ContentChild::Init(MessageLoop* aIOLoop,
         startBackground ? hal::PROCESS_PRIORITY_BACKGROUND:
                           hal::PROCESS_PRIORITY_FOREGROUND);
     if (mIsForApp && !mIsForBrowser) {
-        SetThisProcessName("(App)");
+        SetProcessName(NS_LITERAL_STRING("(App)"));
     } else {
-        SetThisProcessName("Browser");
+        SetProcessName(NS_LITERAL_STRING("Browser"));
     }
 
     return true;
+}
+
+void
+ContentChild::SetProcessName(const nsAString& aName)
+{
+    mProcessName = aName;
+    mozilla::ipc::SetThisProcessName(NS_LossyConvertUTF16toASCII(aName).get());
+}
+
+const void
+ContentChild::GetProcessName(nsAString& aName)
+{
+    aName.Assign(mProcessName);
 }
 
 void
@@ -428,6 +443,25 @@ ContentChild::DeallocPMemoryReportRequest(PMemoryReportRequestChild* actor)
     return true;
 }
 
+bool
+ContentChild::RecvDumpMemoryReportsToFile(const nsString& aIdentifier,
+                                          const bool& aMinimizeMemoryUsage,
+                                          const bool& aDumpChildProcesses)
+{
+    MemoryInfoDumper::DumpMemoryReportsToFile(
+        aIdentifier, aMinimizeMemoryUsage, aDumpChildProcesses);
+    return true;
+}
+
+bool
+ContentChild::RecvDumpGCAndCCLogsToFile(const nsString& aIdentifier,
+                                        const bool& aDumpChildProcesses)
+{
+    MemoryInfoDumper::DumpGCAndCCLogsToFile(
+        aIdentifier, aDumpChildProcesses);
+    return true;
+}
+
 PCompositorChild*
 ContentChild::AllocPCompositor(mozilla::ipc::Transport* aTransport,
                                base::ProcessId aOtherProcess)
@@ -442,10 +476,21 @@ ContentChild::AllocPImageBridge(mozilla::ipc::Transport* aTransport,
     return ImageBridgeChild::StartUpInChildProcess(aTransport, aOtherProcess);
 }
 
+static void FirstIdle(void)
+{
+    ContentChild::GetSingleton()->SendFirstIdle();
+}
+
 PBrowserChild*
 ContentChild::AllocPBrowser(const uint32_t& aChromeFlags,
                             const bool& aIsBrowserElement, const AppId& aApp)
 {
+    static bool firstIdleTaskPosted = false;
+    if (!firstIdleTaskPosted) {
+        MessageLoop::current()->PostIdleTask(FROM_HERE, NewRunnableFunction(FirstIdle));
+        firstIdleTaskPosted = true;
+    }
+
     nsRefPtr<TabChild> child =
         TabChild::Create(aChromeFlags, aIsBrowserElement, aApp.get_uint32_t());
     // The ref here is released below.
@@ -495,9 +540,11 @@ ContentChild::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 
   BlobConstructorParams params;
 
-  if (blob->IsSizeUnknown()) {
-    // We don't want to call GetSize yet since that may stat a file on the main
-    // thread here. Instead we'll learn the size lazily from the other process.
+  if (blob->IsSizeUnknown() || blob->IsDateUnknown()) {
+    // We don't want to call GetSize or GetLastModifiedDate
+    // yet since that may stat a file on the main thread
+    // here. Instead we'll learn the size lazily from the
+    // other process.
     params = MysteryBlobConstructorParams();
   }
   else {
@@ -514,6 +561,9 @@ ContentChild::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
       FileBlobConstructorParams fileParams;
 
       rv = file->GetName(fileParams.name());
+      NS_ENSURE_SUCCESS(rv, nullptr);
+
+      rv = file->GetMozLastModifiedDate(&fileParams.modDate());
       NS_ENSURE_SUCCESS(rv, nullptr);
 
       fileParams.contentType() = contentType;

@@ -131,6 +131,11 @@ using mozilla::unused;
 
 #include <stdlib.h>
 
+// for old system jemalloc version check
+#if !defined(MOZ_MEMORY) && defined(__NetBSD__)
+#include <sys/param.h>
+#endif
+
 #ifdef XP_UNIX
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1746,10 +1751,15 @@ ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
       // The actual value is irrelevant but we shouldn't be handing out
       // malformed JSBools to XPConnect.
       bool checkState = false;
+#ifdef MOZ_WIDGET_ANDROID
+      mozilla::AndroidBridge::Bridge()->KillAnyZombies();
+      button = 1;
+#else
       rv = ps->ConfirmEx(nullptr, killTitle, killMessage, flags,
                          killTitle, nullptr, nullptr, nullptr, 
                          &checkState, &button);
       NS_ENSURE_SUCCESS_LOG(rv, rv);
+#endif
 
       if (button == 1) {
         rv = aUnlocker->Unlock(nsIProfileUnlocker::FORCE_QUIT);
@@ -1760,8 +1770,15 @@ ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
                                   nullptr, aResult);
       }
     } else {
+#ifdef MOZ_WIDGET_ANDROID
+      if (mozilla::AndroidBridge::Bridge()->UnlockProfile()) {
+        return NS_LockProfilePath(aProfileDir, aProfileLocalDir, 
+                                  nullptr, aResult);
+      }
+#else
       rv = ps->Alert(nullptr, killTitle, killMessage);
       NS_ENSURE_SUCCESS_LOG(rv, rv);
+#endif
     }
 
     return NS_ERROR_ABORT;
@@ -2210,7 +2227,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
       }
 
       nsCOMPtr<nsIProfileUnlocker> unlocker;
-      rv = profile->Lock(nullptr, aResult);
+      rv = profile->Lock(getter_AddRefs(unlocker), aResult);
       if (NS_SUCCEEDED(rv)) {
         if (aProfileName)
           aProfileName->Assign(nsDependentCString(arg));
@@ -3814,7 +3831,8 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   ScopedLogging log;
 
 #if defined(MOZ_WIDGET_GTK)
-#ifdef MOZ_MEMORY
+#if defined(MOZ_MEMORY) || defined(__FreeBSD__) \
+  || defined(__NetBSD__) && __NetBSD_Version__ >= 500000000
   // Disable the slice allocator, since jemalloc already uses similar layout
   // algorithms, and using a sub-allocator tends to increase fragmentation.
   // This must be done before g_thread_init() is called.

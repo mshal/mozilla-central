@@ -99,7 +99,7 @@
      /**
       * Read some bytes from a file.
       *
-      * @param {ArrayBuffer} buffer A buffer for holding the data
+      * @param {C pointer} buffer A buffer for holding the data
       * once it is read.
       * @param {number} nbytes The number of bytes to read. It must not
       * exceed the size of |buffer| in bytes but it may exceed the number
@@ -122,7 +122,7 @@
      /**
       * Write some bytes to a file.
       *
-      * @param {ArrayBuffer} buffer A buffer holding the data that must be
+      * @param {C pointer} buffer A buffer holding the data that must be
       * written.
       * @param {number} nbytes The number of bytes to write. It must not
       * exceed the size of |buffer| in bytes.
@@ -318,6 +318,23 @@
      };
 
      /**
+      * Checks if a file exists
+      *
+      * @param {string} path The path to the file.
+      *
+      * @return {bool} true if the file exists, false otherwise.
+      */
+     File.exists = function Win_exists(path) {
+       try {
+         let file = File.open(path);
+         file.close();
+         return true;
+       } catch (x) {
+         return false;
+       }
+     };
+
+     /**
       * Remove an existing file.
       *
       * @param {string} path The name of the file.
@@ -409,6 +426,9 @@
       * @option {bool} noOverwrite - If set, this function will fail if
       * a file already exists at |destPath|. Otherwise, if this file exists,
       * it will be erased silently.
+      * @option {bool} noCopy - If set, this function will fail if the
+      * operation is more sophisticated than a simple renaming, i.e. if
+      * |sourcePath| and |destPath| are not situated on the same drive.
       *
       * @throws {OS.File.Error} In case of any error.
       *
@@ -422,11 +442,12 @@
       */
      File.move = function move(sourcePath, destPath, options) {
        options = options || noOptions;
-       let flags;
-       if (options.noOverwrite) {
+       let flags = 0;
+       if (!options.noCopy) {
          flags = Const.MOVEFILE_COPY_ALLOWED;
-       } else {
-         flags = Const.MOVEFILE_COPY_ALLOWED | Const.MOVEFILE_REPLACE_EXISTING;
+       }
+       if (!options.noOverwrite) {
+         flags = flags | Const.MOVEFILE_REPLACE_EXISTING;
        }
        throw_on_zero("move",
          WinFile.MoveFileEx(sourcePath, destPath, flags)
@@ -817,15 +838,13 @@
        winDisposition: OS.Constants.Win.OPEN_EXISTING
      };
 
+     File.read = exports.OS.Shared.AbstractFile.read;
+     File.writeAtomic = exports.OS.Shared.AbstractFile.writeAtomic;
+
      /**
-      * Get/set the current directory.
+      * Get the current directory by getCurrentDirectory.
       */
-     Object.defineProperty(File, "curDir", {
-         set: function(path) {
-           throw_on_zero("set curDir",
-             WinFile.SetCurrentDirectory(path));
-         },
-         get: function() {
+     File.getCurrentDirectory = function getCurrentDirectory() {
            // This function is more complicated than one could hope.
            //
            // This is due to two facts:
@@ -838,11 +857,10 @@
            //  the function with a larger buffer, in the (unlikely byt possible)
            //  case in which the process changes directory to a directory with
            //  a longer name between both calls.
-
            let buffer_size = 4096;
            while (true) {
              let array = new (ctypes.ArrayType(ctypes.jschar, buffer_size))();
-             let expected_size = throw_on_zero("get curDir",
+         let expected_size = throw_on_zero("getCurrentDirectory",
                WinFile.GetCurrentDirectory(buffer_size, array)
              );
              if (expected_size <= buffer_size) {
@@ -856,6 +874,25 @@
              // converge, as the length of the paths cannot increase infinitely.
              buffer_size = expected_size;
            }
+     };
+
+     /**
+      * Set the current directory by setCurrentDirectory.
+      */
+     File.setCurrentDirectory = function setCurrentDirectory(path) {
+       throw_on_zero("setCurrentDirectory",
+         WinFile.SetCurrentDirectory(path));
+     };
+
+     /**
+      * Get/set the current directory by |curDir|.
+      */
+     Object.defineProperty(File, "curDir", {
+         set: function(path) {
+           this.setCurrentDirectory(path);
+         },
+         get: function() {
+           return this.getCurrentDirectory();
          }
        }
      );

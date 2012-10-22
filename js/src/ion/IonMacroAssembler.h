@@ -149,6 +149,11 @@ class MacroAssembler : public MacroAssemblerSpecific
         loadPtr(Address(dest, offsetof(types::TypeObject, proto)), dest);
     }
 
+    void loadStringLength(Register str, Register dest) {
+        loadPtr(Address(str, JSString::offsetOfLengthAndFlags()), dest);
+        rshiftPtr(Imm32(JSString::LENGTH_SHIFT), dest);
+    }
+
     void loadJSContext(const Register &dest) {
         movePtr(ImmWord(GetIonContext()->cx->runtime), dest);
         loadPtr(Address(dest, offsetof(JSRuntime, ionJSContext)), dest);
@@ -162,12 +167,8 @@ class MacroAssembler : public MacroAssemblerSpecific
     void loadTypedOrValue(const T &src, TypedOrValueRegister dest) {
         if (dest.hasValue())
             loadValue(src, dest.valueReg());
-        else if (dest.type() == MIRType_Int32)
-            unboxInt32(src, dest.typedReg().gpr());
-        else if (dest.type() == MIRType_Boolean)
-            unboxBoolean(src, dest.typedReg().gpr());
         else
-            loadUnboxedValue(src, dest.typedReg());
+            loadUnboxedValue(src, dest.type(), dest.typedReg());
     }
 
     template<typename T>
@@ -180,7 +181,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         } else {
             if (holeCheck)
                 branchTestMagic(Assembler::Equal, src, hole);
-            loadUnboxedValue(src, dest.typedReg());
+            loadUnboxedValue(src, dest.type(), dest.typedReg());
         }
     }
 
@@ -265,6 +266,33 @@ class MacroAssembler : public MacroAssemblerSpecific
     void branchTestValueTruthy(const ValueOperand &value, Label *ifTrue, FloatRegister fr);
 
     using MacroAssemblerSpecific::Push;
+
+    void Push(jsid id, Register scratchReg) {
+        if (JSID_IS_GCTHING(id)) {
+            // If we're pushing a gcthing, then we can't just push the tagged jsid
+            // value since the GC won't have any idea that the push instruction
+            // carries a reference to a gcthing.  Need to unpack the pointer,
+            // push it using ImmGCPtr, and then rematerialize the id at runtime.
+
+            // double-checking this here to ensure we don't lose sync
+            // with implementation of JSID_IS_GCTHING.
+            if (JSID_IS_OBJECT(id)) {
+                JSObject *obj = JSID_TO_OBJECT(id);
+                movePtr(ImmGCPtr(obj), scratchReg);
+                JS_ASSERT(((size_t)obj & JSID_TYPE_MASK) == 0);
+                orPtr(Imm32(JSID_TYPE_OBJECT), scratchReg);
+                Push(scratchReg);
+            } else {
+                JSString *str = JSID_TO_STRING(id);
+                JS_ASSERT(((size_t)str & JSID_TYPE_MASK) == 0);
+                JS_ASSERT(JSID_TYPE_STRING == 0x0);
+                Push(ImmGCPtr(str));
+            }
+        } else {
+            size_t idbits = JSID_BITS(id);
+            Push(ImmWord(idbits));
+        }
+    }
 
     void Push(TypedOrValueRegister v) {
         if (v.hasValue())
@@ -442,13 +470,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         // Push VMFunction pointer, to mark arguments.
         Push(ImmWord(f));
     }
-    void enterFakeExitFrame() {
-        linkExitFrame();
-        Push(ImmWord(uintptr_t(NULL)));
-        Push(ImmWord(uintptr_t(NULL)));
-    }
-
-    void enterFakeDOMFrame(void *codeVal) {
+    void enterFakeExitFrame(void *codeVal = NULL) {
         linkExitFrame();
         Push(ImmWord(uintptr_t(codeVal)));
         Push(ImmWord(uintptr_t(NULL)));
@@ -603,7 +625,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         store32(Imm32(ProfileEntry::NullPCIndex),
                 Address(temp, ProfileEntry::offsetOfPCIdx()));
 
-        /* Always increment the stack size, tempardless if we actually pushed */
+        /* Always increment the stack size, whether or not we actually pushed. */
         bind(&stackFull);
         movePtr(ImmWord(p->sizePointer()), temp);
         add32(Imm32(1), Address(temp, 0));

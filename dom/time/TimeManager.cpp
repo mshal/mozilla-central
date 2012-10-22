@@ -1,15 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "jsapi.h"
-#include "mozilla/Hal.h"
-#include "nsDOMEvent.h"
-#include "nsDOMEventTargetHelper.h"
-#include "nsIDOMClassInfo.h"
-#include "prtime.h"
-#include "TimeManager.h"
 
-using namespace mozilla::hal;
+#include "jsapi.h"
+#include "nsIDOMClassInfo.h"
+#include "nsITimeService.h"
+#include "TimeManager.h"
 
 DOMCI_DATA(MozTimeManager, mozilla::dom::time::TimeManager)
 
@@ -28,18 +24,17 @@ NS_IMPL_RELEASE(TimeManager)
 
 nsresult
 TimeManager::Set(const JS::Value& date, JSContext* ctx) {
-  double nowMSec = JS_Now() / 1000;
   double dateMSec;
 
   if (date.isObject()) {
     JSObject* dateObj = JSVAL_TO_OBJECT(date);
 
-    if (JS_ObjectIsDate(ctx, dateObj) && js_DateIsValid(ctx, dateObj)) {
-      dateMSec = js_DateGetMsecSinceEpoch(ctx, dateObj);
+    if (JS_ObjectIsDate(ctx, dateObj) && js_DateIsValid(dateObj)) {
+      dateMSec = js_DateGetMsecSinceEpoch(dateObj);
     }
     else {
       NS_WARN_IF_FALSE(JS_ObjectIsDate(ctx, dateObj), "This is not a Date object");
-      NS_WARN_IF_FALSE(js_DateIsValid(ctx, dateObj), "Date is not valid");
+      NS_WARN_IF_FALSE(js_DateIsValid(dateObj), "Date is not valid");
       return NS_ERROR_INVALID_ARG;
     }
   } else if (date.isNumber()) {
@@ -48,7 +43,10 @@ TimeManager::Set(const JS::Value& date, JSContext* ctx) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  hal::AdjustSystemClock(dateMSec - nowMSec);
+  nsCOMPtr<nsITimeService> timeService = do_GetService(TIMESERVICE_CONTRACTID);
+  if (timeService) {
+    return timeService->Set(dateMSec);
+  }
   return NS_OK;
 }
 

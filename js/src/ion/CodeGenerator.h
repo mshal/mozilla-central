@@ -45,6 +45,8 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitNop(LNop *lir);
     bool visitOsiPoint(LOsiPoint *lir);
     bool visitGoto(LGoto *lir);
+    bool visitTableSwitch(LTableSwitch *ins);
+    bool visitTableSwitchV(LTableSwitchV *ins);
     bool visitParameter(LParameter *lir);
     bool visitCallee(LCallee *lir);
     bool visitStart(LStart *lir);
@@ -62,6 +64,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitIntToString(LIntToString *lir);
     bool visitInteger(LInteger *lir);
     bool visitRegExp(LRegExp *lir);
+    bool visitRegExpTest(LRegExpTest *lir);
     bool visitLambda(LLambda *lir);
     bool visitLambdaForSingleton(LLambdaForSingleton *lir);
     bool visitPointer(LPointer *lir);
@@ -89,6 +92,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitNewObject(LNewObject *lir);
     bool visitOutOfLineNewObject(OutOfLineNewObject *ool);
     bool visitNewCallObject(LNewCallObject *lir);
+    bool visitNewStringObject(LNewStringObject *lir);
     bool visitInitProp(LInitProp *lir);
     bool visitCreateThis(LCreateThis *lir);
     bool visitCreateThisVM(LCreateThisVM *lir);
@@ -110,6 +114,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitAbsI(LAbsI *lir);
     bool visitPowI(LPowI *lir);
     bool visitPowD(LPowD *lir);
+    bool visitRandom(LRandom *lir);
     bool visitMathFunctionD(LMathFunctionD *ins);
     bool visitModD(LModD *ins);
     bool visitMinMaxI(LMinMaxI *lir);
@@ -143,6 +148,7 @@ class CodeGenerator : public CodeGeneratorSpecific
                        ConstantOrRegister value, Register elementsTemp, Register length);
     bool visitArrayPushV(LArrayPushV *lir);
     bool visitArrayPushT(LArrayPushT *lir);
+    bool visitArrayConcat(LArrayConcat *lir);
     bool visitLoadTypedArrayElement(LLoadTypedArrayElement *lir);
     bool visitLoadTypedArrayElementHole(LLoadTypedArrayElementHole *lir);
     bool visitStoreTypedArrayElement(LStoreTypedArrayElement *lir);
@@ -162,6 +168,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitBitNotV(LBitNotV *lir);
     bool visitBitOpV(LBitOpV *lir);
     bool emitInstanceOf(LInstruction *ins, Register rhs);
+    bool visitIn(LIn *ins);
     bool visitInstanceOfO(LInstanceOfO *ins);
     bool visitInstanceOfV(LInstanceOfV *ins);
     bool visitFunctionBoundary(LFunctionBoundary *lir);

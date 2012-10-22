@@ -6,6 +6,7 @@
 #include "mozilla/Util.h"
 
 #include "nsHTMLInputElement.h"
+#include "nsAttrValueInlines.h"
 
 #include "nsIDOMHTMLInputElement.h"
 #include "nsITextControlElement.h"
@@ -641,13 +642,12 @@ DOMCI_NODE_DATA(HTMLInputElement, nsHTMLInputElement)
 
 // QueryInterface implementation for nsHTMLInputElement
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLInputElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE9(nsHTMLInputElement,
+  NS_HTML_CONTENT_INTERFACE_TABLE8(nsHTMLInputElement,
                                    nsIDOMHTMLInputElement,
                                    nsITextControlElement,
                                    nsIPhonetic,
-                                   imgIDecoderObserver,
+                                   imgINotificationObserver,
                                    nsIImageLoadingContent,
-                                   imgIContainerObserver,
                                    imgIOnloadBlocker,
                                    nsIDOMNSEditableElement,
                                    nsIConstraintValidation)
@@ -897,7 +897,6 @@ NS_IMPL_BOOL_ATTR(nsHTMLInputElement, ReadOnly, readonly)
 NS_IMPL_BOOL_ATTR(nsHTMLInputElement, Required, required)
 NS_IMPL_URI_ATTR(nsHTMLInputElement, Src, src)
 NS_IMPL_STRING_ATTR(nsHTMLInputElement, Step, step)
-NS_IMPL_INT_ATTR(nsHTMLInputElement, TabIndex, tabindex)
 NS_IMPL_STRING_ATTR(nsHTMLInputElement, UseMap, usemap)
 //NS_IMPL_STRING_ATTR(nsHTMLInputElement, Value, value)
 NS_IMPL_UINT_ATTR_NON_ZERO_DEFAULT_VALUE(nsHTMLInputElement, Size, size, DEFAULT_COLS)
@@ -905,6 +904,12 @@ NS_IMPL_STRING_ATTR(nsHTMLInputElement, Pattern, pattern)
 NS_IMPL_STRING_ATTR(nsHTMLInputElement, Placeholder, placeholder)
 NS_IMPL_ENUM_ATTR_DEFAULT_VALUE(nsHTMLInputElement, Type, type,
                                 kInputDefaultType->tag)
+
+int32_t
+nsHTMLInputElement::TabIndexDefault()
+{
+  return 0;
+}
 
 NS_IMETHODIMP
 nsHTMLInputElement::GetHeight(uint32_t *aHeight)
@@ -1866,11 +1871,12 @@ nsHTMLInputElement::SetCheckedInternal(bool aChecked, bool aNotify)
   UpdateState(aNotify);
 }
 
-NS_IMETHODIMP
-nsHTMLInputElement::Focus()
+void
+nsHTMLInputElement::Focus(ErrorResult& aError)
 {
   if (mType != NS_FORM_INPUT_FILE) {
-    return nsGenericHTMLElement::Focus();
+    nsGenericHTMLElement::Focus(aError);
+    return;
   }
 
   // For file inputs, focus the button instead.
@@ -1893,7 +1899,7 @@ nsHTMLInputElement::Focus()
     }
   }
 
-  return NS_OK;
+  return;
 }
 
 NS_IMETHODIMP
@@ -1966,13 +1972,14 @@ nsHTMLInputElement::SelectAll(nsPresContext* aPresContext)
   }
 }
 
-NS_IMETHODIMP
+void
 nsHTMLInputElement::Click()
 {
-  if (mType == NS_FORM_INPUT_FILE)
+  if (mType == NS_FORM_INPUT_FILE) {
     FireAsyncClickHandler();
+  }
 
-  return nsGenericHTMLElement::Click();
+  nsGenericHTMLElement::Click();
 }
 
 NS_IMETHODIMP
@@ -2382,7 +2389,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
                 nsCOMPtr<nsIContent> radioContent =
                   do_QueryInterface(selectedRadioButton);
                 if (radioContent) {
-                  rv = selectedRadioButton->Focus();
+                  rv = selectedRadioButton->DOMFocus();
                   if (NS_SUCCEEDED(rv)) {
                     nsEventStatus status = nsEventStatus_eIgnore;
                     nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),

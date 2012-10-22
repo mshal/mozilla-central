@@ -86,10 +86,10 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSimplePageSequenceFrame)
 nsSimplePageSequenceFrame::nsSimplePageSequenceFrame(nsStyleContext* aContext) :
   nsContainerFrame(aContext),
   mTotalPages(-1),
-  mCurrentCanvasListSetup(false),
   mSelectionHeight(-1),
   mYSelOffset(0),
-  mCalledBeginPage(false)
+  mCalledBeginPage(false),
+  mCurrentCanvasListSetup(false)
 {
   nscoord halfInch = PresContext()->CSSTwipsToAppUnits(NS_INCHES_TO_TWIPS(0.5));
   mMargin.SizeTo(halfInch, halfInch, halfInch, halfInch);
@@ -112,6 +112,7 @@ nsSimplePageSequenceFrame::nsSimplePageSequenceFrame(nsStyleContext* aContext) :
 nsSimplePageSequenceFrame::~nsSimplePageSequenceFrame()
 {
   delete mPageData;
+  ResetPrintCanvasList();
 }
 
 NS_QUERYFRAME_HEAD(nsSimplePageSequenceFrame)
@@ -660,7 +661,7 @@ nsSimplePageSequenceFrame::PrePrintNextPage(nsITimerCallback* aCallback, bool* a
       }
     }
   }
-  int32_t doneCounter = 0;
+  uint32_t doneCounter = 0;
   for (int32_t i = mCurrentCanvasList.Length() - 1; i >= 0 ; i--) {
     nsHTMLCanvasElement* canvas = mCurrentCanvasList[i];
 
@@ -672,19 +673,6 @@ nsSimplePageSequenceFrame::PrePrintNextPage(nsITimerCallback* aCallback, bool* a
   *aDone = doneCounter == mCurrentCanvasList.Length();
 
   return NS_OK;
-}
-
-void
-nsSimplePageSequenceFrame::InvalidateInternal(const nsRect& aDamageRect,
-                                              nscoord aX, nscoord aY,
-                                              nsIFrame* aForChild,
-                                              uint32_t aFlags)
-{
-  // xxx Invalidate the entire frame as otherwise invalidate of printCanvas
-  // don't work properly. This is hopefully no longer necessary once 539356
-  // lands.
-  nsContainerFrame::InvalidateInternal(
-      nsRect(nsPoint(0,0), GetSize()), 0, 0, aForChild, aFlags); 
 }
 
 NS_IMETHODIMP
@@ -833,12 +821,14 @@ nsSimplePageSequenceFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   nsDisplayList content;
   nsIFrame* child = GetFirstPrincipalChild();
   while (child) {
-    rv = child->BuildDisplayListForStackingContext(aBuilder, aDirtyRect - child->GetOffsetTo(this), &content);
+    rv = child->BuildDisplayListForStackingContext(aBuilder,
+        child->GetVisualOverflowRectRelativeToSelf(), &content);
     NS_ENSURE_SUCCESS(rv, rv);
     child = child->GetNextSibling();
   }
 
-  rv = content.AppendNewToTop(new (aBuilder) nsDisplayTransform(aBuilder, this, &content, ::ComputePageSequenceTransform));
+  rv = content.AppendNewToTop(new (aBuilder)
+      nsDisplayTransform(aBuilder, this, &content, ::ComputePageSequenceTransform));
   NS_ENSURE_SUCCESS(rv, rv);
 
   aLists.Content()->AppendToTop(&content);

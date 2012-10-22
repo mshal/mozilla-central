@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/workers/Workers.h"
 #include "mozilla/ErrorResult.h"
 
@@ -99,10 +100,7 @@ UnwrapDOMObject(JSObject* obj, DOMObjectSlot slot)
   if (IsDOMClass(js::GetObjectClass(obj))) {
     MOZ_ASSERT(slot == eRegularDOMObject);
   } else {
-    MOZ_ASSERT(js::IsObjectProxyClass(js::GetObjectClass(obj)) ||
-               js::IsFunctionProxyClass(js::GetObjectClass(obj)));
-    MOZ_ASSERT(js::GetProxyHandler(obj)->family() == ProxyFamily());
-    MOZ_ASSERT(IsNewProxyBinding(js::GetProxyHandler(obj)));
+    MOZ_ASSERT(IsDOMProxy(obj));
     MOZ_ASSERT(slot == eProxyDOMObject);
   }
 #endif
@@ -128,9 +126,8 @@ GetDOMClass(JSObject* obj)
     return &DOMJSClass::FromJSClass(clasp)->mClass;
   }
 
+  MOZ_ASSERT(IsDOMProxy(obj));
   js::BaseProxyHandler* handler = js::GetProxyHandler(obj);
-  MOZ_ASSERT(handler->family() == ProxyFamily());
-  MOZ_ASSERT(IsNewProxyBinding(handler));
   return &static_cast<DOMProxyHandler*>(handler)->mClass;
 }
 
@@ -145,7 +142,7 @@ GetDOMClass(JSObject* obj, const DOMClass*& result)
 
   if (js::IsObjectProxyClass(clasp) || js::IsFunctionProxyClass(clasp)) {
     js::BaseProxyHandler* handler = js::GetProxyHandler(obj);
-    if (handler->family() == ProxyFamily() && IsNewProxyBinding(handler)) {
+    if (handler->family() == ProxyFamily()) {
       result = &static_cast<DOMProxyHandler*>(handler)->mClass;
       return eProxyDOMObject;
     }
@@ -173,8 +170,7 @@ IsDOMObject(JSObject* obj)
   js::Class* clasp = js::GetObjectClass(obj);
   return IsDOMClass(clasp) ||
          ((js::IsObjectProxyClass(clasp) || js::IsFunctionProxyClass(clasp)) &&
-          (js::GetProxyHandler(obj)->family() == ProxyFamily() &&
-           IsNewProxyBinding(js::GetProxyHandler(obj))));
+          js::GetProxyHandler(obj)->family() == ProxyFamily());
 }
 
 // Some callers don't want to set an exception when unwrapping fails
@@ -343,6 +339,22 @@ struct Prefable {
   T* specs;
 };
 
+struct NativeProperties
+{
+  Prefable<JSFunctionSpec>* staticMethods;
+  jsid* staticMethodIds;
+  JSFunctionSpec* staticMethodsSpecs;
+  Prefable<JSFunctionSpec>* methods;
+  jsid* methodIds;
+  JSFunctionSpec* methodsSpecs;
+  Prefable<JSPropertySpec>* attributes;
+  jsid* attributeIds;
+  JSPropertySpec* attributeSpecs;
+  Prefable<ConstantSpec>* constants;
+  jsid* constantIds;
+  ConstantSpec* constantSpecs;
+};
+
 /*
  * Create a DOM interface object (if constructorClass is non-null) and/or a
  * DOM interface prototype object (if protoClass is non-null).
@@ -364,15 +376,14 @@ struct Prefable {
  *             object of constructorClass, unless that's also null, in which
  *             case we should not create an interface object at all.
  * ctorNargs is the length of the constructor function; 0 if no constructor
- * instanceClass is the JSClass of instance objects for this class.  This can
- *               be null if this is not a concrete proto.
- * methods and properties are to be defined on the interface prototype object;
- *                        these arguments are allowed to be null if there are no
- *                        methods or properties respectively.
- * constants are to be defined on the interface object and on the interface
- *           prototype object; allowed to be null if there are no constants.
- * staticMethods are to be defined on the interface object; allowed to be null
- *               if there are no static methods.
+ * domClass is the DOMClass of instance objects for this class.  This can be
+ *          null if this is not a concrete proto.
+ * properties contains the methods, attributes and constants to be defined on
+ *            objects in any compartment.
+ * chromeProperties contains the methods, attributes and constants to be defined
+ *                  on objects in chrome compartments. This must be null if the
+ *                  interface doesn't have any ChromeOnly properties or if the
+ *                  object is being created in non-chrome compartment.
  *
  * At least one of protoClass and constructorClass should be non-null.
  * If constructorClass is non-null, the resulting interface object will be
@@ -387,10 +398,9 @@ CreateInterfaceObjects(JSContext* cx, JSObject* global, JSObject* receiver,
                        JSObject* protoProto, JSClass* protoClass,
                        JSClass* constructorClass, JSNative constructor,
                        unsigned ctorNargs, const DOMClass* domClass,
-                       Prefable<JSFunctionSpec>* methods,
-                       Prefable<JSPropertySpec>* properties,
-                       Prefable<ConstantSpec>* constants,
-                       Prefable<JSFunctionSpec>* staticMethods, const char* name);
+                       const NativeProperties* properties,
+                       const NativeProperties* chromeProperties,
+                       const char* name);
 
 template <class T>
 inline bool
@@ -620,16 +630,16 @@ GetWrapperCache(const ParentObject& aParentObject)
 }
 
 template<class T>
-inline nsISupports*
+inline T*
 GetParentPointer(T* aObject)
 {
-  return ToSupports(aObject);
+  return aObject;
 }
 
 inline nsISupports*
 GetParentPointer(const ParentObject& aObject)
 {
-  return ToSupports(aObject.mObject);
+  return aObject.mObject;
 }
 
 template<class T>
@@ -724,32 +734,159 @@ WrapObject<JSObject>(JSContext* cx, JSObject* scope, JSObject* p, JS::Value* vp)
   return true;
 }
 
+bool
+WrapCallbackInterface(JSContext *cx, JSObject *scope, nsISupports* callback,
+                      JS::Value* vp);
+
+#ifdef _MSC_VER
+#define HAS_MEMBER_CHECK(_name)                                           \
+  template<typename V> static yes& Check(char (*)[(&V::_name == 0) + 1])
+#else
+#define HAS_MEMBER_CHECK(_name)                                           \
+  template<typename V> static yes& Check(char (*)[sizeof(&V::_name) + 1])
+#endif
+
+#define HAS_MEMBER(_name)                                                 \
+template<typename T>                                                      \
+class Has##_name##Member {                                                \
+  typedef char yes[1];                                                    \
+  typedef char no[2];                                                     \
+  HAS_MEMBER_CHECK(_name);                                                \
+  template<typename V> static no& Check(...);                             \
+                                                                          \
+public:                                                                   \
+  static bool const Value = sizeof(Check<T>(nullptr)) == sizeof(yes);     \
+};
+
+HAS_MEMBER(AddRef)
+HAS_MEMBER(Release)
+HAS_MEMBER(QueryInterface)
+
+template<typename T>
+struct IsRefCounted
+{
+  static bool const Value = HasAddRefMember<T>::Value &&
+                            HasReleaseMember<T>::Value;
+};
+
+template<typename T>
+struct IsISupports
+{
+  static bool const Value = IsRefCounted<T>::Value &&
+                            HasQueryInterfaceMember<T>::Value;
+};
+
+HAS_MEMBER(WrapObject)
+
+// HasWrapObject<T>::Value will be true if T has a WrapObject member but it's
+// not nsWrapperCache::WrapObject.
+template<typename T>
+struct HasWrapObject
+{
+private:
+  typedef char yes[1];
+  typedef char no[2];
+  typedef JSObject* (nsWrapperCache::*WrapObject)(JSContext*, JSObject*, bool*);
+  template<typename U, U> struct SFINAE;
+  template <typename V> static no& Check(SFINAE<WrapObject, &V::WrapObject>*);
+  template <typename V> static yes& Check(...);
+
+public:
+  static bool const Value = HasWrapObjectMember<T>::Value &&
+                            sizeof(Check<T>(nullptr)) == sizeof(yes);
+};
+
+template<typename T>
+static inline JSObject*
+WrapNativeISupportsParent(JSContext* cx, JSObject* scope, T* p,
+                          nsWrapperCache* cache)
+{
+  qsObjectHelper helper(ToSupports(p), cache);
+  JS::Value v;
+  return XPCOMObjectToJsval(cx, scope, helper, nullptr, false, &v) ?
+         JSVAL_TO_OBJECT(v) :
+         nullptr;
+}
+
+template<typename T, bool isISupports=IsISupports<T>::Value >
+struct WrapNativeParentFallback
+{
+  static inline JSObject* Wrap(JSContext* cx, JSObject* scope, T* parent,
+                               nsWrapperCache* cache)
+  {
+    MOZ_NOT_REACHED("Don't know how to deal with triedToWrap == false for "
+                    "non-nsISupports classes");
+    return nullptr;
+  }
+};
+
+template<typename T >
+struct WrapNativeParentFallback<T, true >
+{
+  static inline JSObject* Wrap(JSContext* cx, JSObject* scope, T* parent,
+                               nsWrapperCache* cache)
+  {
+    return WrapNativeISupportsParent(cx, scope, parent, cache);
+  }
+};
+
+template<typename T, bool hasWrapObject=HasWrapObject<T>::Value >
+struct WrapNativeParentHelper
+{
+  static inline JSObject* Wrap(JSContext* cx, JSObject* scope, T* parent,
+                               nsWrapperCache* cache)
+  {
+    MOZ_ASSERT(cache);
+
+    JSObject* obj;
+    if ((obj = cache->GetWrapper())) {
+      return obj;
+    }
+
+    bool triedToWrap;
+    obj = parent->WrapObject(cx, scope, &triedToWrap);
+    if (!triedToWrap) {
+      obj = WrapNativeParentFallback<T>::Wrap(cx, scope, parent, cache);
+    }
+    return obj;
+  }
+};
+
+template<typename T>
+struct WrapNativeParentHelper<T, false >
+{
+  static inline JSObject* Wrap(JSContext* cx, JSObject* scope, T* parent,
+                               nsWrapperCache* cache)
+  {
+    JSObject* obj;
+    if (cache && (obj = cache->GetWrapper())) {
+#ifdef DEBUG
+      NS_ASSERTION(WrapNativeISupportsParent(cx, scope, parent, cache) == obj,
+                   "Unexpected object in nsWrapperCache");
+#endif
+      return obj;
+    }
+
+    return WrapNativeISupportsParent(cx, scope, parent, cache);
+  }
+};
+
+template<typename T>
+static inline JSObject*
+WrapNativeParent(JSContext* cx, JSObject* scope, T* p, nsWrapperCache* cache)
+{
+  if (!p) {
+    return scope;
+  }
+
+  return WrapNativeParentHelper<T>::Wrap(cx, scope, p, cache);
+}
+
 template<typename T>
 static inline JSObject*
 WrapNativeParent(JSContext* cx, JSObject* scope, const T& p)
 {
-  if (!GetParentPointer(p))
-    return scope;
-
-  nsWrapperCache* cache = GetWrapperCache(p);
-  JSObject* obj;
-  if (cache && (obj = cache->GetWrapper())) {
-#ifdef DEBUG
-    qsObjectHelper helper(GetParentPointer(p), cache);
-    JS::Value debugVal;
-
-    bool ok = XPCOMObjectToJsval(cx, scope, helper, NULL, false, &debugVal);
-    NS_ASSERTION(ok && JSVAL_TO_OBJECT(debugVal) == obj,
-                 "Unexpected object in nsWrapperCache");
-#endif
-    return obj;
-  }
-
-  qsObjectHelper helper(GetParentPointer(p), cache);
-  JS::Value v;
-  return XPCOMObjectToJsval(cx, scope, helper, NULL, false, &v) ?
-         JSVAL_TO_OBJECT(v) :
-         NULL;
+  return WrapNativeParent(cx, scope, GetParentPointer(p), GetWrapperCache(p));
 }
 
 static inline bool
@@ -1116,34 +1253,49 @@ public:
 bool
 XrayResolveProperty(JSContext* cx, JSObject* wrapper, jsid id,
                     JSPropertyDescriptor* desc,
-                    // And the things we need to determine the descriptor
-                    Prefable<JSFunctionSpec>* methods,
-                    jsid* methodIds,
-                    JSFunctionSpec* methodSpecs,
-                    size_t methodCount,
-                    Prefable<JSPropertySpec>* attributes,
-                    jsid* attributeIds,
-                    JSPropertySpec* attributeSpecs,
-                    size_t attributeCount,
-                    Prefable<ConstantSpec>* constants,
-                    jsid* constantIds,
-                    ConstantSpec* constantSpecs,
-                    size_t constantCount);
+                    const NativeProperties* nativeProperties,
+                    const NativeProperties* chromeOnlyNativeProperties);
 
 bool
-XrayEnumerateProperties(JS::AutoIdVector& props,
-                        Prefable<JSFunctionSpec>* methods,
-                        jsid* methodIds,
-                        JSFunctionSpec* methodSpecs,
-                        size_t methodCount,
-                        Prefable<JSPropertySpec>* attributes,
-                        jsid* attributeIds,
-                        JSPropertySpec* attributeSpecs,
-                        size_t attributeCount,
-                        Prefable<ConstantSpec>* constants,
-                        jsid* constantIds,
-                        ConstantSpec* constantSpecs,
-                        size_t constantCount);
+XrayEnumerateProperties(JSObject* wrapper,
+                        JS::AutoIdVector& props,
+                        const NativeProperties* nativeProperties,
+                        const NativeProperties* chromeOnlyNativeProperties);
+
+// Transfer reference in ptr to smartPtr.
+template<class T>
+inline void
+Take(nsRefPtr<T>& smartPtr, T* ptr)
+{
+  smartPtr = dont_AddRef(ptr);
+}
+
+// Transfer ownership of ptr to smartPtr.
+template<class T>
+inline void
+Take(nsAutoPtr<T>& smartPtr, T* ptr)
+{
+  smartPtr = ptr;
+}
+
+inline void
+MustInheritFromNonRefcountedDOMObject(NonRefcountedDOMObject*)
+{
+}
+
+// Set the chain of expando objects for various consumers of the given object.
+// For Paris Bindings only. See the relevant infrastructure in XrayWrapper.cpp.
+JSObject* GetXrayExpandoChain(JSObject *obj);
+void SetXrayExpandoChain(JSObject *obj, JSObject *chain);
+
+struct MainThreadDictionaryBase
+{
+protected:
+  JSContext* ParseJSON(const nsAString& aJSON,
+                       mozilla::Maybe<JSAutoRequest>& aAr,
+                       mozilla::Maybe<JSAutoCompartment>& aAc,
+                       JS::Value& aVal);
+};
 
 } // namespace dom
 } // namespace mozilla

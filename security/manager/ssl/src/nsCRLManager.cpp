@@ -20,7 +20,6 @@
 #include "nsNSSCertHeader.h"
 
 #include "nspr.h"
-extern "C" {
 #include "pk11func.h"
 #include "certdb.h"
 #include "cert.h"
@@ -28,7 +27,6 @@ extern "C" {
 #include "nssb64.h"
 #include "secasn1.h"
 #include "secder.h"
-}
 #include "ssl.h"
 #include "ocsp.h"
 #include "plbase64.h"
@@ -55,9 +53,9 @@ nsCRLManager::ImportCrl (uint8_t *aData, uint32_t aLength, nsIURI * aURI, uint32
   
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
-  PRArenaPool *arena = NULL;
+  PLArenaPool *arena = nullptr;
   CERTCertificate *caCert;
-  SECItem derName = { siBuffer, NULL, 0 };
+  SECItem derName = { siBuffer, nullptr, 0 };
   SECItem derCrl;
   CERTSignedData sd;
   SECStatus sec_rv;
@@ -182,7 +180,7 @@ done:
       }
     }
   } else {
-    if(crlKey == nullptr){
+    if (!crlKey) {
       return NS_ERROR_FAILURE;
     }
     nsCOMPtr<nsIPrefService> prefSvc = do_GetService(NS_PREFSERVICE_CONTRACTID,&rv);
@@ -231,7 +229,7 @@ done:
         //with the next update date. We will not reschedule this crl in this
         //session anymore - or else, we land into a loop. It would anyway be
         //imported once the browser is restarted.
-        if(LL_CMP(updateTime, > , PR_Now())){
+        if(int64_t(updateTime) > int64_t(PR_Now())){
           toBeRescheduled = true;
         }
         nsMemory::Free(updateTime);
@@ -328,7 +326,7 @@ nsCRLManager::GetCrls(nsIArray ** aCrls)
   }
 
   if (head) {
-    for (node=head->first; node != nullptr; node = node->next) {
+    for (node=head->first; node; node = node->next) {
 
       nsCOMPtr<nsICRLInfo> entry = new nsCRLInfo((node->crl));
       crlsArray->AppendElement(entry, false);
@@ -363,7 +361,7 @@ nsCRLManager::DeleteCrl(uint32_t aCrlIndex)
   }
 
   if (head) {
-    for (i = 0, node=head->first; node != nullptr; i++, node = node->next) {
+    for (i = 0, node=head->first; node; i++, node = node->next) {
       if (i != aCrlIndex) {
         continue;
       }
@@ -393,12 +391,10 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
   int64_t temp;
   int64_t cycleCnt = 0;
   int64_t secsInDayCnt;
-  double tmpData;
-  
-  LL_L2F(tmpData,secsInDay);
-  LL_MUL(tmpData,dayCnt,tmpData);
+  double tmpData = double(secsInDay);
+  tmpData *= dayCnt;
   LL_F2L(secsInDayCnt,tmpData);
-  LL_MUL(microsecInDayCnt, secsInDayCnt, PR_USEC_PER_SEC);
+  microsecInDayCnt = secsInDayCnt * PR_USEC_PER_SEC;
     
   PRTime lastUpdate;
   PRTime nextUpdate;
@@ -415,17 +411,17 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
 
   switch (autoUpdateType) {
   case TYPE_AUTOUPDATE_FREQ_BASED:
-    LL_SUB(diff, now, lastUpdate);             //diff is the no of micro sec between now and last update
-    LL_DIV(cycleCnt, diff, microsecInDayCnt);   //temp is the number of full cycles from lst update
-    LL_MOD(temp, diff, microsecInDayCnt);
-    if(!(LL_IS_ZERO(temp))) {
-      LL_ADD(cycleCnt,cycleCnt,1);            //no of complete cycles till next autoupdate instant
+    diff = now - lastUpdate;                    //diff is the no of micro sec between now and last update
+    cycleCnt = diff / microsecInDayCnt;       //temp is the number of full cycles from lst update
+    temp = diff % microsecInDayCnt;
+    if(temp != 0) {
+      ++cycleCnt;            //no of complete cycles till next autoupdate instant
     }
-    LL_MUL(temp,cycleCnt,microsecInDayCnt);    //micro secs from last update
-    LL_ADD(tempTime, lastUpdate, temp);
+    temp = cycleCnt * microsecInDayCnt;    //micro secs from last update
+    tempTime = lastUpdate + temp;
     break;  
   case TYPE_AUTOUPDATE_TIME_BASED:
-    LL_SUB(tempTime, nextUpdate, microsecInDayCnt);
+    tempTime = nextUpdate - microsecInDayCnt;
     break;
   default:
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -433,8 +429,8 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
 
   //Now, a basic constraing is that the next auto update date can never be after
   //next update, if one is defined
-  if(LL_CMP(nextUpdate , > , 0 )) {
-    if(LL_CMP(tempTime , > , nextUpdate)) {
+  if(nextUpdate > 0) {
+    if(tempTime > nextUpdate) {
       tempTime = nextUpdate;
     }
   }

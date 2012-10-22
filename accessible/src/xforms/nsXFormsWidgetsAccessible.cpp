@@ -133,12 +133,12 @@ nsXFormsComboboxPopupWidgetAccessible::NativeInteractiveState() const
   return NativelyUnavailable() ? states::UNAVAILABLE : states::FOCUSABLE;
 }
 
-nsresult
-nsXFormsComboboxPopupWidgetAccessible::GetNameInternal(nsAString& aName)
+ENameValueFlag
+nsXFormsComboboxPopupWidgetAccessible::NativeName(nsString& aName)
 {
   // Override nsXFormsAccessible::GetName() to prevent name calculation by
   // XForms rules.
-  return NS_OK;
+  return eNameOK;
 }
 
 void
@@ -156,7 +156,7 @@ nsXFormsComboboxPopupWidgetAccessible::Value(nsString& aValue)
 void
 nsXFormsComboboxPopupWidgetAccessible::CacheChildren()
 {
-  nsCOMPtr<nsIDOMNode> parent = do_QueryInterface(mContent->GetNodeParent());
+  nsCOMPtr<nsIDOMNode> parent = do_QueryInterface(mContent->GetParentNode());
   // Parent node must be an xforms:select1 element.
   CacheSelectChildren(parent);
 }

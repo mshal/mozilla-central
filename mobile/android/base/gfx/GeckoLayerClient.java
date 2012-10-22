@@ -14,6 +14,7 @@ import org.mozilla.gecko.ZoomConstraints;
 import org.mozilla.gecko.ui.PanZoomController;
 import org.mozilla.gecko.ui.PanZoomTarget;
 import org.mozilla.gecko.util.EventDispatcher;
+import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.GeckoEventResponder;
 
 import org.json.JSONException;
@@ -71,6 +72,9 @@ public class GeckoLayerClient
     /* Used as a temporary ViewTransform by syncViewportInfo */
     private final ViewTransform mCurrentViewTransform;
 
+    /* Used as the return value of progressiveUpdateCallback */
+    private final ProgressiveUpdateData mProgressiveUpdateData;
+
     /* This is written by the compositor thread and read by the UI thread. */
     private volatile boolean mCompositorCreated;
 
@@ -108,6 +112,7 @@ public class GeckoLayerClient
         mRecordDrawTimes = true;
         mDrawTimingQueue = new DrawTimingQueue();
         mCurrentViewTransform = new ViewTransform(0, 0, 1);
+        mProgressiveUpdateData = new ProgressiveUpdateData();
         mCompositorCreated = false;
 
         mForceRedraw = true;
@@ -124,13 +129,11 @@ public class GeckoLayerClient
         mGeckoIsReady = true;
 
         mRootLayer = new VirtualLayer(new IntSize(mView.getWidth(), mView.getHeight()));
-        mLayerRenderer = new LayerRenderer(mView);
+        mLayerRenderer = mView.getRenderer();
 
         registerEventListener("Checkerboard:Toggle");
 
         mView.setListener(this);
-        mView.setLayerRenderer(mLayerRenderer);
-
         sendResizeEventIfNecessary(true);
 
         DisplayPortCalculator.initPrefs();
@@ -356,6 +359,73 @@ public class GeckoLayerClient
         }
     }
 
+    // This is called on the Gecko thread to determine if we're still interested
+    // in the update of this display-port to continue. We can return true here
+    // to abort the current update and continue with any subsequent ones. This
+    // is useful for slow-to-render pages when the display-port starts lagging
+    // behind enough that continuing to draw it is wasted effort.
+    public ProgressiveUpdateData progressiveUpdateCallback(boolean aHasPendingNewThebesContent,
+                                                           float x, float y, float width, float height, float resolution) {
+        // Grab a local copy of the last display-port sent to Gecko and the
+        // current viewport metrics to avoid races when accessing them.
+        DisplayPortMetrics displayPort = mDisplayPort;
+        ImmutableViewportMetrics viewportMetrics = mViewportMetrics;
+        mProgressiveUpdateData.setViewport(viewportMetrics);
+        mProgressiveUpdateData.abort = false;
+
+        // Always abort updates if the resolution has changed. There's no use
+        // in drawing at the incorrect resolution.
+        if (!FloatUtils.fuzzyEquals(resolution, displayPort.resolution)) {
+            Log.d(LOGTAG, "Aborting draw due to resolution change");
+            mProgressiveUpdateData.abort = true;
+            return mProgressiveUpdateData;
+        }
+
+        // XXX All sorts of rounding happens inside Gecko that becomes hard to
+        //     account exactly for. Given we align the display-port to tile
+        //     boundaries (and so they rarely vary by sub-pixel amounts), just
+        //     check that values are within a pixel of the display-port bounds.
+
+        // Never abort drawing if we can't be sure we've sent a more recent
+        // display-port. If we abort updating when we shouldn't, we can end up
+        // with blank regions on the screen and we open up the risk of entering
+        // an endless updating cycle.
+        if (Math.abs(displayPort.getLeft() - x) <= 1 &&
+            Math.abs(displayPort.getTop() - y) <= 1 &&
+            Math.abs(displayPort.getBottom() - (y + height)) <= 1 &&
+            Math.abs(displayPort.getRight() - (x + width)) <= 1) {
+            return mProgressiveUpdateData;
+        }
+
+        // Abort updates when the display-port no longer contains the visible
+        // area of the page (that is, the viewport cropped by the page
+        // boundaries).
+        // XXX This makes the assumption that we never let the visible area of
+        //     the page fall outside of the display-port.
+        if (Math.max(viewportMetrics.viewportRectLeft, viewportMetrics.pageRectLeft) + 1 < x ||
+            Math.max(viewportMetrics.viewportRectTop, viewportMetrics.pageRectTop) + 1 < y ||
+            Math.min(viewportMetrics.viewportRectRight, viewportMetrics.pageRectRight) - 1 > x + width ||
+            Math.min(viewportMetrics.viewportRectBottom, viewportMetrics.pageRectBottom) - 1 > y + height) {
+            Log.d(LOGTAG, "Aborting update due to viewport not in display-port");
+            mProgressiveUpdateData.abort = true;
+            return mProgressiveUpdateData;
+        }
+
+        // There's no new content (where new content is considered to be an
+        // update in a region that wasn't previously visible), and we've sent a
+        // more recent display-port.
+        // Aborting in this situation helps us recover more quickly when the
+        // user starts scrolling on a page that contains animated content that
+        // is slow to draw.
+        if (!aHasPendingNewThebesContent) {
+            Log.d(LOGTAG, "Aborting update due to more relevant display-port in event queue");
+            mProgressiveUpdateData.abort = true;
+            return mProgressiveUpdateData;
+        }
+
+        return mProgressiveUpdateData;
+    }
+
     /** Implementation of GeckoEventResponder/GeckoEventListener. */
     public void handleMessage(String event, JSONObject message) {
         try {
@@ -427,7 +497,12 @@ public class GeckoLayerClient
             // a full viewport update, which is fine because if browser.js has somehow moved to
             // be out of sync with this first-paint viewport, then we force them back in sync.
             abortPanZoomAnimation();
-            mView.setPaintState(LayerView.PAINT_BEFORE_FIRST);
+
+            // Indicate that the document is about to be composited so the
+            // LayerView background can be removed.
+            if (mView.getPaintState() == LayerView.PAINT_START) {
+                mView.setPaintState(LayerView.PAINT_BEFORE_FIRST);
+            }
         }
         DisplayPortCalculator.resetPageState();
         mDrawTimingQueue.reset();

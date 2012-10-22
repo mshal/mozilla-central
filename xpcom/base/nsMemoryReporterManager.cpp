@@ -6,23 +6,23 @@
 #include "nsAtomTable.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsMemoryReporterManager.h"
 #include "nsArrayEnumerator.h"
-#include "nsIConsoleService.h"
 #include "nsISimpleEnumerator.h"
 #include "nsIFile.h"
 #include "nsIFileStreams.h"
 #include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
+#include "nsIObserverService.h"
+#include "nsThread.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Services.h"
+#include "mozilla/MemoryInfoDumper.h"
 
-#ifdef XP_WIN
-#include <process.h>
-#define getpid _getpid
-#else
+#ifndef XP_WIN
 #include <unistd.h>
 #endif
 
@@ -419,8 +419,6 @@ NS_FALLIBLE_MEMORY_REPORTER_IMPLEMENT(PageFaultsHard,
 
 #if HAVE_JEMALLOC_STATS
 
-#define HAVE_HEAP_ALLOCATED_REPORTERS 1
-
 static int64_t GetHeapUnused()
 {
     jemalloc_stats_t stats;
@@ -505,62 +503,6 @@ NS_MEMORY_REPORTER_IMPLEMENT(HeapDirty,
     "doesn't have to ask the OS the next time it needs to fulfill a request. "
     "This value is typically not larger than a few megabytes.")
 
-#elif defined(XP_MACOSX) && !defined(MOZ_MEMORY)
-#include <malloc/malloc.h>
-
-#define HAVE_HEAP_ALLOCATED_REPORTERS 1
-
-static int64_t GetHeapUnused()
-{
-    struct mstats stats = mstats();
-    return stats.bytes_total - stats.bytes_used;
-}
-
-static int64_t GetHeapAllocated()
-{
-    struct mstats stats = mstats();
-    return stats.bytes_used;
-}
-
-// malloc_zone_statistics() crashes when run under DMD because Valgrind doesn't
-// intercept it.  This measurement isn't important for DMD, so don't even try
-// to get it.
-#ifndef MOZ_DMD
-#define HAVE_HEAP_ZONE0_REPORTERS 1
-static int64_t GetHeapZone0Committed()
-{
-    malloc_statistics_t stats;
-    malloc_zone_statistics(malloc_default_zone(), &stats);
-    return stats.size_in_use;
-}
-
-static int64_t GetHeapZone0Used()
-{
-    malloc_statistics_t stats;
-    malloc_zone_statistics(malloc_default_zone(), &stats);
-    return stats.size_allocated;
-}
-
-NS_MEMORY_REPORTER_IMPLEMENT(HeapZone0Committed,
-    "heap-zone0-committed",
-    KIND_OTHER,
-    UNITS_BYTES,
-    GetHeapZone0Committed,
-    "Memory mapped by the heap allocator that is committed in the default "
-    "zone.")
-
-NS_MEMORY_REPORTER_IMPLEMENT(HeapZone0Used,
-    "heap-zone0-used",
-    KIND_OTHER,
-    UNITS_BYTES,
-    GetHeapZone0Used,
-    "Memory mapped by the heap allocator in the default zone that is "
-    "allocated to the application.")
-#endif  // MOZ_DMD
-
-#endif
-
-#ifdef HAVE_HEAP_ALLOCATED_REPORTERS
 NS_MEMORY_REPORTER_IMPLEMENT(HeapUnused,
     "heap-unused",
     KIND_OTHER,
@@ -581,8 +523,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(HeapAllocated,
     "exact amount requested is not recorded.)")
 
 // The computation of "explicit" fails if "heap-allocated" isn't available,
-// which is why this is depends on HAVE_HEAP_ALLOCATED_AND_EXPLICIT_REPORTERS.
-#define HAVE_EXPLICIT_REPORTER 1
+// which is why this is depends on HAVE_JEMALLOC_STATS.
 static nsresult GetExplicit(int64_t *n)
 {
     nsCOMPtr<nsIMemoryReporterManager> mgr = do_GetService("@mozilla.org/memory-reporter-manager;1");
@@ -600,7 +541,7 @@ NS_FALLIBLE_MEMORY_REPORTER_IMPLEMENT(Explicit,
     "This is the same measurement as the root of the 'explicit' tree.  "
     "However, it is measured at a different time and so gives slightly "
     "different results.")
-#endif  // HAVE_HEAP_ALLOCATED_REPORTERS
+#endif  // HAVE_JEMALLOC_STATS
 
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(AtomTableMallocSizeOf, "atom-table")
 
@@ -636,12 +577,13 @@ nsMemoryReporterManager::Init()
 
 #define REGISTER(_x)  RegisterReporter(new NS_MEMORY_REPORTER_NAME(_x))
 
-#ifdef HAVE_HEAP_ALLOCATED_REPORTERS
+#ifdef HAVE_JEMALLOC_STATS
     REGISTER(HeapAllocated);
     REGISTER(HeapUnused);
-#endif
-
-#ifdef HAVE_EXPLICIT_REPORTER
+    REGISTER(HeapCommitted);
+    REGISTER(HeapCommittedUnused);
+    REGISTER(HeapCommittedUnusedRatio);
+    REGISTER(HeapDirty);
     REGISTER(Explicit);
 #endif
 
@@ -659,17 +601,12 @@ nsMemoryReporterManager::Init()
     REGISTER(Private);
 #endif
 
-#if defined(HAVE_JEMALLOC_STATS)
-    REGISTER(HeapCommitted);
-    REGISTER(HeapCommittedUnused);
-    REGISTER(HeapCommittedUnusedRatio);
-    REGISTER(HeapDirty);
-#elif defined(HAVE_HEAP_ZONE0_REPORTERS)
-    REGISTER(HeapZone0Committed);
-    REGISTER(HeapZone0Used);
-#endif
 
     REGISTER(AtomTable);
+
+#if defined(XP_LINUX)
+    MemoryInfoDumper::Initialize();
+#endif
 
     return NS_OK;
 }
@@ -816,7 +753,7 @@ nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
 {
     NS_ENSURE_ARG_POINTER(aExplicit);
     *aExplicit = 0;
-#ifndef HAVE_EXPLICIT_REPORTER
+#ifndef HAVE_JEMALLOC_STATS
     return NS_ERROR_NOT_AVAILABLE;
 #else
     nsresult rv;
@@ -900,18 +837,16 @@ nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
     // NS_ASSERTION but they occasionally don't match due to races (bug
     // 728990).
     if (explicitNonHeapMultiSize != explicitNonHeapMultiSize2) {
-        char *msg = PR_smprintf("The two measurements of 'explicit' memory "
-                                "usage don't match (%lld vs %lld)",
-                                explicitNonHeapMultiSize,
-                                explicitNonHeapMultiSize2);
-        NS_WARNING(msg);
-        PR_smprintf_free(msg);
+        NS_WARNING(nsPrintfCString("The two measurements of 'explicit' memory "
+                                   "usage don't match (%lld vs %lld)",
+                                   explicitNonHeapMultiSize,
+                                   explicitNonHeapMultiSize2).get());
     }
 #endif  // DEBUG
 
     *aExplicit = heapAllocated + explicitNonHeapNormalSize + explicitNonHeapMultiSize;
     return NS_OK;
-#endif // HAVE_HEAP_ALLOCATED_AND_EXPLICIT_REPORTERS
+#endif // HAVE_JEMALLOC_STATS
 }
 
 NS_IMETHODIMP
@@ -927,192 +862,67 @@ nsMemoryReporterManager::GetHasMozMallocUsableSize(bool *aHas)
     return NS_OK;
 }
 
-#define DUMP(o, s) \
-    do { \
-        const char* s2 = (s); \
-        uint32_t dummy; \
-        nsresult rv = (o)->Write((s2), strlen(s2), &dummy); \
-        NS_ENSURE_SUCCESS(rv, rv); \
-    } while (0)
+namespace {
 
-static nsresult
-DumpReport(nsIFileOutputStream *aOStream, bool isFirst,
-           const nsACString &aProcess, const nsACString &aPath, int32_t aKind,
-           int32_t aUnits, int64_t aAmount, const nsACString &aDescription)
-{
-    DUMP(aOStream, isFirst ? "[" : ",");
-
-    // We only want to dump reports for this process.  If |aProcess| is
-    // non-NULL that means we've received it from another process in response
-    // to a "child-memory-reporter-request" event;  ignore such reports.
-    if (!aProcess.IsEmpty()) {
-        return NS_OK;    
-    }
-
-    unsigned pid = getpid();
-    nsPrintfCString pidStr("Process %u", pid);
-    DUMP(aOStream, "\n    {\"process\": \"");
-    DUMP(aOStream, pidStr.get());
-
-    DUMP(aOStream, "\", \"path\": \"");
-    nsCString path(aPath);
-    path.ReplaceSubstring("\\", "\\\\");    // escape backslashes for JSON
-    DUMP(aOStream, path.get());
-
-    DUMP(aOStream, "\", \"kind\": ");
-    DUMP(aOStream, nsPrintfCString("%d", aKind).get());
-
-    DUMP(aOStream, ", \"units\": ");
-    DUMP(aOStream, nsPrintfCString("%d", aUnits).get());
-
-    DUMP(aOStream, ", \"amount\": ");
-    DUMP(aOStream, nsPrintfCString("%lld", aAmount).get());
-
-    nsCString description(aDescription);
-    description.ReplaceSubstring("\\", "\\\\");    /* <backslash> --> \\ */
-    description.ReplaceSubstring("\"", "\\\"");    // " --> \"
-    description.ReplaceSubstring("\n", "\\n");     // <newline> --> \n
-    DUMP(aOStream, ", \"description\": \"");
-    DUMP(aOStream, description.get());
-    DUMP(aOStream, "\"}");
-
-    return NS_OK;
-}
-
-class DumpMultiReporterCallback MOZ_FINAL : public nsIMemoryMultiReporterCallback
+/**
+ * This runnable lets us implement nsIMemoryReporterManager::MinimizeMemoryUsage().
+ * We fire a heap-minimize notification, spin the event loop, and repeat this
+ * process a few times.
+ *
+ * When this sequence finishes, we invoke the callback function passed to the
+ * runnable's constructor.
+ */
+class MinimizeMemoryUsageRunnable : public nsRunnable
 {
 public:
-    NS_DECL_ISUPPORTS
+  MinimizeMemoryUsageRunnable(nsIRunnable* aCallback)
+    : mCallback(aCallback)
+    , mRemainingIters(sNumIters)
+  {}
 
-    NS_IMETHOD Callback(const nsACString &aProcess, const nsACString &aPath,
-                        int32_t aKind, int32_t aUnits, int64_t aAmount,
-                        const nsACString &aDescription,
-                        nsISupports *aData)
-    {
-        nsCOMPtr<nsIFileOutputStream> ostream = do_QueryInterface(aData);
-        if (!ostream)
-            return NS_ERROR_FAILURE;
-
-        // The |isFirst = false| assumes that at least one single reporter is
-        // present and so will have been processed in DumpReports() below.
-        return DumpReport(ostream, /* isFirst = */ false, aProcess, aPath,
-                          aKind, aUnits, aAmount, aDescription);
+  NS_IMETHOD Run()
+  {
+    nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+    if (!os) {
+      return NS_ERROR_FAILURE;
     }
+
+    if (mRemainingIters == 0) {
+      os->NotifyObservers(nullptr, "after-minimize-memory-usage",
+                          NS_LITERAL_STRING("MinimizeMemoryUsageRunnable").get());
+      if (mCallback) {
+        mCallback->Run();
+      }
+      return NS_OK;
+    }
+
+    os->NotifyObservers(nullptr, "memory-pressure",
+                        NS_LITERAL_STRING("heap-minimize").get());
+    mRemainingIters--;
+    NS_DispatchToMainThread(this);
+
+    return NS_OK;
+  }
+
+private:
+  // Send sNumIters heap-minimize notifications, spinning the event
+  // loop after each notification (see bug 610166 comment 12 for an
+  // explanation), because one notification doesn't cut it.
+  static const uint32_t sNumIters = 3;
+
+  nsCOMPtr<nsIRunnable> mCallback;
+  uint32_t mRemainingIters;
 };
 
-NS_IMPL_ISUPPORTS1(
-  DumpMultiReporterCallback
-, nsIMemoryMultiReporterCallback
-)
+} // anonymous namespace
 
 NS_IMETHODIMP
-nsMemoryReporterManager::DumpReports()
+nsMemoryReporterManager::MinimizeMemoryUsage(nsIRunnable* aCallback)
 {
-    // Open a file in NS_OS_TEMP_DIR for writing.
-
-    nsCOMPtr<nsIFile> tmpFile;
-    nsresult rv =
-        NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(tmpFile));
-    NS_ENSURE_SUCCESS(rv, rv);
-   
-    // Basic filename form: "memory-reports-<pid>.json".
-    nsCString filename("memory-reports-");
-    filename.AppendInt(getpid());
-    filename.AppendLiteral(".json");
-    rv = tmpFile->AppendNative(filename);
-    NS_ENSURE_SUCCESS(rv, rv);
-   
-    rv = tmpFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600); 
-    NS_ENSURE_SUCCESS(rv, rv);
-   
-    nsCOMPtr<nsIFileOutputStream> ostream =
-        do_CreateInstance("@mozilla.org/network/file-output-stream;1");
-    rv = ostream->Init(tmpFile, -1, -1, 0);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // Dump the memory reports to the file.
-
-    // Increment this number if the format changes.
-    DUMP(ostream, "{\n  \"version\": 1,\n");
-
-    DUMP(ostream, "  \"hasMozMallocUsableSize\": ");
-
-    bool hasMozMallocUsableSize;
-    GetHasMozMallocUsableSize(&hasMozMallocUsableSize);
-    DUMP(ostream, hasMozMallocUsableSize ? "true" : "false");
-    DUMP(ostream, ",\n");
-    DUMP(ostream, "  \"reports\": ");
-
-    // Process single reporters.
-    bool isFirst = true;
-    bool more;
-    nsCOMPtr<nsISimpleEnumerator> e;
-    EnumerateReporters(getter_AddRefs(e));
-    while (NS_SUCCEEDED(e->HasMoreElements(&more)) && more) {
-        nsCOMPtr<nsIMemoryReporter> r;
-        e->GetNext(getter_AddRefs(r));
-
-        nsCString process;
-        rv = r->GetProcess(process);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        nsCString path;
-        rv = r->GetPath(path);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        int32_t kind;
-        rv = r->GetKind(&kind);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        int32_t units;
-        rv = r->GetUnits(&units);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        int64_t amount;
-        rv = r->GetAmount(&amount);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        nsCString description;
-        rv = r->GetDescription(description);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        rv = DumpReport(ostream, isFirst, process, path, kind, units, amount,
-                        description);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        isFirst = false;
-    }
-
-    // Process multi-reporters.
-    nsCOMPtr<nsISimpleEnumerator> e2;
-    EnumerateMultiReporters(getter_AddRefs(e2));
-    nsRefPtr<DumpMultiReporterCallback> cb = new DumpMultiReporterCallback();
-    while (NS_SUCCEEDED(e2->HasMoreElements(&more)) && more) {
-      nsCOMPtr<nsIMemoryMultiReporter> r;
-      e2->GetNext(getter_AddRefs(r));
-      r->CollectReports(cb, ostream);
-    }
-
-    DUMP(ostream, "\n  ]\n}");
-
-    rv = ostream->Close();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCOMPtr<nsIConsoleService> cs =
-        do_GetService(NS_CONSOLESERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsString path;
-    tmpFile->GetPath(path);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsString msg =
-        NS_LITERAL_STRING("nsIMemoryReporterManager::dumpReports() dumped reports to ");
-    msg.Append(path);
-    return cs->LogStringMessage(msg.get());
+  nsRefPtr<MinimizeMemoryUsageRunnable> runnable =
+    new MinimizeMemoryUsageRunnable(aCallback);
+  return NS_DispatchToMainThread(runnable);
 }
-
-#undef DUMP
 
 NS_IMPL_ISUPPORTS1(nsMemoryReporter, nsIMemoryReporter)
 
@@ -1209,7 +1019,7 @@ NS_UnregisterMemoryMultiReporter (nsIMemoryMultiReporter *reporter)
 
 namespace mozilla {
 
-#ifdef MOZ_DMD
+#ifdef MOZ_DMDV
 
 class NullMultiReporterCallback : public nsIMemoryMultiReporterCallback
 {
@@ -1221,7 +1031,7 @@ public:
                         const nsACString &aDescription,
                         nsISupports *aData)
     {
-        // Do nothing;  the reporter has already reported to DMD.
+        // Do nothing;  the reporter has already reported to DMDV.
         return NS_OK;
     }
 };
@@ -1231,7 +1041,7 @@ NS_IMPL_ISUPPORTS1(
 )
 
 void
-DMDCheckAndDump()
+DMDVCheckAndDump()
 {
     nsCOMPtr<nsIMemoryReporterManager> mgr =
         do_GetService("@mozilla.org/memory-reporter-manager;1");
@@ -1244,7 +1054,7 @@ DMDCheckAndDump()
         nsCOMPtr<nsIMemoryReporter> r;
         e->GetNext(getter_AddRefs(r));
 
-        // Just getting the amount is enough for the reporter to report to DMD.
+        // Just getting the amount is enough for the reporter to report to DMDV.
         int64_t amount;
         (void)r->GetAmount(&amount);
     }
@@ -1259,9 +1069,9 @@ DMDCheckAndDump()
       r->CollectReports(cb, nullptr);
     }
 
-    VALGRIND_DMD_CHECK_REPORTING;
+    VALGRIND_DMDV_CHECK_REPORTING;
 }
 
-#endif  /* defined(MOZ_DMD) */
+#endif  /* defined(MOZ_DMDV) */
 
 }

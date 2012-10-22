@@ -1,3 +1,5 @@
+# Full list is tracked through meta bug 793882
+
 ####################
 #  Intended leaks  #
 ####################
@@ -53,11 +55,11 @@
    ...
 }
 {
-   Bug 793533
+   Bug 793533 (all 64-bit systems)
    Memcheck:Leak
    fun:malloc
    fun:moz_xmalloc
-   fun:_Z22xpc_CreateGlobalObjectP9JSContextP7JSClassP12nsIPrincipalP11nsISupportsbPP8JSObjectPP13JSCompartment
+   fun:_ZN3xpc18CreateGlobalObjectEP9JSContextP7JSClassP12nsIPrincipalbPP8JSObjectPP13JSCompartment
    ...
 }
 {
@@ -86,55 +88,6 @@
    fun:_ZN13CrashReporter14SetupExtraDataEP7nsIFileRK19nsACString_internal
    ...
 }
-# Suppressing the suppression(s) to get Valgrind stacks with line numbers
-#{
-#   Bug 793601
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:_ZN2js15ArgumentsObject6createEP9JSContextPNS_10StackFrameE
-#   ...
-#}
-#{
-#   Bug 793602
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:moz_xmalloc
-#   fun:_Z22NS_NewComputedDOMStylePN7mozilla3dom7ElementERK18nsAString_internalP12nsIPresShell
-#   fun:_ZN14nsGlobalWindow16GetComputedStyleEP13nsIDOMElementRK18nsAString_internalPP25nsIDOMCSSStyleDeclaration
-#   ...
-#}
-#{
-#   Bug 793603
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:moz_xmalloc
-#   fun:_ZN18nsDeflateConverter15OnDataAvailableEP10nsIRequestP11nsISupportsP14nsIInputStreammj
-#   ...
-#}
-#{
-#   Bug 793605
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:moz_xmalloc
-#   fun:_Z30nsStringInputStreamConstructorP11nsISupportsRK4nsIDPPv
-#   ...
-#}
-#{
-#   Bug 793606
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:moz_xmalloc
-#   fun:_ZL27nsXMLHttpRequestConstructorP11nsISupportsRK4nsIDPPv
-#   ...
-#}
-#{
-#   Bug 793607
-#   Memcheck:Leak
-#   fun:malloc
-#   fun:moz_xmalloc
-#   fun:_ZN11nsZipWriter14AddEntryStreamERK19nsACString_internalliP14nsIInputStreambj
-#   ...
-#}
 {
    Bug 793608
    Memcheck:Leak
@@ -247,5 +200,16 @@
    fun:malloc
    fun:moz_xmalloc
    fun:_ZN22nsComponentManagerImpl17ManifestComponentERNS_25ManifestProcessingContextEiPKPc
+   ...
+}
+{
+   Bug 803386
+   Memcheck:Free
+   fun:_ZdlPv
+   fun:_ZN16SkMallocPixelRefD0Ev
+   fun:_ZNK8SkRefCnt16internal_disposeEv
+   fun:_ZN8SkBitmap10freePixelsEv
+   fun:_ZN8SkBitmapD1Ev
+   fun:_ZN7mozilla3gfx5ScaleEPhiiiS1_iiiNS0_13SurfaceFormatE
    ...
 }

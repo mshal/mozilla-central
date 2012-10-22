@@ -416,6 +416,11 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
         branchPtr(cond, Operand(ScratchReg, 0x0), ptr, label);
     }
 
+    template <typename T>
+    void branchPrivatePtr(Condition cond, T lhs, ImmWord ptr, Label *label) {
+        branchPtr(cond, lhs, ImmWord(ptr.value >> 1), label);
+    }
+
     template <typename T, typename S>
     void branchPtr(Condition cond, T lhs, S ptr, Label *label) {
         cmpPtr(Operand(lhs), ptr);
@@ -806,9 +811,11 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     }
 
     template <typename T>
-    void loadUnboxedValue(const T &src, AnyRegister dest) {
+    void loadUnboxedValue(const T &src, MIRType type, AnyRegister dest) {
         if (dest.isFloat())
             loadInt32OrDouble(Operand(src), dest.fpu());
+        else if (type == MIRType_Int32 || type == MIRType_Boolean)
+            movl(Operand(src), dest.gpr());
         else
             unboxNonDouble(Operand(src), dest.gpr());
     }

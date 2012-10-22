@@ -68,10 +68,15 @@ GetWindowURI(nsIDOMWindow *aWindow)
       do_QueryInterface(aWindow);
     NS_ENSURE_TRUE(scriptObjPrincipal, NULL);
 
-    nsIPrincipal *principal = scriptObjPrincipal->GetPrincipal();
-
-    if (principal) {
-      principal->GetURI(getter_AddRefs(uri));
+    // GetPrincipal() will print a warning if the window does not have an outer
+    // window, so check here for an outer window first.  This code is
+    // functionally correct if we leave out the GetOuterWindow() check, but we
+    // end up printing a lot of warnings during debug mochitests.
+    if (pWindow->GetOuterWindow()) {
+      nsIPrincipal* principal = scriptObjPrincipal->GetPrincipal();
+      if (principal) {
+        principal->GetURI(getter_AddRefs(uri));
+      }
     }
   }
 
@@ -232,7 +237,9 @@ CollectWindowReports(nsGlobalWindow *aWindow,
   // There are many different kinds of frames, but it is very likely
   // that only a few matter.  Implement a cutoff so we don't bloat
   // about:memory with many uninteresting entries.
-  static const size_t FRAME_SUNDRIES_THRESHOLD = 8192;
+  const size_t FRAME_SUNDRIES_THRESHOLD =
+    js::MemoryReportingSundriesThreshold();
+
   size_t frameSundriesSize = 0;
 #define FRAME_ID(classname)                                             \
   {                                                                     \

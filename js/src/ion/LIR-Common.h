@@ -292,6 +292,27 @@ class LNewCallObject : public LInstructionHelper<1, 1, 0>
     }
 };
 
+class LNewStringObject : public LInstructionHelper<1, 1, 1>
+{
+  public:
+    LIR_HEADER(NewStringObject);
+
+    LNewStringObject(const LAllocation &input, const LDefinition &temp) {
+        setOperand(0, input);
+        setTemp(0, temp);
+    }
+
+    const LAllocation *input() {
+        return getOperand(0);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+    MNewStringObject *mir() const {
+        return mir_->toNewStringObject();
+    }
+};
+
 // Takes in an Object and a Value.
 class LInitProp : public LCallInstructionHelper<0, 1 + BOX_PIECES, 0>
 {
@@ -909,13 +930,15 @@ class LCompareD : public LInstructionHelper<1, 2, 0>
     }
 };
 
-class LCompareS : public LInstructionHelper<1, 2, 0>
+class LCompareS : public LInstructionHelper<1, 2, 1>
 {
   public:
     LIR_HEADER(CompareS);
-    LCompareS(const LAllocation &left, const LAllocation &right) {
+    LCompareS(const LAllocation &left, const LAllocation &right,
+              const LDefinition &temp) {
         setOperand(0, left);
         setOperand(1, right);
+        setTemp(0, temp);
     }
 
     const LAllocation *left() {
@@ -923,6 +946,9 @@ class LCompareS : public LInstructionHelper<1, 2, 0>
     }
     const LAllocation *right() {
         return getOperand(1);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
     }
     MCompare *mir() {
         return mir_->toCompare();
@@ -1375,6 +1401,23 @@ class LPowD : public LCallInstructionHelper<1, 2, 1>
     }
 };
 
+// Math.random().
+class LRandom : public LCallInstructionHelper<1, 0, 2>
+{
+  public:
+    LIR_HEADER(Random);
+    LRandom(const LDefinition &temp, const LDefinition &temp2) {
+        setTemp(0, temp);
+        setTemp(1, temp2);
+    }
+    const LDefinition *temp() {
+        return getTemp(0);
+    }
+    const LDefinition *temp2() {
+        return getTemp(1);
+    }
+};
+
 class LMathFunctionD : public LCallInstructionHelper<1, 1, 1>
 {
   public:
@@ -1613,7 +1656,7 @@ class LTruncateDToInt32 : public LInstructionHelper<1, 1, 1>
 
 // Convert a any input type hosted on one definition to a string with a function
 // call.
-class LIntToString : public LCallInstructionHelper<1, 1, 0>
+class LIntToString : public LInstructionHelper<1, 1, 0>
 {
   public:
     LIR_HEADER(IntToString);
@@ -1702,6 +1745,29 @@ class LRegExp : public LCallInstructionHelper<1, 0, 0>
 
     const MRegExp *mir() const {
         return mir_->toRegExp();
+    }
+};
+
+class LRegExpTest : public LCallInstructionHelper<1, 2, 0>
+{
+  public:
+    LIR_HEADER(RegExpTest);
+
+    LRegExpTest(const LAllocation &regexp, const LAllocation &string)
+    {
+        setOperand(0, regexp);
+        setOperand(1, string);
+    }
+
+    const LAllocation *regexp() {
+        return getOperand(0);
+    }
+    const LAllocation *string() {
+        return getOperand(1);
+    }
+
+    const MRegExpTest *mir() const {
+        return mir_->toRegExpTest();
     }
 };
 
@@ -2212,6 +2278,35 @@ class LArrayPushT : public LInstructionHelper<1, 2, 1>
     }
     const LDefinition *temp() {
         return getTemp(0);
+    }
+};
+
+class LArrayConcat : public LCallInstructionHelper<1, 2, 2>
+{
+  public:
+    LIR_HEADER(ArrayConcat);
+
+    LArrayConcat(const LAllocation &lhs, const LAllocation &rhs,
+                 const LDefinition &temp1, const LDefinition &temp2) {
+        setOperand(0, lhs);
+        setOperand(1, rhs);
+        setTemp(0, temp1);
+        setTemp(1, temp2);
+    }
+    const MArrayConcat *mir() const {
+        return mir_->toArrayConcat();
+    }
+    const LAllocation *lhs() {
+        return getOperand(0);
+    }
+    const LAllocation *rhs() {
+        return getOperand(1);
+    }
+    const LDefinition *temp1() {
+        return getTemp(0);
+    }
+    const LDefinition *temp2() {
+        return getTemp(1);
     }
 };
 
@@ -2983,11 +3078,32 @@ class LPhi : public LInstruction
     }
 };
 
+class LIn : public LCallInstructionHelper<1, BOX_PIECES+1, 0>
+{
+  public:
+    LIR_HEADER(In);
+    LIn(const LAllocation &rhs) {
+        setOperand(RHS, rhs);
+    }
+
+    const LAllocation *lhs() {
+        return getOperand(LHS);
+    }
+    const LAllocation *rhs() {
+        return getOperand(RHS);
+    }
+
+    static const size_t LHS = 0;
+    static const size_t RHS = BOX_PIECES;
+};
+
 class LInstanceOfO : public LInstructionHelper<1, 2, 2>
 {
   public:
     LIR_HEADER(InstanceOfO);
-    LInstanceOfO(const LAllocation &lhs, const LAllocation &rhs, const LDefinition &temp, const LDefinition &temp2) {
+    LInstanceOfO(const LAllocation &lhs, const LAllocation &rhs,
+                 const LDefinition &temp, const LDefinition &temp2)
+    {
         setOperand(0, lhs);
         setOperand(1, rhs);
         setTemp(0, temp);

@@ -1069,7 +1069,7 @@ public class GeckoAppShell
 
     static String getMimeTypeFromExtensions(String aFileExt) {
         MimeTypeMap mtm = MimeTypeMap.getSingleton();
-        StringTokenizer st = new StringTokenizer(aFileExt, "., ");
+        StringTokenizer st = new StringTokenizer(aFileExt, ".,; ");
         String type = null;
         String subType = null;
         while (st.hasMoreElements()) {
@@ -1188,7 +1188,16 @@ public class GeckoAppShell
             intent.setDataAndType(Uri.parse(aUriSpec), aMimeType);
         } else {
             Uri uri = Uri.parse(aUriSpec);
-            if ("sms".equals(uri.getScheme())) {
+            final String scheme = uri.getScheme();
+            if ("tel".equals(scheme)) {
+                // Bug 794034 - We don't want to pass MWI or USSD codes to the
+                // dialer, and ensure the Uri class doesn't parse a tel: URI as
+                // containing a fragment ('#')
+                final String number = uri.getSchemeSpecificPart();
+                if (number.contains("#") || number.contains("*") || uri.getFragment() != null) {
+                    return false;
+                }
+            } else if ("sms".equals(scheme)) {
                 // Have a apecial handling for the SMS, as the message body
                 // is not extracted from the URI automatically
                 final String query = uri.getEncodedQuery();
@@ -2251,5 +2260,19 @@ public class GeckoAppShell
     public static void notifyCheckUpdateResult(boolean result) {
         if (GeckoApp.mAppContext != null)
             GeckoApp.mAppContext.notifyCheckUpdateResult(result);
+    }
+    
+    public static boolean unlockProfile() {
+        // Try to kill any zombie Fennec's that might be running
+        GeckoAppShell.killAnyZombies();
+
+        // Then force unlock this profile
+        GeckoProfile profile = GeckoApp.mAppContext.getProfile();
+        File lock = profile.getFile(".parentlock");
+        if (lock.exists()) {
+            lock.delete();
+            return true;
+        }
+        return false;
     }
 }

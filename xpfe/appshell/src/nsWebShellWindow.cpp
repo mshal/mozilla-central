@@ -38,7 +38,6 @@
 #include "nsITimer.h"
 #include "nsXULPopupManager.h"
 
-#include "prmem.h"
 
 #include "nsIDOMXULDocument.h"
 
@@ -128,6 +127,13 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
     if (NS_FAILED(rv)) {
       mOpenerScreenRect.SetEmpty();
     } else {
+      double scale;
+      if (NS_SUCCEEDED(base->GetUnscaledDevicePixelsPerCSSPixel(&scale))) {
+        mOpenerScreenRect.x = NSToIntRound(mOpenerScreenRect.x / scale);
+        mOpenerScreenRect.y = NSToIntRound(mOpenerScreenRect.y / scale);
+        mOpenerScreenRect.width = NSToIntRound(mOpenerScreenRect.width / scale);
+        mOpenerScreenRect.height = NSToIntRound(mOpenerScreenRect.height / scale);
+      }
       initialX = mOpenerScreenRect.x;
       initialY = mOpenerScreenRect.y;
       ConstrainToOpenerScreen(&initialX, &initialY);
@@ -204,17 +210,18 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
   // top-level chrome window case. See bug 789773.
   nsCOMPtr<nsIScriptSecurityManager> ssm =
     do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-  MOZ_ASSERT(NS_SUCCEEDED(rv) && ssm);
-  nsCOMPtr<nsIPrincipal> principal;
-  ssm->GetSubjectPrincipal(getter_AddRefs(principal));
-  if (!principal) {
-    ssm->GetSystemPrincipal(getter_AddRefs(principal));
+  if (ssm) { // Sometimes this happens really early  See bug 793370.
+    nsCOMPtr<nsIPrincipal> principal;
+    ssm->GetSubjectPrincipal(getter_AddRefs(principal));
+    if (!principal) {
+      ssm->GetSystemPrincipal(getter_AddRefs(principal));
+    }
+    rv = mDocShell->CreateAboutBlankContentViewer(principal);
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIDocument> doc = do_GetInterface(mDocShell);
+    NS_ENSURE_TRUE(!!doc, NS_ERROR_FAILURE);
+    doc->SetIsInitialDocument(true);
   }
-  rv = mDocShell->CreateAboutBlankContentViewer(principal);
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsIDocument> doc = do_GetInterface(mDocShell);
-  NS_ENSURE_TRUE(!!doc, NS_ERROR_FAILURE);
-  doc->SetIsInitialDocument(true);
 
   if (nullptr != aUrl)  {
     nsCString tmpStr;
@@ -718,7 +725,7 @@ void nsWebShellWindow::ConstrainToOpenerScreen(int32_t* aX, int32_t* aY)
                              mOpenerScreenRect.width, mOpenerScreenRect.height,
                              getter_AddRefs(screen));
     if (screen) {
-      screen->GetAvailRect(&left, &top, &width, &height);
+      screen->GetAvailRectDisplayPix(&left, &top, &width, &height);
       if (*aX < left || *aX > left + width) {
         *aX = left;
       }

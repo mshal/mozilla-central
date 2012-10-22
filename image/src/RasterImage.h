@@ -32,6 +32,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/WeakPtr.h"
+#include "gfx2DGlue.h"
 #ifdef DEBUG
   #include "imgIContainerDebug.h"
 #endif
@@ -123,10 +125,13 @@ class nsIInputStream;
  * in Init().
  */
 
+class ScaleRequest;
+
 namespace mozilla {
 namespace layers {
 class LayerManager;
 class ImageContainer;
+class Image;
 }
 namespace image {
 
@@ -134,7 +139,7 @@ class Decoder;
 
 class RasterImage : public Image
                   , public nsIProperties
-                  , public nsSupportsWeakReference
+                  , public SupportsWeakPtr<RasterImage>
 #ifdef DEBUG
                   , public imgIContainerDebug
 #endif
@@ -142,31 +147,10 @@ class RasterImage : public Image
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROPERTIES
+  NS_DECL_IMGICONTAINER
 #ifdef DEBUG
   NS_DECL_IMGICONTAINERDEBUG
 #endif
-
-  // BEGIN NS_DECL_IMGICONTAINER (minus GetAnimationMode/SetAnimationMode)
-  // ** Don't edit this chunk except to mirror changes in imgIContainer.idl **
-  NS_IMETHOD GetWidth(int32_t *aWidth);
-  NS_IMETHOD GetHeight(int32_t *aHeight);
-  NS_IMETHOD GetType(uint16_t *aType);
-  NS_IMETHOD_(uint16_t) GetType(void);
-  NS_IMETHOD GetAnimated(bool *aAnimated);
-  NS_IMETHOD GetCurrentFrameIsOpaque(bool *aCurrentFrameIsOpaque);
-  NS_IMETHOD GetFrame(uint32_t aWhichFrame, uint32_t aFlags, gfxASurface **_retval);
-  NS_IMETHOD GetImageContainer(mozilla::layers::ImageContainer **_retval);
-  NS_IMETHOD CopyFrame(uint32_t aWhichFrame, uint32_t aFlags, gfxImageSurface **_retval);
-  NS_IMETHOD ExtractFrame(uint32_t aWhichFrame, const nsIntRect & aRect, uint32_t aFlags, imgIContainer **_retval);
-  NS_IMETHOD Draw(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter, const gfxMatrix & aUserSpaceToImageSpace, const gfxRect & aFill, const nsIntRect & aSubimage, const nsIntSize & aViewportSize, uint32_t aFlags);
-  NS_IMETHOD_(nsIFrame *) GetRootLayoutFrame(void);
-  NS_IMETHOD RequestDecode(void);
-  NS_IMETHOD LockImage(void);
-  NS_IMETHOD UnlockImage(void);
-  NS_IMETHOD RequestDiscard(void);
-  NS_IMETHOD ResetAnimation(void);
-  NS_IMETHOD_(void) RequestRefresh(const mozilla::TimeStamp& aTime);
-  // END NS_DECL_IMGICONTAINER
 
   RasterImage(imgStatusTracker* aStatusTracker = nullptr);
   virtual ~RasterImage();
@@ -306,6 +290,26 @@ public:
   };
 
   const char* GetURIString() { return mURIString.get();}
+
+  // Called from module startup. Sets up RasterImage to be used.
+  static void Initialize();
+
+  enum ScaleStatus
+  {
+    SCALE_INVALID,
+    SCALE_PENDING,
+    SCALE_DONE
+  };
+
+  // Call this with a new ScaleRequest to mark this RasterImage's scale result
+  // as waiting for the results of this request. You call to ScalingDone before
+  // request is destroyed!
+  void ScalingStart(ScaleRequest* request);
+
+  // Call this with a finished ScaleRequest to set this RasterImage's scale
+  // result. Give it a ScaleStatus of SCALE_DONE if everything succeeded, and
+  // SCALE_INVALID otherwise.
+  void ScalingDone(ScaleRequest* request, ScaleStatus status);
 
 private:
   struct Anim
@@ -466,6 +470,13 @@ private:
     bool mPendingInEventLoop;
   };
 
+  void DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
+                                    gfxContext *aContext,
+                                    gfxPattern::GraphicsFilter aFilter,
+                                    const gfxMatrix &aUserSpaceToImageSpace,
+                                    const gfxRect &aFill,
+                                    const nsIntRect &aSubimage);
+
   /**
    * Advances the animation. Typically, this will advance a single frame, but it
    * may advance multiple frames. This may happen if we have infrequently
@@ -502,7 +513,10 @@ private:
   imgFrame* GetCurrentDrawableImgFrame();
   uint32_t GetCurrentImgFrameIndex() const;
   mozilla::TimeStamp GetCurrentImgFrameEndTime() const;
-  
+
+  size_t SizeOfDecodedWithComputedFallbackIfHeap(gfxASurface::MemoryLocation aLocation,
+                                                 nsMallocSizeOfFun aMallocSizeOf) const;
+
   inline void EnsureAnimExists()
   {
     if (!mAnim) {
@@ -573,6 +587,17 @@ private:
                             uint32_t **paletteData, uint32_t *paletteLength);
 
   bool ApplyDecodeFlags(uint32_t aNewFlags);
+
+  already_AddRefed<layers::Image> GetCurrentImage();
+  void UpdateImageContainer();
+
+  void SetInUpdateImageContainer(bool aInUpdate) { mInUpdateImageContainer = aInUpdate; }
+  bool IsInUpdateImageContainer() { return mInUpdateImageContainer; }
+  enum RequestDecodeType {
+      ASYNCHRONOUS,
+      SOMEWHAT_SYNCHRONOUS
+  };
+  NS_IMETHOD RequestDecodeCore(RequestDecodeType aDecodeType);
 
 private: // data
 
@@ -654,6 +679,8 @@ private: // data
   // Whether we're calling Decoder::Finish() from ShutdownDecoder.
   bool                       mFinishing:1;
 
+  bool                       mInUpdateImageContainer:1;
+
   // Decoding
   nsresult WantDecodedFrames();
   nsresult SyncDecode();
@@ -662,6 +689,26 @@ private: // data
   nsresult DecodeSomeData(uint32_t aMaxBytes);
   bool     IsDecodeFinished();
   TimeStamp mDrawStartTime;
+
+  inline bool CanScale(gfxPattern::GraphicsFilter aFilter, gfxSize aScale);
+
+  struct ScaleResult
+  {
+    ScaleResult()
+     : status(SCALE_INVALID)
+    {}
+
+    gfxSize scale;
+    nsAutoPtr<imgFrame> frame;
+    ScaleStatus status;
+  };
+
+  ScaleResult mScaleResult;
+
+  // We hold on to a bare pointer to a ScaleRequest while it's outstanding so
+  // we can mark it as stopped if necessary. The ScaleWorker/DrawWorker duo
+  // will inform us when to let go of this pointer.
+  ScaleRequest* mScaleRequest;
 
   // Decoder shutdown
   enum eShutdownIntent {
@@ -683,6 +730,14 @@ protected:
   bool ShouldAnimate();
 };
 
+inline NS_IMETHODIMP RasterImage::GetAnimationMode(uint16_t *aAnimationMode) {
+  return GetAnimationModeInternal(aAnimationMode);
+}
+
+inline NS_IMETHODIMP RasterImage::SetAnimationMode(uint16_t aAnimationMode) {
+  return SetAnimationModeInternal(aAnimationMode);
+}
+
 // Asynchronous Decode Requestor
 //
 // We use this class when someone calls requestDecode() from within a decode
@@ -692,18 +747,17 @@ protected:
 class imgDecodeRequestor : public nsRunnable
 {
   public:
-    imgDecodeRequestor(imgIContainer *aContainer) {
-      mContainer = do_GetWeakReference(aContainer);
+    imgDecodeRequestor(RasterImage &aContainer) {
+      mContainer = aContainer.asWeakPtr();
     }
     NS_IMETHOD Run() {
-      nsCOMPtr<imgIContainer> con = do_QueryReferent(mContainer);
-      if (con)
-        con->RequestDecode();
+      if (mContainer)
+        mContainer->StartDecoding();
       return NS_OK;
     }
 
   private:
-    nsWeakPtr mContainer;
+    WeakPtr<RasterImage> mContainer;
 };
 
 } // namespace image

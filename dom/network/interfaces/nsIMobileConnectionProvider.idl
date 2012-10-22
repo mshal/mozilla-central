@@ -14,9 +14,19 @@ interface nsIDOMWindow;
  * XPCOM component (in the content process) that provides the mobile
  * network information.
  */
-[scriptable, uuid(63787ba1-5091-450b-8810-d321a8b4f77a)]
+[scriptable, uuid(3db24bfe-abc4-43a3-9183-07e516a33af9)]
 interface nsIMobileConnectionProvider : nsISupports
 {
+  /**
+   * Called when a content process registers receiving unsolicited messages from
+   * RadioInterfaceLayer in the chrome process. Only a content granted
+   * mobileconnection permission is allowed to register. Note that a content
+   * doesn't need to unregister because the chrome process will remove it from
+   * the registration list once the chrome receives a 'child-process-shutdown'
+   * message.
+   */
+  void registerMobileConnectionMsg();
+
   readonly attribute DOMString cardState;
   readonly attribute nsIDOMMozMobileICCInfo iccInfo;
   readonly attribute nsIDOMMozMobileConnectionInfo voiceConnectionInfo;
@@ -31,8 +41,8 @@ interface nsIMobileConnectionProvider : nsISupports
   nsIDOMDOMRequest unlockCardLock(in nsIDOMWindow window, in jsval info);
   nsIDOMDOMRequest setCardLock(in nsIDOMWindow window, in jsval info);
 
-  nsIDOMDOMRequest sendUSSD(in nsIDOMWindow window, in DOMString ussd);
-  nsIDOMDOMRequest cancelUSSD(in nsIDOMWindow window);
+  nsIDOMDOMRequest sendMMI(in nsIDOMWindow window, in DOMString mmi);
+  nsIDOMDOMRequest cancelMMI(in nsIDOMWindow window);
 
   void sendStkResponse(in nsIDOMWindow window,
                        in jsval        command,
@@ -40,4 +50,6 @@ interface nsIMobileConnectionProvider : nsISupports
   void sendStkMenuSelection(in nsIDOMWindow   window,
                             in unsigned short itemIdentifier,
                             in boolean        helpRequested);
+  void sendStkEventDownload(in nsIDOMWindow window,
+                            in jsval        event);
 };

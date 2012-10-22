@@ -9,7 +9,7 @@
 #include "SVGAnimatedTransformList.h"
 #include "nsSVGElement.h"
 #include "nsContentUtils.h"
-#include "dombindings.h"
+#include "mozilla/dom/SVGTransformListBinding.h"
 #include "nsError.h"
 
 // local helper functions
@@ -77,15 +77,8 @@ JSObject*
 DOMSVGTransformList::WrapObject(JSContext *cx, JSObject *scope,
                                 bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::SVGTransformList::create(cx, scope, this,
-                                                         triedToWrap);
-}
-
-nsIDOMSVGTransform*
-DOMSVGTransformList::GetItemAt(uint32_t aIndex)
-{
-  ErrorResult rv;
-  return GetItem(aIndex, rv);
+  return mozilla::dom::SVGTransformListBinding::Wrap(cx, scope, this,
+                                                     triedToWrap);
 }
 
 void

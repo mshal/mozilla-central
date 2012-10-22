@@ -10,7 +10,7 @@
 #include "SVGAnimatedLengthList.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "dombindings.h"
+#include "mozilla/dom/SVGLengthListBinding.h"
 
 // See the comment in this file's header.
 
@@ -76,15 +76,7 @@ NS_INTERFACE_MAP_END
 JSObject*
 DOMSVGLengthList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::SVGLengthList::create(cx, scope, this,
-                                                      triedToWrap);
-}
-
-nsIDOMSVGLength*
-DOMSVGLengthList::GetItemAt(uint32_t aIndex)
-{
-  ErrorResult rv;
-  return GetItem(aIndex, rv);
+  return mozilla::dom::SVGLengthListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 void

@@ -1225,15 +1225,9 @@ nsContentSink::Notify(nsITimer *timer)
 #ifdef MOZ_DEBUG
   {
     PRTime now = PR_Now();
-    int64_t diff, interval;
-    int32_t delay;
 
-    LL_I2L(interval, GetNotificationInterval());
-    LL_SUB(diff, now, mLastNotificationTime);
-
-    LL_SUB(diff, diff, interval);
-    LL_L2I(delay, diff);
-    delay /= PR_USEC_PER_MSEC;
+    int64_t interval = GetNotificationInterval();
+    delay = int32_t(now - mLastNotificationTime - interval) / PR_USEC_PER_MSEC;
 
     mBackoffCount--;
     SINK_TRACE(gContentSinkLogModuleInfo, SINK_TRACE_REFLOW,
@@ -1273,9 +1267,9 @@ nsContentSink::IsTimeToNotify()
   int64_t interval, diff;
 
   LL_I2L(interval, GetNotificationInterval());
-  LL_SUB(diff, now, mLastNotificationTime);
+  diff = now - mLastNotificationTime;
 
-  if (LL_CMP(diff, >, interval)) {
+  if (diff > interval) {
     mBackoffCount--;
     return true;
   }

@@ -12,6 +12,7 @@ import org.mozilla.gecko.gfx.RectUtils;
 import org.mozilla.gecko.gfx.ScreenshotLayer;
 import org.mozilla.gecko.mozglue.DirectBufferAllocator;
 import org.mozilla.gecko.util.FloatUtils;
+import org.mozilla.gecko.PrefsHelper;
 
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -28,11 +29,14 @@ public final class ScreenshotHandler implements Runnable {
     public static final int SCREENSHOT_THUMBNAIL = 0;
     public static final int SCREENSHOT_CHECKERBOARD = 1;
 
+    private static final String SCREENSHOT_DISABLED_PREF = "gfx.java.screenshot.enabled";
+
     private static final String LOGTAG = "GeckoScreenshotHandler";
     private static final int BYTES_FOR_16BPP = 2;
     private static final int MAX_PIXELS_PER_SLICE = 100000;
 
     private static boolean sDisableScreenshot;
+    private static boolean sForceDisabled;
     private static ScreenshotHandler sInstance;
 
     private final int mMaxTextureSize;
@@ -80,18 +84,43 @@ public final class ScreenshotHandler implements Runnable {
         mBuffer = DirectBufferAllocator.allocate(mMaxPixels * BYTES_FOR_16BPP);
         mDirtyRect = new RectF();
         clearDirtyRect();
+        PrefsHelper.getPref(SCREENSHOT_DISABLED_PREF,
+             new PrefsHelper.PrefHandlerBase() {
+                  @Override public void prefValue(String pref, boolean value) {
+                      if (SCREENSHOT_DISABLED_PREF.equals(pref) && !value)
+                          disableScreenshot(true);
+                  }
+             }
+            );
     }
 
     private void cleanup() {
-        discardPendingScreenshots();
-        mBuffer = DirectBufferAllocator.free(mBuffer);
+        synchronized (mPendingScreenshots) {
+            if (mPendingScreenshots.isEmpty()) {
+                // no screenshots are pending, its safe to free the buffer
+                mBuffer = DirectBufferAllocator.free(mBuffer);
+            } else {
+                discardPendingScreenshots();
+                mBuffer = null;
+            }
+        }
     }
 
     // Invoked via reflection from robocop test
     public static synchronized void disableScreenshot() {
+        disableScreenshot(true);
+    }
+
+    // Invoked via reflection from robocop test
+    public static synchronized void disableScreenshot(boolean forced) {
         if (sDisableScreenshot) {
+            if (!sForceDisabled)
+                sForceDisabled = forced;
             return;
         }
+
+        sForceDisabled = forced;
+
         sDisableScreenshot = true;
         if (sInstance != null) {
             sInstance.cleanup();
@@ -100,11 +129,12 @@ public final class ScreenshotHandler implements Runnable {
         Log.i(LOGTAG, "Screenshotting disabled");
     }
 
-    public static synchronized void enableScreenshot() {
-        if (!sDisableScreenshot) {
+    public static synchronized void enableScreenshot(boolean forced) {
+        if (!sDisableScreenshot || (sForceDisabled && !forced)) {
             return;
         }
         sDisableScreenshot = false;
+        sForceDisabled = false;
         Log.i(LOGTAG, "Screenshotting enabled");
     }
 
@@ -294,7 +324,7 @@ public final class ScreenshotHandler implements Runnable {
     }
 
     // Called from native code by JNI
-    public static void notifyScreenShot(final ByteBuffer data, final int tabId,
+    synchronized public static void notifyScreenShot(final ByteBuffer data, final int tabId,
                                         final int left, final int top,
                                         final int right, final int bottom,
                                         final int bufferWidth, final int bufferHeight, final int token) {
@@ -304,6 +334,11 @@ public final class ScreenshotHandler implements Runnable {
                     case SCREENSHOT_CHECKERBOARD:
                     {
                         ScreenshotHandler handler = getInstance();
+                        if (handler == null) {
+                            // if the handler is null, we have a stale reference to the buffer, free it
+                            DirectBufferAllocator.free(data);
+                            break;
+                        }
                         if (Tabs.getInstance().getSelectedTab().getId() == tabId) {
                             PendingScreenshot current;
                             synchronized (handler.mPendingScreenshots) {

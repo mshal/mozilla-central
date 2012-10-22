@@ -48,6 +48,14 @@
 #include <limits.h>
 #include <errno.h>
 
+#ifdef XP_MACOSX
+#include <sys/resource.h>
+#endif
+
+#ifdef XP_WIN
+#include "nsWindowsHelpers.h"
+#endif
+
 #include "updatelogging.h"
 
 // Amount of the progress bar to use in each of the 3 update stages,
@@ -272,6 +280,7 @@ static bool gSucceeded = false;
 static bool sBackgroundUpdate = false;
 static bool sReplaceRequest = false;
 static bool sUsingService = false;
+static bool sIsOSUpdate = false;
 
 #ifdef XP_WIN
 // The current working directory specified in the command line.
@@ -2023,6 +2032,7 @@ WaitForServiceFinishThread(void *param)
 }
 #endif
 
+#ifdef MOZ_VERIFY_MAR_SIGNATURE
 /**
  * This function reads in the ACCEPTED_MAR_CHANNEL_IDS from update-settings.ini
  *
@@ -2045,6 +2055,18 @@ ReadMARChannelIDs(const NS_tchar *path, MARChannelStringTable *results)
 
   return result;
 }
+#endif
+
+static void
+LowerIOPriority()
+{
+#ifdef XP_WIN
+  if (IsVistaOrLater())
+      SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_BEGIN);
+#elif XP_MACOSX
+  setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_THROTTLE);
+#endif
+}
 
 static void
 UpdateThreadFunc(void *param)
@@ -2054,6 +2076,9 @@ UpdateThreadFunc(void *param)
   if (sReplaceRequest) {
     rv = ProcessReplaceRequest();
   } else {
+    if (sBackgroundUpdate) {
+        LowerIOPriority();
+    }
     NS_tchar dataFile[MAXPATHLEN];
     NS_tsnprintf(dataFile, sizeof(dataFile)/sizeof(dataFile[0]),
                  NS_T("%s/update.mar"), gSourcePath);
@@ -2092,7 +2117,7 @@ UpdateThreadFunc(void *param)
     }
 #endif
 
-    if (rv == OK && sBackgroundUpdate) {
+    if (rv == OK && sBackgroundUpdate && !sIsOSUpdate) {
       rv = CopyInstallDirToDestDir();
     }
 
@@ -2128,7 +2153,8 @@ UpdateThreadFunc(void *param)
 
       ensure_remove_recursive(stageDir);
       WriteStatusFile(sUsingService ? "pending-service" : "pending");
-      putenv("MOZ_PROCESS_UPDATES="); // We need to use -process-updates again in the tests
+      char processUpdates[] = "MOZ_PROCESS_UPDATES=";
+      putenv(processUpdates); // We need to use -process-updates again in the tests
       reportRealResults = false; // pretend success
     }
   }
@@ -2257,6 +2283,11 @@ int NS_main(int argc, NS_tchar **argv)
     }
   }
 
+  if (getenv("MOZ_OS_UPDATE")) {
+    sIsOSUpdate = true;
+    putenv(const_cast<char*>("MOZ_OS_UPDATE="));
+  }
+
   if (sReplaceRequest) {
     // If we're attempting to replace the application, try to append to the
     // log generated when staging the background update.
@@ -2296,6 +2327,7 @@ int NS_main(int argc, NS_tchar **argv)
   }
 
 #ifdef XP_WIN
+  int possibleWriteError; // Variable holding one of the errors 46-48
   if (pid > 0) {
     HANDLE parent = OpenProcess(SYNCHRONIZE, false, (DWORD) pid);
     // May return NULL if the parent process has already gone away.
@@ -2306,7 +2338,12 @@ int NS_main(int argc, NS_tchar **argv)
       CloseHandle(parent);
       if (result != WAIT_OBJECT_0)
         return 1;
+      possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_SIGNALED;
+    } else {
+      possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_NOPROCESSFORPID;
     }
+  } else {
+    possibleWriteError = WRITE_ERROR_SHARING_VIOLATION_NOPID;
   }
 #else
   if (pid > 0)
@@ -2832,7 +2869,7 @@ int NS_main(int argc, NS_tchar **argv)
         if (ERROR_ACCESS_DENIED == lastWriteError) {
           WriteStatusFile(WRITE_ERROR_ACCESS_DENIED);
         } else if (ERROR_SHARING_VIOLATION == lastWriteError) {
-          WriteStatusFile(WRITE_ERROR_SHARING_VIOLATION);
+          WriteStatusFile(possibleWriteError);
         } else {
           WriteStatusFile(WRITE_ERROR_CALLBACK_APP);
         }
@@ -3385,6 +3422,10 @@ GetManifestContents(const NS_tchar *manifest)
 
 int AddPreCompleteActions(ActionList *list)
 {
+  if (sIsOSUpdate) {
+    return OK;
+  }
+
   NS_tchar *rb = GetManifestContents(NS_T("precomplete"));
   if (rb == NULL) {
     LOG(("AddPreCompleteActions: error getting contents of precomplete " \

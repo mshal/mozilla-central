@@ -33,6 +33,8 @@
 #include "vm/Stack.h"
 #include "vm/SPSProfiler.h"
 
+#include "ion/PcScriptCache.h"
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4100) /* Silence unreferenced formal parameter warnings */
@@ -117,9 +119,6 @@ struct GSNCache {
 
     void purge();
 };
-
-inline GSNCache *
-GetGSNCache(JSContext *cx);
 
 typedef Vector<ScriptAndCounts, 0, SystemAllocPolicy> ScriptAndCountsVector;
 
@@ -472,8 +471,12 @@ struct JSRuntime : js::RuntimeFriendFields
 
     bool initSelfHosting(JSContext *cx);
     void markSelfHostedGlobal(JSTracer *trc);
+    bool isSelfHostedGlobal(js::HandleObject global) {
+        return global == selfHostedGlobal_;
+    }
     JSFunction *getSelfHostedFunction(JSContext *cx, const char *name);
-    bool cloneSelfHostedValueById(JSContext *cx, jsid id, js::HandleObject holder, js::Value *vp);
+    bool cloneSelfHostedValueById(JSContext *cx, js::HandleId id, js::HandleObject holder,
+                                  js::MutableHandleValue vp);
 
     /* Base address of the native stack for the current thread. */
     uintptr_t           nativeStackBase;
@@ -811,6 +814,12 @@ struct JSRuntime : js::RuntimeFriendFields
      */
     JSCList             debuggerList;
 
+    /*
+     * Head of circular list of all enabled Debuggers that have
+     * onNewGlobalObject handler methods established.
+     */
+    JSCList             onNewGlobalObjectWatchers;
+
     /* Bookkeeping information for debug scope objects. */
     js::DebugScopes     *debugScopes;
 
@@ -864,12 +873,6 @@ struct JSRuntime : js::RuntimeFriendFields
     const char          *thousandsSeparator;
     const char          *decimalSeparator;
     const char          *numGrouping;
-
-    /*
-     * Flag indicating that we are waiving any soft limits on the GC heap
-     * because we want allocations to be infallible (except when we hit OOM).
-     */
-    bool                waiveGCQuota;
 
   private:
     js::MathCache *mathCache_;
@@ -946,6 +949,9 @@ struct JSRuntime : js::RuntimeFriendFields
     // This points to the most recent Ion activation running on the thread.
     js::ion::IonActivation  *ionActivation;
 
+    // Cache for ion::GetPcScript().
+    js::ion::PcScriptCache *ionPcScriptCache;
+
   private:
     // In certain cases, we want to optimize certain opcodes to typed instructions,
     // to avoid carrying an extra register to feed into an unbox. Unfortunately,
@@ -975,7 +981,7 @@ struct JSRuntime : js::RuntimeFriendFields
         ionReturnOverride_ = v;
     }
 
-    JSRuntime();
+    JSRuntime(JSUseHelperThreads useHelperThreads);
     ~JSRuntime();
 
     bool init(uint32_t maxbytes);
@@ -1092,6 +1098,17 @@ struct JSRuntime : js::RuntimeFriendFields
 
     void sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, JS::RuntimeSizes *runtime);
     size_t sizeOfExplicitNonHeap();
+
+  private:
+    JSUseHelperThreads useHelperThreads_;
+  public:
+    bool useHelperThreads() const {
+#ifdef JS_THREADSAFE
+        return useHelperThreads_ == JS_USE_HELPER_THREADS;
+#else
+        return false;
+#endif
+    }
 };
 
 /* Common macros to access thread-local caches in JSRuntime. */
@@ -1354,9 +1371,6 @@ struct JSContext : js::ContextFriendFields
   public:
     /* State for object and array toSource conversion. */
     js::ObjectSet       cycleDetectorSet;
-
-    /* Last message string and log file for debugging. */
-    char                *lastMessage;
 
     /* Per-context optional error reporter. */
     JSErrorReporter     errorReporter;
@@ -1977,12 +1991,6 @@ namespace mjit {
 #endif
 
 } /* namespace js */
-
-/* How much expansion of inlined frames to do when inspecting the stack. */
-enum FrameExpandKind {
-    FRAME_EXPAND_NONE = 0,
-    FRAME_EXPAND_ALL = 1
-};
 
 namespace js {
 

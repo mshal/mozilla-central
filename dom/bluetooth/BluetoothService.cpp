@@ -281,6 +281,7 @@ BluetoothService::Cleanup()
 
   if (mRegisteredForLocalAgent) {
     UnregisterBluetoothSignalHandler(NS_LITERAL_STRING(LOCAL_AGENT_PATH), this);
+    UnregisterBluetoothSignalHandler(NS_LITERAL_STRING(REMOTE_AGENT_PATH), this);
     mRegisteredForLocalAgent = false;
   }
 
@@ -385,11 +386,6 @@ BluetoothService::StartStopBluetooth(bool aStart)
   if (aStart) {
     RegisterBluetoothSignalHandler(NS_LITERAL_STRING(LOCAL_AGENT_PATH), this);
     RegisterBluetoothSignalHandler(NS_LITERAL_STRING(REMOTE_AGENT_PATH), this);
-
-    BluetoothManagerList::ForwardIterator iter(mLiveManagers);
-    while (iter.HasMore()) {
-      RegisterBluetoothSignalHandler(NS_LITERAL_STRING("/"), (BluetoothSignalObserver*)iter.GetNext());
-    }
   }
 
   nsCOMPtr<nsIRunnable> runnable = new ToggleBtTask(aStart);
@@ -416,6 +412,22 @@ BluetoothService::SetEnabled(bool aEnabled)
 
   for (uint32_t index = 0; index < childActors.Length(); index++) {
     unused << childActors[index]->SendEnabled(aEnabled);
+  }
+
+  if (aEnabled) {
+    BluetoothManagerList::ForwardIterator iter(mLiveManagers);
+    BluetoothSignalObserverList* ol;
+    nsString managerPath = NS_LITERAL_STRING("/");
+
+    // Skip when BluetoothManager has been registered in constructor
+    // Re-register here after toggling due to table mBluetoothSignalObserverTable was cleared
+    if (!mBluetoothSignalObserverTable.Get(managerPath, &ol)) {
+      while (iter.HasMore()) {
+        RegisterBluetoothSignalHandler(managerPath, (BluetoothSignalObserver*)iter.GetNext());
+      }
+    }
+  } else {
+    mBluetoothSignalObserverTable.Clear();
   }
 
   BluetoothManagerList::ForwardIterator iter(mLiveManagers);
@@ -702,7 +714,7 @@ SetJsObject(JSContext* aContext,
       JSString* JsData = JS_NewStringCopyN(aContext,
                                            NS_ConvertUTF16toUTF8(data).get(),
                                            data.Length());
-      NS_ENSURE_TRUE(JsData, NS_ERROR_OUT_OF_MEMORY);
+      NS_ENSURE_TRUE(JsData, false);
       v = STRING_TO_JSVAL(JsData);
     } else if (aData[i].value().type() == BluetoothValue::Tuint32_t) {
       int data = aData[i].value().get_uint32_t();
@@ -763,7 +775,7 @@ BluetoothService::Notify(const BluetoothSignal& aData)
     type.AssignLiteral("bluetooth-cancel");
   } else if (aData.name().EqualsLiteral("PairedStatusChanged")) {
     NS_ASSERTION(arr.Length() == 1, "PairedStatusChagned: Wrong length of parameters");
-    type.AssignLiteral("bluetooth-pairingstatuschanged");
+    type.AssignLiteral("bluetooth-pairedstatuschanged");
   } else {
 #ifdef DEBUG
     nsCString warningMsg;

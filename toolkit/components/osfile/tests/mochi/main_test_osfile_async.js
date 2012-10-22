@@ -40,6 +40,17 @@ let always = function always(promise, fun) {
   return p2.promise;
 };
 
+let ensureSuccess = function ensureSuccess(promise, test) {
+  let p2 = Promise.defer();
+  promise.then(function onSuccess(x) {
+    p2.resolve(x);
+  }, function onFailure(err) {
+    test.fail("Uncaught error " + err + "\n" + err.stack);
+    p2.reject(err);
+  });
+
+  return p2.promise;
+};
 
 let maketest = function(prefix, test) {
   let utils = {
@@ -159,8 +170,9 @@ let test = maketest("Main",
   function main(test) {
     SimpleTest.waitForExplicitFinish();
     let tests = [test_constants, test_path, test_open, test_stat,
-                 test_read_write, test_position, test_copy,
-                 test_iter];
+                 test_read_write, test_read_write_all,
+                 test_position, test_copy,
+                 test_iter, test_exists];
     let current = 0;
     let aux = function aux() {
       if (current >= tests.length) {
@@ -337,7 +349,7 @@ let test_stat = maketest("stat",
 let test_read_write = maketest("read_write",
   function read_write(test) {
     let promise;
-    let buffer;
+    let array;
     let fileSource, fileDest;
     let pathSource;
     let pathDest = OS.Path.join(OS.Constants.Path.tmpDir,
@@ -376,9 +388,9 @@ let test_read_write = maketest("read_write",
       function input_stat_worked(stat) {
         test.info("Input stat worked");
         size = stat.size;
-        buffer = new ArrayBuffer(size);
+        array = new Uint8Array(size);
         test.info("Now calling readTo");
-        return fileSource.readTo(buffer);
+        return fileSource.readTo(array);
       }
     );
 
@@ -386,7 +398,7 @@ let test_read_write = maketest("read_write",
       function read_worked(length) {
         test.info("ReadTo worked");
         test.is(length, size, "ReadTo got all bytes");
-        return fileDest.write(buffer);
+        return fileDest.write(array);
       }
     );
 
@@ -412,11 +424,9 @@ let test_read_write = maketest("read_write",
     promise = promise.then(
       function readall_worked(result) {
         test.info("ReadAll worked");
-        test.is(result.bytes, size, "ReadAll read all bytes");
-        let result_view = new Uint8Array(result.buffer);
-        let buffer_view = new Uint8Array(buffer);
-        test.is(Array.prototype.join.call(result_view),
-                Array.prototype.join.call(buffer_view),
+        test.is(result.length, size, "ReadAll read all bytes");
+        test.is(Array.prototype.join.call(result),
+                Array.prototype.join.call(array),
                 "ReadAll result is correct");
       }
     );
@@ -451,6 +461,152 @@ let test_read_write = maketest("read_write",
     return promise;
 });
 
+let test_read_write_all = maketest(
+  "read_write_all",
+  function read_write_all(test) {
+    let pathSource;
+    let pathDest = OS.Path.join(OS.Constants.Path.tmpDir,
+       "osfile async test read writeAtomic.tmp");
+    let tmpPath = pathDest + ".tmp";
+
+    let options, optionsBackup;
+
+// Check that read + writeAtomic performs a correct copy
+
+    let promise = OS.File.getCurrentDirectory();
+    promise = promise.then(
+      function obtained_current_directory(path) {
+        test.ok(path, "Obtained current directory");
+        pathSource = OS.Path.join(path, EXISTING_FILE);
+        return OS.File.read(pathSource);
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+    let contents;
+    promise = promise.then(
+      function read_complete(result) {
+        test.ok(result, "Obtained contents");
+        contents = result;
+        options = {tmpPath: tmpPath};
+        optionsBackup = {tmpPath: tmpPath};
+        return OS.File.writeAtomic(pathDest, contents, options);
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+// Check that options are not altered
+
+    promise = promise.then(
+      function atomicWrite_complete(bytesWritten) {
+        test.is(contents.byteLength, bytesWritten, "Wrote the correct number of bytes");
+        test.is(Object.keys(options).length, Object.keys(optionsBackup).length,
+                "The number of options was not changed");
+        for (let k in options) {
+          test.is(options[k], optionsBackup[k], "Option was not changed");
+        }
+        return reference_compare_files(pathSource, pathDest, test);
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+// Check that temporary file was removed
+
+    promise = promise.then(
+      function compare_complete() {
+        test.info("Compare complete");
+        test.ok(!(new FileUtils.File(tmpPath).exists()), "Temporary file was removed");
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+// Check that writeAtomic fails if noOverwrite is true and the destination file already exists!
+
+    promise = promise.then(
+      function check_with_noOverwrite() {
+        let view = new Uint8Array(contents.buffer, 10, 200);
+        options = {tmpPath: tmpPath, noOverwrite: true};
+        return OS.File.writeAtomic(pathDest, view, options);
+      }
+    );
+
+    promise = promise.then(
+      function onSuccess() {
+        test.fail("With noOverwrite, writeAtomic should have refused to overwrite file");
+      },
+      function onFailure(err) {
+        test.info("With noOverwrite, writeAtomic correctly failed");
+        test.ok(err instanceof OS.File.Error, "writeAtomic correctly failed with a file error");
+        test.ok(err.becauseExists, "writeAtomic file error confirmed that the file already exists");
+        return reference_compare_files(pathSource, pathDest, test);
+      }
+    );
+
+    promise = promise.then(
+      function compare_complete() {
+        test.info("With noOverwrite, writeAtomic correctly did not overwrite destination file");
+        test.ok(!(new FileUtils.File(tmpPath).exists()), "Temporary file was removed");
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+// Now write a subset
+
+    let START = 10;
+    let LENGTH = 100;
+    promise = promise.then(
+      function() {
+        let view = new Uint8Array(contents.buffer, START, LENGTH);
+        return OS.File.writeAtomic(pathDest, view, {tmpPath: tmpPath});
+      }
+    );
+
+    promise = promise.then(
+      function partial_write_complete(bytesWritten) {
+        test.is(bytesWritten, LENGTH, "Partial write wrote the correct number of bytes");
+        return OS.File.read(pathDest);
+      }
+    );
+
+    promise = promise.then(
+      function read_partial_write_complete(array2) {
+        let view1 = new Uint8Array(contents.buffer, START, LENGTH);
+        test.is(view1.length, array2.length, "Re-read partial write with the correct number of bytes");
+        for (let i = 0; i < LENGTH; ++i) {
+          if (view1[i] != array2[i]) {
+            test.is(view1[i], array2[i], "Offset " + i + " is correct");
+          }
+          test.ok(true, "Compared re-read of partial write");
+        }
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
+// Check that writeAtomic fails if there is no tmpPath
+// FIXME: Remove this as part of bug 793660
+
+    promise = promise.then(
+      function check_without_tmpPath() {
+        return OS.File.writeAtomic(pathDest, contents, {});
+      },
+      function onFailure() {
+        test.info("Resetting failure");
+      }
+    );
+
+    promise = promise.then(
+      function onSuccess() {
+        test.fail("Without a tmpPath, writeAtomic should have failed");
+      },
+      function onFailure() {
+        test.ok("Without a tmpPath, writeAtomic has failed as expected");
+      }
+    );
+
+    return promise;
+  }
+);
+
 let test_position = maketest(
   "position",
   function position(test){
@@ -466,12 +622,12 @@ let test_position = maketest(
       }
     );
 
-    let buf;
+    let view;
     promise = promise.then(
       function obtained_stat(stat) {
         test.info("Obtained file length");
-        buf = new ArrayBuffer(stat.size);
-        return file.readTo(buf);
+        view = new Uint8Array(stat.size);
+        return file.readTo(view);
       });
 
     promise = promise.then(
@@ -487,18 +643,18 @@ let test_position = maketest(
     promise = promise.then(
       function obtained_position(aPos) {
         test.info("Obtained position");
-        test.is(aPos, buf.byteLength, "getPosition returned the end of the file");
+        test.is(aPos, view.byteLength, "getPosition returned the end of the file");
         return file.setPosition(-CHUNK_SIZE, OS.File.POS_END);
       }
     );
 
-    let buf2;
+    let view2;
     promise = promise.then(
       function changed_position(aPos) {
         test.info("Changed position");
-        test.is(aPos, buf.byteLength - CHUNK_SIZE, "setPosition returned the correct position");
-        buf2 = new ArrayBuffer(CHUNK_SIZE);
-        return file.readTo(buf2);
+        test.is(aPos, view.byteLength - CHUNK_SIZE, "setPosition returned the correct position");
+        view2 = new Uint8Array(CHUNK_SIZE);
+        return file.readTo(view2);
       }
     );
 
@@ -506,8 +662,8 @@ let test_position = maketest(
       function input_file_reread() {
         test.info("Read the end of the file");
         for (let i = 0; i < CHUNK_SIZE; ++i) {
-          if (buf2[i] != buf[i + buf.byteLength - CHUNK_SIZE]) {
-            test.is(buf2[i], buf[i], "setPosition put us in the right position");
+          if (view2[i] != view[i + view.byteLength - CHUNK_SIZE]) {
+            test.is(view2[i], view[i], "setPosition put us in the right position");
           }
         }
       }
@@ -806,5 +962,26 @@ let test_iter = maketest("iter",
       }
     );
 
+    return promise;
+});
+
+/**
+ * Test OS.File.prototype.{exists}
+ */
+let test_exists = maketest("exists",
+  function exists(test) {
+    let promise;
+
+    promise = OS.File.exists(EXISTING_FILE);
+    promise = promise.then(function exists_worked(aExists) {
+      test.ok(aExists, "file exists");
+      return OS.File.exists(EXISTING_FILE + ".tmp");
+    });
+
+    promise = promise.then(function exists_on_absent_file_worked(aExists) {
+      test.ok(!aExists, "file does not exists");
+    });
+
+    // Do not forget to return the promise.
     return promise;
 });

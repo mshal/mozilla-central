@@ -111,10 +111,11 @@ class Bytecode
      * Dynamically observed state about the execution of this opcode. These are
      * hints about the script for use during compilation.
      */
-    bool arrayWriteHole: 1;  /* SETELEM which has written to an array hole. */
-    bool getStringElement:1; /* GETELEM which has accessed string properties. */
-    bool accessGetter: 1;    /* Property read on a shape with a getter hook. */
-    bool notIdempotent: 1;   /* Don't use an idempotent cache for this property read. */
+    bool arrayWriteHole: 1;     /* SETELEM which has written to an array hole. */
+    bool getStringElement:1;    /* GETELEM which has accessed string properties. */
+    bool nonNativeGetElement:1; /* GETELEM on a non-native, non-array object. */
+    bool accessGetter: 1;       /* Property read on a shape with a getter hook. */
+    bool notIdempotent: 1;      /* Don't use an idempotent cache for this property read. */
 
     /* Stack depth before this opcode. */
     uint32_t stackDepth;
@@ -1065,7 +1066,7 @@ class ScriptAnalysis
     }
 
     /* Whether an arithmetic operation is operating on integers, with an integer result. */
-    bool integerOperation(JSContext *cx, jsbytecode *pc);
+    bool integerOperation(jsbytecode *pc);
 
     bool trackUseChain(const SSAValue &v) {
         JS_ASSERT_IF(v.kind() == SSAValue::VAR, trackSlot(v.varSlot()));

@@ -18,12 +18,12 @@
 #include "AccessCheck.h"
 #include "WrapperFactory.h"
 #include "XrayWrapper.h"
-#include "dombindings.h"
 
 #include "nsContentUtils.h"
 
 #include "mozilla/StandardInteger.h"
 #include "mozilla/Util.h"
+#include "mozilla/Likely.h"
 
 using namespace xpc;
 
@@ -285,8 +285,6 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
                                 nsIPrincipal *principal, bool initStandardClasses,
                                 XPCWrappedNative **wrappedGlobal)
 {
-    bool success;
-    nsresult rv;
     nsISupports *identity = nativeHelper.GetCanonical();
 
     // The object should specify that it's meant to be global.
@@ -316,8 +314,8 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
     // Create the global.
     JSObject *global;
     JSCompartment *compartment;
-    rv = xpc_CreateGlobalObject(ccx, clasp, principal, nullptr, false,
-                                &global, &compartment);
+    nsresult rv = xpc::CreateGlobalObject(ccx, clasp, principal, false, &global,
+                                          &compartment);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Immediately enter the global's compartment, so that everything else we
@@ -347,7 +345,7 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
 
     // Set up the prototype on the global.
     MOZ_ASSERT(proto->GetJSProtoObject());
-    success = JS_SplicePrototype(ccx, global, proto->GetJSProtoObject());
+    bool success = JS_SplicePrototype(ccx, global, proto->GetJSProtoObject());
     if (!success)
         return NS_ERROR_FAILURE;
 
@@ -1581,7 +1579,7 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
 
                 // Expandos from other compartments are attached to the target JS object.
                 // Copy them over, and let the old ones die a natural death.
-                SetExpandoChain(newobj, nullptr);
+                SetWNExpandoChain(newobj, nullptr);
                 if (!XrayUtils::CloneExpandoChain(ccx, newobj, flat))
                     return NS_ERROR_FAILURE;
 
@@ -1708,17 +1706,6 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
     return NS_OK;
 }
 
-XPCWrappedNative*
-XPCWrappedNative::GetParentWrapper()
-{
-    XPCWrappedNative *wrapper = nullptr;
-    JSObject *parent = js::GetObjectParent(mFlatJSObject);
-    if (parent && IS_WN_WRAPPER(parent)) {
-        wrapper = static_cast<XPCWrappedNative*>(js::GetObjectPrivate(parent));
-    }
-    return wrapper;
-}
-
 // Orphans are sad little things - If only we could treat them better. :-(
 //
 // When a wrapper gets reparented to another scope (for example, when calling
@@ -1756,14 +1743,49 @@ XPCWrappedNative::IsOrphan()
 nsresult
 XPCWrappedNative::RescueOrphans(XPCCallContext& ccx)
 {
+    //
     // Even if we're not an orphan at the moment, one of our ancestors might
     // be. If so, we need to recursively rescue up the parent chain.
+    //
+
+    // First, get the parent object. If we're currently an orphan, the parent
+    // object is a cross-compartment wrapper. Follow the parent into its own
+    // compartment and fix it up there. We'll fix up |this| afterwards.
+    //
+    // NB: We pass stopAtOuter=false during the unwrap because Location objects
+    // are parented to outer window proxies.
     nsresult rv;
-    XPCWrappedNative *parentWrapper = GetParentWrapper();
-    if (parentWrapper && parentWrapper->IsOrphan()) {
-        rv = parentWrapper->RescueOrphans(ccx);
+    JSObject *parentObj = js::GetObjectParent(mFlatJSObject);
+    if (!parentObj)
+        return NS_OK; // Global object. We're done.
+    parentObj = js::UnwrapObject(parentObj, /* stopAtOuter = */ false);
+
+    // There's one little nasty twist here. For reasons described in bug 752764,
+    // we nuke SOW-ed objects after transplanting them. This means that nodes
+    // parented to an element (such as XUL elements), can end up with a nuked proxy
+    // in the parent chain, depending on the order of fixup. Because the proxy is
+    // nuked, we can't follow it anywhere. But we _can_ find the new wrapper for
+    // the underlying native parent, which is exactly what PreCreate does.
+    // So do that here.
+    if (MOZ_UNLIKELY(JS_IsDeadWrapper(parentObj))) {
+        rv = mScriptableInfo->GetCallback()->PreCreate(mIdentity, ccx,
+                                                       GetScope()->GetGlobalJSObject(),
+                                                       &parentObj);
         NS_ENSURE_SUCCESS(rv, rv);
     }
+
+    // Morph any slim wrappers, lest they confuse us.
+    MOZ_ASSERT(IS_WRAPPER_CLASS(js::GetObjectClass(parentObj)));
+    if (IS_SLIM_WRAPPER_OBJECT(parentObj)) {
+        bool ok = MorphSlimWrapper(ccx, parentObj);
+        NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
+    }
+
+    // Get the WN corresponding to the parent, and recursively fix it up.
+    XPCWrappedNative *parentWrapper =
+      static_cast<XPCWrappedNative*>(js::GetObjectPrivate(parentObj));
+    rv = parentWrapper->RescueOrphans(ccx);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // Now that we know our parent is in the right place, determine if we've
     // been orphaned. If not, we have nothing to do.
@@ -2335,8 +2357,8 @@ public:
         , mCallee(ccx.GetTearOff()->GetNative())
         , mVTableIndex(ccx.GetMethodIndex())
         , mIdxValueId(ccx.GetRuntime()->GetStringID(XPCJSRuntime::IDX_VALUE))
-        , mJSContextIndex(PR_UINT8_MAX)
-        , mOptArgcIndex(PR_UINT8_MAX)
+        , mJSContextIndex(UINT8_MAX)
+        , mOptArgcIndex(UINT8_MAX)
         , mArgv(ccx.GetArgv())
         , mArgc(ccx.GetArgc())
 

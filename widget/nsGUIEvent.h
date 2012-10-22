@@ -173,6 +173,11 @@ class nsHashKey;
 #define NS_MOZ_USER_IDLE                 (NS_WINDOW_START + 67)
 #define NS_MOZ_USER_ACTIVE               (NS_WINDOW_START + 68)
 
+// The resolution at which a plugin should draw has changed, for
+// example as the result of changing from a HiDPI mode to a non-
+// HiDPI mode.
+#define NS_PLUGIN_RESOLUTION_CHANGED     (NS_WINDOW_START + 69)
+
 #define NS_MOUSE_MESSAGE_START          300
 #define NS_MOUSE_MOVE                   (NS_MOUSE_MESSAGE_START)
 #define NS_MOUSE_BUTTON_UP              (NS_MOUSE_MESSAGE_START + 1)
@@ -468,6 +473,11 @@ class nsHashKey;
 
 //System time is changed
 #define NS_MOZ_TIME_CHANGE_EVENT     5500
+
+// Network packet events.
+#define NS_NETWORK_EVENT_START       5600
+#define NS_NETWORK_UPLOAD_EVENT      (NS_NETWORK_EVENT_START + 1)
+#define NS_NETWORK_DOWNLOAD_EVENT    (NS_NETWORK_EVENT_START + 2)
 
 /**
  * Return status for event processors, nsEventStatus, is defined in
@@ -1374,7 +1384,7 @@ public:
   } mReply;
 
   enum {
-    NOT_FOUND = PR_UINT32_MAX
+    NOT_FOUND = UINT32_MAX
   };
 
   // values of mComputedScrollAction
@@ -1773,7 +1783,8 @@ inline bool NS_IsEventUsingCoordinates(nsEvent* aEvent)
   return !NS_IS_KEY_EVENT(aEvent) && !NS_IS_IME_RELATED_EVENT(aEvent) &&
          !NS_IS_CONTEXT_MENU_KEY(aEvent) && !NS_IS_ACTIVATION_EVENT(aEvent) &&
          !NS_IS_PLUGIN_EVENT(aEvent) &&
-         !NS_IS_CONTENT_COMMAND_EVENT(aEvent);
+         !NS_IS_CONTENT_COMMAND_EVENT(aEvent) &&
+         aEvent->message != NS_PLUGIN_RESOLUTION_CHANGED;
 }
 
 /**

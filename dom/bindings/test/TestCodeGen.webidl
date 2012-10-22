@@ -24,6 +24,7 @@ enum TestEnum {
 };
 
 callback TestCallback = void();
+[TreatNonCallableAsNull] callback TestTreatAsNullCallback = void();
 
 TestInterface implements ImplementedInterface;
 
@@ -33,7 +34,7 @@ interface OnlyForUseInConstructor {
 
 [Constructor,
  Constructor(DOMString str),
- Constructor(unsigned long num, boolean? bool),
+ Constructor(unsigned long num, boolean? boolArg),
  Constructor(TestInterface? iface),
  Constructor(TestNonCastableInterface iface)
  // , Constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3)
@@ -197,7 +198,9 @@ interface TestInterface {
   void passOptionalSequenceOfNullableInts(optional sequence<long?> arg);
   void passOptionalNullableSequenceOfNullableInts(optional sequence<long?>? arg);
   sequence<TestInterface> receiveCastableObjectSequence();
+  sequence<TestCallbackInterface> receiveCallbackObjectSequence();
   sequence<TestInterface?> receiveNullableCastableObjectSequence();
+  sequence<TestCallbackInterface?> receiveNullableCallbackObjectSequence();
   sequence<TestInterface>? receiveCastableObjectNullableSequence();
   sequence<TestInterface?>? receiveNullableCastableObjectNullableSequence();
   sequence<TestInterface> receiveWeakCastableObjectSequence();
@@ -265,6 +268,9 @@ interface TestInterface {
   void passOptionalNullableCallbackWithDefaultValue(optional TestCallback? arg = null);
   TestCallback receiveCallback();
   TestCallback? receiveNullableCallback();
+  void passNullableTreatAsNullCallback(TestTreatAsNullCallback? arg);
+  void passOptionalNullableTreatAsNullCallback(optional TestTreatAsNullCallback? arg);
+  void passOptionalNullableTreatAsNullCallbackWithDefaultValue(optional TestTreatAsNullCallback? arg = null);
 
   // Any types
   void passAny(any arg);
@@ -326,6 +332,8 @@ interface TestInterface {
 
   // Miscellania
   [LenientThis] attribute long attrWithLenientThis;
+
+  // If you add things here, add them to TestExampleGen as well
 };
 
 interface TestNonWrapperCacheInterface {

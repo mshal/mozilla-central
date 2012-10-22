@@ -7,6 +7,7 @@
 
 #include "mozilla/layers/PLayers.h"
 #include "mozilla/layers/ShadowLayers.h"
+#include "mozilla/Telemetry.h"
 
 #include "ImageLayers.h"
 #include "ImageContainer.h"
@@ -144,6 +145,17 @@ AppendToString(nsACString& s, const nsIntRect& r,
 }
 
 nsACString&
+AppendToString(nsACString& s, const Rect& r,
+               const char* pfx="", const char* sfx="")
+{
+  s += pfx;
+  s.AppendPrintf(
+    "(x=%f, y=%f, w=%f, h=%f)",
+    r.x, r.y, r.width, r.height);
+  return s += sfx;
+}
+
+nsACString&
 AppendToString(nsACString& s, const nsIntRegion& r,
                const char* pfx="", const char* sfx="")
 {
@@ -173,7 +185,7 @@ AppendToString(nsACString& s, const FrameMetrics& m,
 {
   s += pfx;
   AppendToString(s, m.mViewport, "{ viewport=");
-  AppendToString(s, m.mViewportScrollOffset, " viewportScroll=");
+  AppendToString(s, m.mScrollOffset, " viewportScroll=");
   AppendToString(s, m.mDisplayPort, " displayport=");
   AppendToString(s, m.mScrollId, " scrollId=", " }");
   return s += sfx;
@@ -487,6 +499,15 @@ Layer::SetAnimations(const AnimationArray& aAnimations)
   Mutated();
 }
 
+void
+Layer::ApplyPendingUpdatesToSubtree()
+{
+  ApplyPendingUpdatesForThisTransaction();
+  for (Layer* child = GetFirstChild(); child; child = child->GetNextSibling()) {
+    child->ApplyPendingUpdatesToSubtree();
+  }
+}
+
 bool
 Layer::CanUseOpaqueSurface()
 {
@@ -652,6 +673,16 @@ Layer::GetLocalTransform()
   }
   transform.ScalePost(mPostXScale, mPostYScale, 1.0f);
   return transform;
+}
+
+void
+Layer::ApplyPendingUpdatesForThisTransaction()
+{
+  if (mPendingTransform && *mPendingTransform != mTransform) {
+    mTransform = *mPendingTransform;
+    Mutated();
+  }
+  mPendingTransform = nullptr;
 }
 
 const float
@@ -846,6 +877,11 @@ LayerManager::PostPresent()
     mFrameTimes.AppendElement((now - mLastFrameTime).ToMilliseconds());
     mLastFrameTime = now;
   }
+  if (!mTabSwitchStart.IsNull()) {
+    Telemetry::Accumulate(Telemetry::FX_TAB_SWITCH_TOTAL_MS,
+                          uint32_t((TimeStamp::Now() - mTabSwitchStart).ToMilliseconds()));
+    mTabSwitchStart = TimeStamp();
+  }
 }
 
 nsTArray<float>
@@ -857,7 +893,11 @@ LayerManager::StopFrameTimeRecording()
   return result;
 }
 
-
+void
+LayerManager::BeginTabSwitch()
+{
+  mTabSwitchStart = TimeStamp::Now();
+}
 
 #ifdef MOZ_LAYERS_HAVE_LOG
 

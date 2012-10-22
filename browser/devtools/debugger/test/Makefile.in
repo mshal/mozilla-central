@@ -12,7 +12,6 @@ include $(DEPTH)/config/autoconf.mk
 
 MOCHITEST_BROWSER_TESTS = \
 	browser_dbg_leaktest.js \
-	browser_dbg_createRemote.js \
 	browser_dbg_createChrome.js \
 	browser_dbg_debugger-tab-switch.js \
 	browser_dbg_debugger-tab-switch-window.js \
@@ -64,6 +63,7 @@ MOCHITEST_BROWSER_TESTS = \
 	browser_dbg_bug723069_editor-breakpoints.js \
 	browser_dbg_bug723071_editor-breakpoints-pane.js \
 	browser_dbg_bug731394_editor-contextmenu.js \
+	browser_dbg_bug786070_hide_nonenums.js \
 	browser_dbg_displayName.js \
 	browser_dbg_iframes.js \
 	browser_dbg_pause-exceptions.js \
@@ -71,8 +71,18 @@ MOCHITEST_BROWSER_TESTS = \
 	browser_dbg_menustatus.js \
 	browser_dbg_bfcache.js \
 	browser_dbg_breakpoint-new-script.js \
+	browser_dbg_bug737803_editor_actual_location.js \
 	head.js \
 	$(NULL)
+
+# Disabled on Windows for frequent intermittent failures
+ifneq ($(OS_ARCH), WINNT)
+MOCHITEST_BROWSER_TESTS += \
+	browser_dbg_createRemote.js \
+	$(NULL)
+else
+$(warning browser_dbg_createRemote.js is disabled on Windows for intermittent failures. Bug 753225)
+endif
 
 MOCHITEST_BROWSER_PAGES = \
 	browser_dbg_tab1.html \

@@ -43,6 +43,8 @@ MOCHITEST_FILES = \
 		test_browserElement_inproc_Iconchange.html \
 		browserElement_GetScreenshot.js \
 		test_browserElement_inproc_GetScreenshot.html \
+		browserElement_BadScreenshot.js \
+		test_browserElement_inproc_BadScreenshot.html \
 		browserElement_SetVisible.js \
 		test_browserElement_inproc_SetVisible.html \
 		browserElement_SetVisibleFrames.js \
@@ -93,6 +95,9 @@ MOCHITEST_FILES = \
 		browserElement_CloseFromOpener.js \
 		test_browserElement_inproc_CloseFromOpener.html \
 		file_browserElement_CloseFromOpener.html \
+		browserElement_CloseApp.js \
+		test_browserElement_inproc_CloseApp.html \
+		file_browserElement_CloseApp.html \
 		browserElement_OpenWindow.js \
 		test_browserElement_inproc_OpenWindow.html \
 		file_browserElement_Open1.html \
@@ -115,13 +120,13 @@ MOCHITEST_FILES = \
 		file_browserElement_SecurityChange.html \
 		browserElement_BackForward.js \
 		test_browserElement_inproc_BackForward.html \
-	        file_bug741717.sjs \
+		file_bug741717.sjs \
 		browserElement_Reload.js \
-	        file_bug709759.sjs \
+		file_bug709759.sjs \
 		browserElement_Stop.js \
-                test_browserElement_inproc_Stop.html \
-                browserElement_ContextmenuEvents.js \
-                test_browserElement_inproc_ContextmenuEvents.html \
+		test_browserElement_inproc_Stop.html \
+		browserElement_ContextmenuEvents.js \
+		test_browserElement_inproc_ContextmenuEvents.html \
 		browserElement_SendEvent.js \
 		test_browserElement_inproc_SendEvent.html \
 		browserElement_ScrollEvent.js \
@@ -133,6 +138,12 @@ MOCHITEST_FILES = \
 		test_browserElement_inproc_RemoveBrowserElement.html \
 		browserElement_DOMRequestError.js \
 		test_browserElement_inproc_DOMRequestError.html \
+		file_browserElement_AppFramePermission.html \
+		browserElement_AppFramePermission.js \
+		test_browserElement_inproc_AppFramePermission.html \
+		file_wyciwyg.html \
+		browserElement_ExposableURI.js \
+		test_browserElement_inproc_ExposableURI.html \
 		$(NULL)
 
 # Disabled due to https://bugzilla.mozilla.org/show_bug.cgi?id=774100
@@ -145,7 +156,7 @@ MOCHITEST_FILES = \
 # so we don't run that test on platforms which don't support OOP tests.
 
 ifneq ($(OS_ARCH),WINNT) #{
-ifndef MOZ_JAVA_COMPOSITOR #{
+ifndef MOZ_ANDROID_OMTC #{
 MOCHITEST_FILES += \
 		browserElement_OpenMixedProcess.js \
 		file_browserElement_OpenMixedProcess.html \
@@ -160,6 +171,7 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_TopBarrier.html \
 		test_browserElement_oop_Iconchange.html \
 		test_browserElement_oop_GetScreenshot.html \
+		test_browserElement_oop_BadScreenshot.html \
 		test_browserElement_oop_SetVisible.html \
 		test_browserElement_oop_SetVisibleFrames.html \
 		test_browserElement_oop_SetVisibleFrames2.html \
@@ -178,6 +190,7 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_PromptConfirm.html \
 		test_browserElement_oop_Close.html \
 		test_browserElement_oop_CloseFromOpener.html \
+		test_browserElement_oop_CloseApp.html \
 		test_browserElement_oop_OpenWindow.html \
 		test_browserElement_oop_OpenWindowInFrame.html \
 		test_browserElement_oop_OpenWindowRejected.html \
@@ -187,12 +200,14 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_BackForward.html \
 		test_browserElement_oop_Reload.html \
 		test_browserElement_oop_Stop.html \
-                test_browserElement_oop_ContextmenuEvents.html \
+		test_browserElement_oop_ContextmenuEvents.html \
 		test_browserElement_oop_SendEvent.html \
 		test_browserElement_oop_ScrollEvent.html \
 		test_browserElement_oop_Auth.html \
 		test_browserElement_oop_RemoveBrowserElement.html \
 		test_browserElement_oop_DOMRequestError.html \
+		test_browserElement_oop_AppFramePermission.html \
+		test_browserElement_oop_ExposableURI.html \
 		$(NULL)
 endif #}
 endif #}

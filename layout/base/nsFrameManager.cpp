@@ -422,7 +422,7 @@ nsFrameManager::ClearAllUndisplayedContentIn(nsIContent* aParentContent)
     uint32_t length;
     list->GetLength(&length);
     for (uint32_t i = 0; i < length; ++i) {
-      nsIContent* child = list->GetNodeAt(i);
+      nsIContent* child = list->Item(i);
       if (child->GetParent() != aParentContent) {
         ClearUndisplayedContentIn(child, child->GetParent());
       }
@@ -452,8 +452,8 @@ nsFrameManager::InsertFrames(nsIFrame*       aParentFrame,
                              nsFrameList&    aFrameList)
 {
   NS_PRECONDITION(!aPrevFrame || (!aPrevFrame->GetNextContinuation()
-                  || (aPrevFrame->GetNextContinuation()->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER))
-                  && !(aPrevFrame->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER),
+                  || (((aPrevFrame->GetNextContinuation()->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER))
+                  && !(aPrevFrame->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER))),
                   "aPrevFrame must be the last continuation in its chain!");
 
   if (aParentFrame->IsAbsoluteContainer() &&
@@ -467,8 +467,7 @@ nsFrameManager::InsertFrames(nsIFrame*       aParentFrame,
 
 nsresult
 nsFrameManager::RemoveFrame(ChildListID     aListID,
-                            nsIFrame*       aOldFrame,
-                            bool            aInvalidate /* = true */)
+                            nsIFrame*       aOldFrame)
 {
   bool wasDestroyingFrames = mIsDestroyingFrames;
   mIsDestroyingFrames = true;
@@ -479,9 +478,7 @@ nsFrameManager::RemoveFrame(ChildListID     aListID,
   // that doesn't change the size of the parent.)
   // This has to sure to invalidate the entire overflow rect; this
   // is important in the presence of absolute positioning
-  if (aInvalidate) {
-    aOldFrame->InvalidateFrameSubtree();
-  }
+  aOldFrame->InvalidateFrameForRemoval();
 
   NS_ASSERTION(!aOldFrame->GetPrevContinuation() ||
                // exception for nsCSSFrameConstructor::RemoveFloatingFirstLetterFrames
@@ -988,6 +985,14 @@ CaptureChange(nsStyleContext* aOldContext, nsStyleContext* aNewContext,
   NS_ASSERTION(!(ourChange & nsChangeHint_AllReflowHints) ||
                (ourChange & nsChangeHint_NeedReflow),
                "Reflow hint bits set without actually asking for a reflow");
+
+  // nsChangeHint_UpdateEffects is inherited, but it can be set due to changes
+  // in inherited properties (fill and stroke).  Avoid propagating it into
+  // text nodes.
+  if ((ourChange & nsChangeHint_UpdateEffects) &&
+      aContent && !aContent->IsElement()) {
+    ourChange = NS_SubtractHint(ourChange, nsChangeHint_UpdateEffects);
+  }
 
   NS_UpdateHint(ourChange, aChangeToAssume);
   if (NS_UpdateHint(aMinChange, ourChange)) {

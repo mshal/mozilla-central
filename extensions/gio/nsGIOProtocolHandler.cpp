@@ -7,6 +7,7 @@
  * This code is based on original Mozilla gnome-vfs extension. It implements
  * input stream provided by GVFS/GIO.
 */
+#include "NSPRFormatTime.h" // must be before anything that includes prtime.h
 #include "mozilla/ModuleUtils.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
@@ -145,7 +146,7 @@ class nsGIOInputStream : public nsIInputStream
       , mChannel(nullptr)
       , mHandle(nullptr)
       , mStream(nullptr)
-      , mBytesRemaining(PR_UINT64_MAX)
+      , mBytesRemaining(UINT64_MAX)
       , mStatus(NS_OK)
       , mDirList(nullptr)
       , mDirListPtr(nullptr)

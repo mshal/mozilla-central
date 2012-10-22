@@ -334,20 +334,16 @@ nsHttpChannel::~nsHttpChannel()
 nsresult
 nsHttpChannel::Init(nsIURI *uri,
                     uint8_t caps,
-                    nsProxyInfo *proxyInfo)
+                    nsProxyInfo *proxyInfo,
+                    uint32_t proxyResolveFlags,
+                    nsIURI *proxyURI)
 {
-    nsresult rv = HttpBaseChannel::Init(uri, caps, proxyInfo);
+    nsresult rv = HttpBaseChannel::Init(uri, caps, proxyInfo,
+                                        proxyResolveFlags, proxyURI);
     if (NS_FAILED(rv))
         return rv;
 
     LOG(("nsHttpChannel::Init [this=%p]\n", this));
-
-    mAuthProvider =
-        do_CreateInstance("@mozilla.org/network/http-channel-auth-provider;1",
-                          &rv);
-    if (NS_FAILED(rv))
-        return rv;
-    rv = mAuthProvider->Init(this);
 
     return rv;
 }
@@ -407,9 +403,6 @@ nsHttpChannel::Connect()
 
     // Consider opening a TCP connection right away
     SpeculativeConnect();
-
-    if (PL_strcmp(mConnectionInfo->ProxyType(), "unknown") == 0)
-        return ResolveProxy();  // Lazily resolve proxy info
 
     // Don't allow resuming when cache must be used
     if (mResuming && (mLoadFlags & LOAD_ONLY_FROM_CACHE)) {
@@ -1156,7 +1149,7 @@ nsHttpChannel::ProcessSTSHeader()
     // All other failures are fatal.
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = stss->ProcessStsHeader(mURI, stsHeader.get());
+    rv = stss->ProcessStsHeader(mURI, stsHeader.get(), NULL, NULL);
     if (NS_FAILED(rv)) {
         LOG(("STS: Failed to parse STS header, continuing load.\n"));
         return NS_OK;
@@ -1527,54 +1520,6 @@ nsHttpChannel::ProxyFailover()
 }
 
 void
-nsHttpChannel::HandleAsyncReplaceWithProxy()
-{
-    NS_PRECONDITION(!mCallOnResume, "How did that happen?");
-
-    if (mSuspendCount) {
-        LOG(("Waiting until resume to do async proxy replacement [this=%p]\n",
-             this));
-        mCallOnResume = &nsHttpChannel::HandleAsyncReplaceWithProxy;
-        return;
-    }
-
-    nsresult status = mStatus;
-    
-    nsCOMPtr<nsIProxyInfo> pi;
-    pi.swap(mTargetProxyInfo);
-    if (!mCanceled) {
-        PushRedirectAsyncFunc(&nsHttpChannel::ContinueHandleAsyncReplaceWithProxy);
-        status = AsyncDoReplaceWithProxy(pi);
-        if (NS_SUCCEEDED(status))
-            return;
-        PopRedirectAsyncFunc(&nsHttpChannel::ContinueHandleAsyncReplaceWithProxy);
-    }
-
-    if (NS_FAILED(status)) {
-        ContinueHandleAsyncReplaceWithProxy(status);
-    }
-}
-
-nsresult
-nsHttpChannel::ContinueHandleAsyncReplaceWithProxy(nsresult status)
-{
-    if (mLoadGroup && NS_SUCCEEDED(status)) {
-        mLoadGroup->RemoveRequest(this, nullptr, mStatus);
-    }
-    else if (NS_FAILED(status)) {
-        AsyncAbort(status);
-    }
-
-    // Return NS_OK here, even it seems to be breaking the async function stack
-    // contract (i.e. passing the result code to a function bellow).
-    // ContinueHandleAsyncReplaceWithProxy will always be at the bottom of the
-    // stack. If we would return the failure code, the async function stack
-    // logic would cancel the channel synchronously, which is undesired after
-    // invoking AsyncAbort above.
-    return NS_OK;
-}
-
-void
 nsHttpChannel::HandleAsyncRedirectChannelToHttps()
 {
     NS_PRECONDITION(!mCallOnResume, "How did that happen?");
@@ -1651,7 +1596,8 @@ nsHttpChannel::AsyncRedirectChannelToHttps()
 nsresult
 nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
 {
-    AutoRedirectVetoNotifier notifier(this);
+    if (NS_SUCCEEDED(rv))
+        rv = OpenRedirectChannel(rv);
 
     if (NS_FAILED(rv)) {
         // Fill the failure status here, the update to https had been vetoed
@@ -1668,8 +1614,15 @@ nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
         // that would call our OnStart/StopRequest after resume from waiting for
         // the redirect callback.
         DoNotifyListener();
-        return rv;
     }
+
+    return rv;
+}
+
+nsresult
+nsHttpChannel::OpenRedirectChannel(nsresult rv)
+{
+    AutoRedirectVetoNotifier notifier(this);
 
     // Make sure to do this _after_ calling OnChannelRedirect
     mRedirectChannel->SetOriginalURI(mOriginalURI);
@@ -1682,8 +1635,6 @@ nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
         // versions.
         rv = httpEventSink->OnRedirect(this, mRedirectChannel);
         if (NS_FAILED(rv)) {
-            mStatus = rv;
-            DoNotifyListener();
             return rv;
         }
     }
@@ -1691,8 +1642,6 @@ nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
     // open new channel
     rv = mRedirectChannel->AsyncOpen(mListener, mListenerContext);
     if (NS_FAILED(rv)) {
-        mStatus = rv;
-        DoNotifyListener();
         return rv;
     }
 
@@ -1700,15 +1649,9 @@ nsHttpChannel::ContinueAsyncRedirectChannelToHttps(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from the old listeners...
-    mListener = nullptr;
-    mListenerContext = nullptr;
+    ReleaseListeners();
 
-    // ...and the old callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
-
-    return rv;
+    return NS_OK;
 }
 
 nsresult
@@ -1718,7 +1661,8 @@ nsHttpChannel::AsyncDoReplaceWithProxy(nsIProxyInfo* pi)
     nsresult rv;
 
     nsCOMPtr<nsIChannel> newChannel;
-    rv = gHttpHandler->NewProxiedChannel(mURI, pi, getter_AddRefs(newChannel));
+    rv = gHttpHandler->NewProxiedChannel(mURI, pi, mProxyResolveFlags,
+                                         mProxyURI, getter_AddRefs(newChannel));
     if (NS_FAILED(rv))
         return rv;
 
@@ -1766,13 +1710,7 @@ nsHttpChannel::ContinueDoReplaceWithProxy(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from the old listeners...
-    mListener = nullptr;
-    mListenerContext = nullptr;
-
-    // ...and the old callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
 
     return rv;
 }
@@ -1789,11 +1727,8 @@ nsHttpChannel::ResolveProxy()
     if (NS_FAILED(rv))
         return rv;
 
-    uint32_t resolveFlags = 0;
-    if (mConnectionInfo->ProxyInfo())
-        mConnectionInfo->ProxyInfo()->GetResolveFlags(&resolveFlags);
-
-    return pps->AsyncResolve(mURI, resolveFlags, this, getter_AddRefs(mProxyRequest));
+    return pps->AsyncResolve(mProxyURI ? mProxyURI : mURI, mProxyResolveFlags,
+                             this, getter_AddRefs(mProxyRequest));
 }
 
 bool
@@ -2329,13 +2264,7 @@ nsHttpChannel::ContinueProcessFallback(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from our listener
-    mListener = 0;
-    mListenerContext = 0;
-
-    // and from our callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
 
     mFallingBack = true;
 
@@ -4175,13 +4104,8 @@ nsHttpChannel::ContinueProcessRedirection(nsresult rv)
     
     notifier.RedirectSucceeded();
 
-    // disconnect from our listener
-    mListener = 0;
-    mListenerContext = 0;
+    ReleaseListeners();
 
-    // and from our callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
     return NS_OK;
 }
 
@@ -4364,10 +4288,111 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     nsresult rv;
 
     rv = NS_CheckPortSafety(mURI);
+    if (NS_FAILED(rv)) {
+        ReleaseListeners();
+        return rv;
+    }
+
+    // Remember the cookie header that was set, if any
+    const char *cookieHeader = mRequestHead.PeekHeader(nsHttp::Cookie);
+    if (cookieHeader) {
+        mUserSetCookieHeader = cookieHeader;
+    }
+
+    AddCookiesToRequest();
+
+    mIsPending = true;
+    mWasOpened = true;
+
+    mListener = listener;
+    mListenerContext = context;
+
+    // add ourselves to the load group.  from this point forward, we'll report
+    // all failures asynchronously.
+    if (mLoadGroup)
+        mLoadGroup->AddRequest(this, nullptr);
+
+    // record asyncopen time unconditionally and clear it if we
+    // don't want it after OnModifyRequest() weighs in. But waiting for
+    // that to complete would mean we don't include proxy resolution in the
+    // timing.
+    mAsyncOpenTime = mozilla::TimeStamp::Now();
+
+    // the only time we would already know the proxy information at this
+    // point would be if we were proxying a non-http protocol like ftp
+    if (!mProxyInfo && NS_SUCCEEDED(ResolveProxy()))
+        return NS_OK;
+
+    rv = BeginConnect();
+    if (NS_FAILED(rv))
+        ReleaseListeners();
+
+    return rv;
+}
+
+nsresult
+nsHttpChannel::BeginConnect()
+{
+    LOG(("nsHttpChannel::BeginConnect [this=%p]\n", this));
+    nsresult rv;
+
+    // notify "http-on-modify-request" observers
+    gHttpHandler->OnModifyRequest(this);
+
+    // If mTimingEnabled flag is not set after OnModifyRequest() then
+    // clear the already recorded AsyncOpen value for consistency.
+    if (!mTimingEnabled)
+        mAsyncOpenTime = mozilla::TimeStamp();
+
+    // Construct connection info object
+    nsAutoCString host;
+    int32_t port = -1;
+    bool usingSSL = false;
+
+    rv = mURI->SchemeIs("https", &usingSSL);
+    if (NS_SUCCEEDED(rv))
+        rv = mURI->GetAsciiHost(host);
+    if (NS_SUCCEEDED(rv))
+        rv = mURI->GetPort(&port);
+    if (NS_SUCCEEDED(rv))
+        rv = mURI->GetAsciiSpec(mSpec);
     if (NS_FAILED(rv))
         return rv;
 
-    if (!(mConnectionInfo && mConnectionInfo->UsingHttpProxy())) {
+    // Reject the URL if it doesn't specify a host
+    if (host.IsEmpty())
+        return NS_ERROR_MALFORMED_URI;
+    LOG(("host=%s port=%d\n", host.get(), port));
+    LOG(("uri=%s\n", mSpec.get()));
+
+    nsCOMPtr<nsProxyInfo> proxyInfo;
+    if (mProxyInfo)
+        proxyInfo = do_QueryInterface(mProxyInfo);
+
+    mConnectionInfo = new nsHttpConnectionInfo(host, port, proxyInfo, usingSSL);
+
+    mAuthProvider =
+        do_CreateInstance("@mozilla.org/network/http-channel-auth-provider;1",
+                          &rv);
+    if (NS_SUCCEEDED(rv))
+        rv = mAuthProvider->Init(this);
+    if (NS_FAILED(rv))
+        return rv;
+
+    // check to see if authorization headers should be included
+    mAuthProvider->AddAuthorizationHeaders();
+
+    // when proxying only use the pipeline bit if ProxyPipelining() allows it.
+    if (!mConnectionInfo->UsingConnect() && mConnectionInfo->UsingHttpProxy()) {
+        mCaps &= ~NS_HTTP_ALLOW_PIPELINING;
+        if (gHttpHandler->ProxyPipelining())
+            mCaps |= NS_HTTP_ALLOW_PIPELINING;
+    }
+
+    // if this somehow fails we can go on without it
+    gHttpHandler->AddConnectionHeader(&mRequestHead.Headers(), mCaps);
+
+    if (!mConnectionInfo->UsingHttpProxy()) {
         // Start a DNS lookup very early in case the real open is queued the DNS can 
         // happen in parallel. Do not do so in the presence of an HTTP proxy as 
         // all lookups other than for the proxy itself are done by the proxy.
@@ -4383,20 +4408,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
         mDNSPrefetch->PrefetchHigh();
     }
     
-    // Remember the cookie header that was set, if any
-    const char *cookieHeader = mRequestHead.PeekHeader(nsHttp::Cookie);
-    if (cookieHeader) {
-        mUserSetCookieHeader = cookieHeader;
-    }
-
-    AddCookiesToRequest();
- 
-    // check to see if authorization headers should be included
-    mAuthProvider->AddAuthorizationHeaders();
-
-    // notify "http-on-modify-request" observers
-    gHttpHandler->OnModifyRequest(this);
-
     // Adjust mCaps according to our request headers:
     //  - If "Connection: close" is set as a request header, then do not bother
     //    trying to establish a keep-alive connection.
@@ -4410,23 +4421,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     // Force-Reload should reset the persistent connection pool for this host
     if (mLoadFlags & LOAD_FRESH_CONNECTION)
         mCaps |= NS_HTTP_CLEAR_KEEPALIVES;
-    
-    mIsPending = true;
-    mWasOpened = true;
-
-    mListener = listener;
-    mListenerContext = context;
-
-    // add ourselves to the load group.  from this point forward, we'll report
-    // all failures asynchronously.
-    if (mLoadGroup)
-        mLoadGroup->AddRequest(this, nullptr);
-
-    // Collect mAsyncOpenTime after we have called all obsrevers like
-    // "http-on-modify-request" and load group observers that may set
-    // mTimingEnabled flag.
-    if (mTimingEnabled)
-        mAsyncOpenTime = mozilla::TimeStamp::Now();
 
     // We may have been cancelled already, either by on-modify-request
     // listeners or by load group observers; in that case, we should
@@ -4441,14 +4435,10 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
         AsyncAbort(rv);
     } else if (mLoadFlags & LOAD_CLASSIFY_URI) {
         nsRefPtr<nsChannelClassifier> classifier = new nsChannelClassifier();
-        if (!classifier) {
-            Cancel(NS_ERROR_OUT_OF_MEMORY);
-            return NS_OK;
-        }
-
         rv = classifier->Start(this);
         if (NS_FAILED(rv)) {
             Cancel(rv);
+            return rv;
         }
     }
 
@@ -4479,7 +4469,7 @@ nsHttpChannel::SetupFallbackChannel(const char *aFallbackKey)
 NS_IMETHODIMP
 nsHttpChannel::SetPriority(int32_t value)
 {
-    int16_t newValue = clamped(value, PR_INT16_MIN, PR_INT16_MAX);
+    int16_t newValue = clamped<int32_t>(value, INT16_MIN, INT16_MAX);
     if (mPriority == newValue)
         return NS_OK;
     mPriority = newValue;
@@ -4496,18 +4486,33 @@ NS_IMETHODIMP
 nsHttpChannel::OnProxyAvailable(nsICancelable *request, nsIURI *uri,
                                 nsIProxyInfo *pi, nsresult status)
 {
+    LOG(("nsHttpChannel::OnProxyAvailable [this=%p pi=%p status=%x mStatus=%x]\n",
+         this, pi, status, mStatus));
     mProxyRequest = nullptr;
+
+    nsresult rv;
 
     // If status is a failure code, then it means that we failed to resolve
     // proxy info.  That is a non-fatal error assuming it wasn't because the
     // request was canceled.  We just failover to DIRECT when proxy resolution
     // fails (failure can mean that the PAC URL could not be loaded).
     
-    // Need to replace this channel with a new one.  It would be complex to try
-    // to change the value of mConnectionInfo since so much of our state may
-    // depend on its state.
-    mTargetProxyInfo = pi;
-    HandleAsyncReplaceWithProxy();
+    if (NS_SUCCEEDED(status))
+        mProxyInfo = pi;
+
+    if (!gHttpHandler->Active()) {
+        LOG(("nsHttpChannel::OnProxyAvailable [this=%p] "
+             "Handler no longer active.\n", this));
+        rv = NS_ERROR_NOT_AVAILABLE;
+    }
+    else {
+        rv = BeginConnect();
+    }
+
+    if (NS_FAILED(rv)) {
+        Cancel(rv);
+        DoNotifyListener();
+    }
     return NS_OK;
 }
 
@@ -4519,11 +4524,10 @@ NS_IMETHODIMP
 nsHttpChannel::GetProxyInfo(nsIProxyInfo **result)
 {
     if (!mConnectionInfo)
-        *result = nullptr;
-    else {
+        *result = mProxyInfo;
+    else
         *result = mConnectionInfo->ProxyInfo();
-        NS_IF_ADDREF(*result);
-    }
+    NS_IF_ADDREF(*result);
     return NS_OK;
 }
 
@@ -4982,8 +4986,6 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     if (mListener) {
         LOG(("  calling OnStopRequest\n"));
         mListener->OnStopRequest(this, mListenerContext, status);
-        mListener = 0;
-        mListenerContext = 0;
     }
 
     if (mCacheEntry) {
@@ -5016,8 +5018,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     // We don't need this info anymore
     CleanRedirectCacheChainIfNecessary();
 
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
     
     return NS_OK;
 }

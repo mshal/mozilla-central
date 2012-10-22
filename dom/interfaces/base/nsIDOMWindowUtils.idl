@@ -40,7 +40,7 @@ interface nsIDOMTouch;
 interface nsIDOMClientRect;
 interface nsIURI;
 
-[scriptable, uuid(90d8e97b-2c61-4c05-9f1c-e568d22f5bdc)]
+[scriptable, uuid(d0b58b1b-58fa-49a0-8e4d-a3693bc65ebd)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -698,6 +698,14 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute float screenPixelsPerCSSPixel;
 
   /**
+   * Get the current zoom factor.
+   * This is _approximately_ the same as nsIMarkupDocumentViewer.fullZoom,
+   * but takes into account Gecko's quantization of the zoom factor, which is
+   * implemented by adjusting the (integer) number of appUnits per devPixel.
+   */
+  readonly attribute float fullZoom;
+
+  /**
    * Dispatches aEvent via the nsIPresShell object of the window's document.
    * The event is dispatched to aTarget, which should be an object
    * which implements nsIContent interface (#element, #text, etc).
@@ -1043,6 +1051,12 @@ interface nsIDOMWindowUtils : nsISupports {
   void stopFrameTimeRecording([optional] out unsigned long frameCount,
                               [retval, array, size_is(frameCount)] out float frameTime);
   /**
+   * Signals that we're begining to tab switch. This is used by painting code to
+   * determine total tab switch time.
+   */
+  void beginTabSwitch();
+
+  /**
    * The DPI of the display
    */
   readonly attribute float displayDPI;
@@ -1262,4 +1276,17 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void removeSheet(in nsIURI sheetURI,
                                 in unsigned long type);
+
+  /**
+   * Returns true if a user input is being handled.
+   *
+   * This calls nsEventStateManager::IsHandlingUserInput().
+   */
+  readonly attribute boolean isHandlingUserInput;
+
+  /**
+   * After calling the method, the window for which this DOMWindowUtils
+   * was created can be closed using scripts.
+   */
+   void allowScriptsToClose();
 };

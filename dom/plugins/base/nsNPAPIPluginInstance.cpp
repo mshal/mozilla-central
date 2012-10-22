@@ -20,6 +20,7 @@
 #include "nsPluginSafety.h"
 #include "nsPluginLogging.h"
 #include "nsContentUtils.h"
+#include "nsPluginInstanceOwner.h"
 
 #include "nsIDocument.h"
 #include "nsIScriptGlobalObject.h"
@@ -32,6 +33,7 @@
 #include "nsIContent.h"
 
 #include "mozilla/Preferences.h"
+#include "nsVersionComparator.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "ANPBase.h"
@@ -175,6 +177,7 @@ nsNPAPIPluginInstance::nsNPAPIPluginInstance()
 #ifdef MOZ_WIDGET_ANDROID
   , mOnScreen(true)
 #endif
+  , mHaveJavaC2PJSObjectQuirk(false)
 {
   mNPP.pdata = NULL;
   mNPP.ndata = this;
@@ -221,7 +224,7 @@ nsNPAPIPluginInstance::StopTime()
   return mStopTime;
 }
 
-nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsIPluginInstanceOwner* aOwner, const char* aMIMEType)
+nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const char* aMIMEType)
 {
   PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsNPAPIPluginInstance::Initialize this=%p\n",this));
 
@@ -320,13 +323,13 @@ nsresult nsNPAPIPluginInstance::Stop()
 already_AddRefed<nsPIDOMWindow>
 nsNPAPIPluginInstance::GetDOMWindow()
 {
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  GetOwner(getter_AddRefs(owner));
-  if (!owner)
+  if (!mOwner)
     return nullptr;
 
+  nsRefPtr<nsPluginInstanceOwner> deathGrip(mOwner);
+
   nsCOMPtr<nsIDocument> doc;
-  owner->GetDocument(getter_AddRefs(doc));
+  mOwner->GetDocument(getter_AddRefs(doc));
   if (!doc)
     return nullptr;
 
@@ -339,39 +342,33 @@ nsNPAPIPluginInstance::GetDOMWindow()
 nsresult
 nsNPAPIPluginInstance::GetTagType(nsPluginTagType *result)
 {
-  if (mOwner) {
-    nsCOMPtr<nsIPluginTagInfo> tinfo(do_QueryInterface(mOwner));
-    if (tinfo)
-      return tinfo->GetTagType(result);
+  if (!mOwner) {
+    return NS_ERROR_FAILURE;
   }
 
-  return NS_ERROR_FAILURE;
+  return mOwner->GetTagType(result);
 }
 
 nsresult
 nsNPAPIPluginInstance::GetAttributes(uint16_t& n, const char*const*& names,
                                      const char*const*& values)
 {
-  if (mOwner) {
-    nsCOMPtr<nsIPluginTagInfo> tinfo(do_QueryInterface(mOwner));
-    if (tinfo)
-      return tinfo->GetAttributes(n, names, values);
+  if (!mOwner) {
+    return NS_ERROR_FAILURE;
   }
 
-  return NS_ERROR_FAILURE;
+  return mOwner->GetAttributes(n, names, values);
 }
 
 nsresult
 nsNPAPIPluginInstance::GetParameters(uint16_t& n, const char*const*& names,
                                      const char*const*& values)
 {
-  if (mOwner) {
-    nsCOMPtr<nsIPluginTagInfo> tinfo(do_QueryInterface(mOwner));
-    if (tinfo)
-      return tinfo->GetParameters(n, names, values);
+  if (!mOwner) {
+    return NS_ERROR_FAILURE;
   }
 
-  return NS_ERROR_FAILURE;
+  return mOwner->GetParameters(n, names, values);
 }
 
 nsresult
@@ -443,6 +440,8 @@ nsNPAPIPluginInstance::Start()
 
   GetMode(&mode);
   GetMIMEType(&mimetype);
+
+  CheckJavaC2PJSObjectQuirk(count, names, values);
 
   // Some older versions of Flash have a bug in them
   // that causes the stack to become currupt if we
@@ -791,14 +790,12 @@ void nsNPAPIPluginInstance::RedrawPlugin()
 void nsNPAPIPluginInstance::SetEventModel(NPEventModel aModel)
 {
   // the event model needs to be set for the object frame immediately
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  GetOwner(getter_AddRefs(owner));
-  if (!owner) {
+  if (!mOwner) {
     NS_WARNING("Trying to set event model without a plugin instance owner!");
     return;
   }
 
-  owner->SetEventModel(aModel);
+  mOwner->SetEventModel(aModel);
 }
 #endif
 
@@ -1084,9 +1081,33 @@ nsresult nsNPAPIPluginInstance::IsRemoteDrawingCoreAnimation(bool* aDrawing)
 #endif
 }
 
+nsresult nsNPAPIPluginInstance::ContentsScaleFactorChanged(double aContentsScaleFactor)
+{
+#ifdef XP_MACOSX
+  if (!mPlugin)
+      return NS_ERROR_FAILURE;
+
+  PluginLibrary* library = mPlugin->GetLibrary();
+  if (!library)
+      return NS_ERROR_FAILURE;
+
+  // We only need to call this if the plugin is running OOP.
+  if (!library->IsOOP())
+      return NS_OK;
+  
+  return library->ContentsScaleFactorChanged(&mNPP, aContentsScaleFactor);
+#else
+  return NS_ERROR_FAILURE;
+#endif
+}
+
 nsresult
 nsNPAPIPluginInstance::GetJSObject(JSContext *cx, JSObject** outObject)
 {
+  if (mHaveJavaC2PJSObjectQuirk) {
+    return NS_ERROR_FAILURE;
+  }
+
   NPObject *npobj = nullptr;
   nsresult rv = GetValueFromPlugin(NPPVpluginScriptableNPObject, &npobj);
   if (NS_FAILED(rv) || !npobj)
@@ -1519,11 +1540,7 @@ nsNPAPIPluginInstance::GetDOMElement(nsIDOMElement* *result)
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIPluginTagInfo> tinfo(do_QueryInterface(mOwner));
-  if (tinfo)
-    return tinfo->GetDOMElement(result);
-
-  return NS_ERROR_FAILURE;
+  return mOwner->GetDOMElement(result);
 }
 
 nsresult
@@ -1532,12 +1549,10 @@ nsNPAPIPluginInstance::InvalidateRect(NPRect *invalidRect)
   if (RUNNING != mRunning)
     return NS_OK;
 
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  GetOwner(getter_AddRefs(owner));
-  if (!owner)
+  if (!mOwner)
     return NS_ERROR_FAILURE;
 
-  return owner->InvalidateRect(invalidRect);
+  return mOwner->InvalidateRect(invalidRect);
 }
 
 nsresult
@@ -1546,12 +1561,10 @@ nsNPAPIPluginInstance::InvalidateRegion(NPRegion invalidRegion)
   if (RUNNING != mRunning)
     return NS_OK;
 
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  GetOwner(getter_AddRefs(owner));
-  if (!owner)
+  if (!mOwner)
     return NS_ERROR_FAILURE;
 
-  return owner->InvalidateRegion(invalidRegion);
+  return mOwner->InvalidateRegion(invalidRegion);
 }
 
 nsresult
@@ -1568,15 +1581,15 @@ nsNPAPIPluginInstance::GetMIMEType(const char* *result)
 nsresult
 nsNPAPIPluginInstance::GetJSContext(JSContext* *outContext)
 {
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  GetOwner(getter_AddRefs(owner));
-  if (!owner)
+  if (!mOwner)
     return NS_ERROR_FAILURE;
+
+  nsRefPtr<nsPluginInstanceOwner> deathGrip(mOwner);
 
   *outContext = NULL;
   nsCOMPtr<nsIDocument> document;
 
-  nsresult rv = owner->GetDocument(getter_AddRefs(document));
+  nsresult rv = mOwner->GetDocument(getter_AddRefs(document));
 
   if (NS_SUCCEEDED(rv) && document) {
     nsIScriptGlobalObject *global = document->GetScriptGlobalObject();
@@ -1593,20 +1606,16 @@ nsNPAPIPluginInstance::GetJSContext(JSContext* *outContext)
   return rv;
 }
 
-nsresult
-nsNPAPIPluginInstance::GetOwner(nsIPluginInstanceOwner **aOwner)
+nsPluginInstanceOwner*
+nsNPAPIPluginInstance::GetOwner()
 {
-  NS_ENSURE_ARG_POINTER(aOwner);
-  *aOwner = mOwner;
-  NS_IF_ADDREF(mOwner);
-  return (mOwner ? NS_OK : NS_ERROR_FAILURE);
+  return mOwner;
 }
 
-nsresult
-nsNPAPIPluginInstance::SetOwner(nsIPluginInstanceOwner *aOwner)
+void
+nsNPAPIPluginInstance::SetOwner(nsPluginInstanceOwner *aOwner)
 {
   mOwner = aOwner;
-  return NS_OK;
 }
 
 nsresult
@@ -1616,14 +1625,6 @@ nsNPAPIPluginInstance::ShowStatus(const char* message)
     return mOwner->ShowStatus(message);
 
   return NS_ERROR_FAILURE;
-}
-
-nsresult
-nsNPAPIPluginInstance::InvalidateOwner()
-{
-  mOwner = nullptr;
-
-  return NS_OK;
 }
 
 nsresult
@@ -1715,4 +1716,106 @@ nsNPAPIPluginInstance::CarbonNPAPIFailure()
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to dispatch CarbonEventModelFailureEvent.");
   }
+}
+
+static bool
+GetJavaVersionFromMimetype(nsPluginTag* pluginTag, nsCString& version)
+{
+  for (uint32_t i = 0; i < pluginTag->mMimeTypes.Length(); ++i) {
+    nsCString type = pluginTag->mMimeTypes[i];
+    nsAutoCString jpi("application/x-java-applet;jpi-version=");
+
+    int32_t idx = type.Find(jpi, false, 0, -1);
+    if (idx != 0) {
+      continue;
+    }
+
+    type.Cut(0, jpi.Length());
+    if (type.IsEmpty()) {
+      continue;
+    }
+
+    type.ReplaceChar('_', '.');
+    version = type;
+    return true;
+  }
+
+  return false;
+}
+
+void
+nsNPAPIPluginInstance::CheckJavaC2PJSObjectQuirk(uint16_t paramCount,
+                                                 const char* const* paramNames,
+                                                 const char* const* paramValues)
+{
+  if (!mMIMEType || !mPlugin) {
+    return;
+  }
+
+  nsPluginTagType tagtype;
+  nsresult rv = GetTagType(&tagtype);
+  if (NS_FAILED(rv) ||
+      (tagtype != nsPluginTagType_Applet)) {
+    return;
+  }
+
+  nsRefPtr<nsPluginHost> pluginHost =
+    already_AddRefed<nsPluginHost>(nsPluginHost::GetInst());
+  if (!pluginHost ||
+      !pluginHost->IsPluginClickToPlayForType(mMIMEType)) {
+    return;
+  }
+
+  nsPluginTag* pluginTag = pluginHost->TagForPlugin(mPlugin);
+  if (!pluginTag ||
+      !pluginTag->mIsJavaPlugin) {
+    return;
+  }
+
+  // check the params for "code" being present and non-empty
+  bool haveCodeParam = false;
+  bool isCodeParamEmpty = true;
+
+  for (uint16_t i = 0; i < paramCount; ++i) {
+    if (PL_strcasecmp(paramNames[i], "code") == 0) {
+      haveCodeParam = true;
+      if (PL_strlen(paramValues[i]) > 0) {
+        isCodeParamEmpty = false;
+      }
+      break;
+    }
+  }
+
+  // Due to the Java version being specified inconsistently across platforms
+  // check the version via the mimetype for choosing specific Java versions
+  nsCString javaVersion;
+  if (!GetJavaVersionFromMimetype(pluginTag, javaVersion)) {
+    return;
+  }
+
+  mozilla::Version version = javaVersion.get();
+
+  if (version >= "1.7.0.4") {
+    return;
+  }
+
+  if (!haveCodeParam && version >= "1.6.0.34" && version < "1.7") {
+    return;
+  }
+
+  if (haveCodeParam && !isCodeParamEmpty) {
+    return;
+  }
+
+  mHaveJavaC2PJSObjectQuirk = true;
+}
+
+double
+nsNPAPIPluginInstance::GetContentsScaleFactor()
+{
+  double scaleFactor = 1.0;
+  if (mOwner) {
+    mOwner->GetContentsScaleFactor(&scaleFactor);
+  }
+  return scaleFactor;
 }

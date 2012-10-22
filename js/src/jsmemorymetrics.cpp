@@ -21,6 +21,15 @@
 
 #include "ion/IonCode.h"
 
+namespace js {
+
+size_t MemoryReportingSundriesThreshold()
+{
+    return 8 * 1024;
+}
+
+} // namespace js
+
 #ifdef JS_THREADSAFE
 
 namespace JS {
@@ -81,11 +90,14 @@ StatsCompartmentCallback(JSRuntime *rt, void *data, JSCompartment *compartment)
     rtStats->initExtraCompartmentStats(compartment, &cStats);
     rtStats->currCompartmentStats = &cStats;
 
-    // Get the compartment-level numbers.
-    compartment->sizeOfTypeInferenceData(&cStats.typeInferenceSizes, rtStats->mallocSizeOf);
-    cStats.shapesCompartmentTables = compartment->sizeOfShapeTable(rtStats->mallocSizeOf);
-    cStats.crossCompartmentWrappers =
-        compartment->crossCompartmentWrappers.sizeOfExcludingThis(rtStats->mallocSizeOf);
+    // Measure the compartment object itself, and things hanging off it.
+    compartment->sizeOfIncludingThis(rtStats->mallocSizeOf,
+                                     &cStats.compartmentObject,
+                                     &cStats.typeInferenceSizes,
+                                     &cStats.shapesCompartmentTables,
+                                     &cStats.crossCompartmentWrappers,
+                                     &cStats.regexpCompartment,
+                                     &cStats.debuggeesSet);
 }
 
 static void
@@ -153,7 +165,19 @@ StatsCellCallback(JSRuntime *rt, void *data, void *thing, JSGCTraceKind traceKin
     {
         JSString *str = static_cast<JSString *>(thing);
         cStats->gcHeapStrings += thingSize;
-        cStats->stringChars += str->sizeOfExcludingThis(rtStats->mallocSizeOf);
+
+        size_t strSize = str->sizeOfExcludingThis(rtStats->mallocSizeOf);
+
+        // If we can't grow hugeStrings, let's just call this string non-huge.
+        // We're probably about to OOM anyway.
+        if (strSize >= HugeStringInfo::MinSize() && cStats->hugeStrings.growBy(1)) {
+            HugeStringInfo &info = cStats->hugeStrings.back();
+            info.length = str->length();
+            info.size = str->sizeOfExcludingThis(rtStats->mallocSizeOf);
+            PutEscapedString(info.buffer, sizeof(info.buffer), &str->asLinear(), 0);
+        } else {
+          cStats->nonHugeStringChars += strSize;
+        }
         break;
     }
     case JSTRACE_SHAPE:

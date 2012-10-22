@@ -8,40 +8,22 @@ import logging
 import multiprocessing
 import os
 import pymake.parser
-import shlex
 import subprocess
+import sys
 import which
 
-from mozprocess.processhandler import ProcessHandlerMixin
 from pymake.data import Makefile
-from tempfile import TemporaryFile
 
-from mozbuild.config import ConfigProvider
-from mozbuild.config import PositiveIntegerType
+from mach.config import (
+    ConfigProvider,
+    PositiveIntegerType,
+)
 
-
-# Perform detection of operating system environment. This is used by command
-# execution. We only do this once to save redundancy. Yes, this can fail module
-# loading. That is arguably OK.
-if 'SHELL' in os.environ:
-    _current_shell = os.environ['SHELL']
-elif 'MOZILLABUILD' in os.environ:
-    _current_shell = os.environ['MOZILLABUILD'] + '/msys/bin/sh.exe'
-elif 'COMSPEC' in os.environ:
-    _current_shell = os.environ['COMSPEC']
-else:
-    raise Exception('Could not detect environment shell!')
-
-_in_msys = False
-
-if os.environ.get('MSYSTEM', None) == 'MINGW32':
-    _in_msys = True
-
-    if not _current_shell.lower().endswith('.exe'):
-        _current_shell += '.exe'
+from mach.mixin.logging import LoggingMixin
+from mach.mixin.process import ProcessExecutionMixin
 
 
-class MozbuildObject(object):
+class MozbuildObject(ProcessExecutionMixin):
     """Base class providing basic functionality useful to many modules.
 
     Modules in this package typically require common functionality such as
@@ -59,7 +41,8 @@ class MozbuildObject(object):
         self.topsrcdir = topsrcdir
         self.settings = settings
         self.config = BuildConfig(settings)
-        self.logger = logging.getLogger(__name__)
+
+        self.populate_logger()
         self.log_manager = log_manager
 
         self._config_guess_output = None
@@ -88,9 +71,6 @@ class MozbuildObject(object):
     def statedir(self):
         return os.path.join(self.topobjdir, '.mozbuild')
 
-    def log(self, level, action, params, format_str):
-        self.logger.log(level, format_str,
-            extra={'action': action, 'params': params})
 
     def _load_mozconfig(self, path=None):
         # The mozconfig loader outputs a make file. We parse and load this make
@@ -190,8 +170,9 @@ class MozbuildObject(object):
         return os.path.join(self.topobjdir, path)
 
     def _run_make(self, directory=None, filename=None, target=None, log=True,
-            srcdir=False, allow_parallel=True, line_handler=None, env=None,
-            ignore_errors=False, silent=True, print_directory=True):
+            srcdir=False, allow_parallel=True, line_handler=None,
+            append_env=None, explicit_env=None, ignore_errors=False,
+            silent=True, print_directory=True):
         """Invoke make.
 
         directory -- Relative directory to look for Makefile in.
@@ -214,8 +195,8 @@ class MozbuildObject(object):
         if filename:
             args.extend(['-f', filename])
 
-        if allow_parallel:
-            args.append('-j%d' % self.settings.build.threads)
+        #if allow_parallel:
+        #    args.append('-j%d' % self.settings.build.threads)
 
         if ignore_errors:
             args.append('-k')
@@ -243,10 +224,16 @@ class MozbuildObject(object):
         params = {
             'args': args,
             'line_handler': line_handler,
-            'explicit_env': env,
+            'append_env': append_env,
+            'explicit_env': explicit_env,
             'log_level': logging.INFO,
             'require_unix_environment': True,
             'ignore_errors': ignore_errors,
+
+            # Make manages its children, so mozprocess doesn't need to bother.
+            # Having mozprocess manage children can also have side-effects when
+            # building on Windows. See bug 796840.
+            'ignore_children': True,
         }
 
         if log:
@@ -275,86 +262,10 @@ class MozbuildObject(object):
         return self._make
 
     def _run_command_in_srcdir(self, **args):
-        self._run_command(cwd=self.topsrcdir, **args)
+        self.run_process(cwd=self.topsrcdir, **args)
 
     def _run_command_in_objdir(self, **args):
-        self._run_command(cwd=self.topobjdir, **args)
-
-    def _run_command(self, args=None, cwd=None, append_env=None,
-        explicit_env=None, log_name=None, log_level=logging.INFO,
-        line_handler=None, require_unix_environment=False,
-        ignore_errors=False):
-        """Runs a single command to completion.
-
-        Takes a list of arguments to run where the first item is the
-        executable. Runs the command in the specified directory and
-        with optional environment variables.
-
-        append_env -- Dict of environment variables to append to the current
-            set of environment variables.
-        explicit_env -- Dict of environment variables to set for the new
-            process. Any existing environment variables will be ignored.
-
-        require_unix_environment if True will ensure the command is executed
-        within a UNIX environment. Basically, if we are on Windows, it will
-        execute the command via an appropriate UNIX-like shell.
-        """
-        args = self._normalize_command(args, require_unix_environment)
-
-        self.log(logging.INFO, 'process', {'args': args}, ' '.join(args))
-
-        def handleLine(line):
-            if line_handler:
-                line_handler(line)
-
-            if not log_name:
-                return
-
-            self.log(log_level, log_name, {'line': line.strip()}, '{line}')
-
-        use_env = {}
-        if explicit_env:
-            use_env = explicit_env
-        else:
-            use_env.update(os.environ)
-
-            if append_env:
-                use_env.update(env)
-
-        p = ProcessHandlerMixin(args, cwd=cwd, env=use_env,
-            processOutputLine=[handleLine], universal_newlines=True)
-        p.run()
-        p.processOutput()
-        status = p.wait()
-
-        if status != 0 and not ignore_errors:
-            raise Exception('Process executed with non-0 exit code: %s' % args)
-
-    def _normalize_command(self, args, require_unix_environment):
-        """Adjust command arguments to run in the necessary environment.
-
-        This exists mainly to facilitate execution of programs requiring a *NIX
-        shell when running on Windows. The caller specifies whether a shell
-        environment is required. If it is and we are running on Windows but
-        aren't running in the UNIX-like msys environment, then we rewrite the
-        command to execute via a shell.
-        """
-        assert isinstance(args, list) and len(args)
-
-        if not require_unix_environment or not _in_msys:
-            return args
-
-        # Always munge Windows-style into Unix style for the command.
-        prog = args[0].replace('\\', '/')
-
-        # PyMake removes the C: prefix. But, things seem to work here
-        # without it. Not sure what that's about.
-
-        # We run everything through the msys shell. We need to use
-        # '-c' and pass all the arguments as one argument because that is
-        # how sh works.
-        cline = subprocess.list2cmdline([prog] + args[1:])
-        return [_current_shell, '-c', cline]
+        self.run_process(cwd=self.topobjdir, **args)
 
     def _is_windows(self):
         return os.name in ('nt', 'ce')

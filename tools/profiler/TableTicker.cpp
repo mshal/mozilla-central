@@ -290,6 +290,7 @@ public:
 
     JSObject *sample = NULL;
     JSObject *frames = NULL;
+    JSObject *marker = NULL;
 
     int readPos = mReadPos;
     while (readPos != mLastFlushPos) {
@@ -315,6 +316,19 @@ public:
           frames = b.CreateArray();
           b.DefineProperty(sample, "frames", frames);
           b.ArrayPush(samples, sample);
+          // Created lazily
+          marker = NULL;
+          break;
+        case 'm':
+          {
+            if (sample) {
+              if (!marker) {
+                marker = b.CreateArray();
+                b.DefineProperty(sample, "marker", marker);
+              }
+              b.ArrayPush(marker, tagStringData);
+            }
+          }
           break;
         case 'r':
           {
@@ -975,6 +989,9 @@ std::ostream& operator<<(std::ostream& stream, const ProfileEntry& entry)
 
 void mozilla_sampler_init()
 {
+  if (stack_key_initialized)
+    return;
+
   if (!tlsStack.init() || !tlsTicker.init()) {
     LOG("Failed to init.");
     return;
@@ -1007,9 +1024,13 @@ void mozilla_sampler_init()
     return;
   }
 
-  const char* features = "js";
+  const char* features[] = {"js"
+#if defined(XP_WIN) || defined(XP_MACOSX)
+                         , "stackwalk"
+#endif
+                         };
   mozilla_sampler_start(PROFILE_DEFAULT_ENTRY, PROFILE_DEFAULT_INTERVAL,
-                        &features, 1);
+                        features, sizeof(features)/sizeof(const char*));
 }
 
 void mozilla_sampler_deinit()

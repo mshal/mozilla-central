@@ -76,6 +76,7 @@ public class UpdateService extends IntentService {
     private static final String KEY_LAST_HASH_FUNCTION = "UpdateService.lastHashFunction";
     private static final String KEY_LAST_HASH_VALUE = "UpdateService.lastHashValue";
     private static final String KEY_LAST_ATTEMPT_DATE = "UpdateService.lastAttemptDate";
+    private static final String KEY_AUTODOWNLOAD_POLICY = "UpdateService.autoDownloadPolicy";
 
     private SharedPreferences mPrefs;
 
@@ -118,8 +119,13 @@ public class UpdateService extends IntentService {
     @Override
     protected void onHandleIntent (Intent intent) {
         if (UpdateServiceHelper.ACTION_REGISTER_FOR_UPDATES.equals(intent.getAction())) {
+            int policy = intent.getIntExtra(UpdateServiceHelper.EXTRA_AUTODOWNLOAD_NAME, -1);
+            if (policy >= 0) {
+                setAutoDownloadPolicy(policy);
+            }
+
             registerForUpdates(false);
-        } if (UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE.equals(intent.getAction())) {
+        } else if (UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE.equals(intent.getAction())) {
             startUpdate(intent.getIntExtra(UpdateServiceHelper.EXTRA_UPDATE_FLAGS_NAME, 0));
         } else if (UpdateServiceHelper.ACTION_APPLY_UPDATE.equals(intent.getAction())) {
             applyUpdate(intent.getStringExtra(UpdateServiceHelper.EXTRA_PACKAGE_PATH_NAME));
@@ -168,7 +174,7 @@ public class UpdateService extends IntentService {
         if (manager == null)
             return;
 
-        PendingIntent pending = PendingIntent.getService(this, 0, new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE, null, this, UpdateService.class), 0);
+        PendingIntent pending = PendingIntent.getService(this, 0, new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE, null, this, UpdateService.class), PendingIntent.FLAG_UPDATE_CURRENT);
         manager.cancel(pending);
 
         lastAttempt.setTimeInMillis(lastAttempt.getTimeInMillis() + interval);
@@ -202,13 +208,16 @@ public class UpdateService extends IntentService {
         Log.i(LOGTAG, "update available, buildID = " + info.buildID);
         
         int connectionType = netInfo.getType();
+        int autoDownloadPolicy = getAutoDownloadPolicy();
         if (!hasFlag(flags, UpdateServiceHelper.FLAG_FORCE_DOWNLOAD) &&
-            connectionType != ConnectivityManager.TYPE_WIFI &&
-            connectionType != ConnectivityManager.TYPE_ETHERNET) {
-            Log.i(LOGTAG, "not connected via wifi or ethernet");
+            autoDownloadPolicy != UpdateServiceHelper.AUTODOWNLOAD_ENABLED &&
+            (autoDownloadPolicy == UpdateServiceHelper.AUTODOWNLOAD_WIFI &&
+             connectionType != ConnectivityManager.TYPE_WIFI &&
+             connectionType != ConnectivityManager.TYPE_ETHERNET)) {
+            Log.i(LOGTAG, "not initiating automatic update download due to policy " + autoDownloadPolicy);
 
             // We aren't autodownloading here, so prompt to start the update
-            Notification notification = new Notification(R.drawable.icon, getResources().getString(R.string.updater_start_ticker), System.currentTimeMillis());
+            Notification notification = new Notification(R.drawable.ic_status_logo, null, System.currentTimeMillis());
 
             Intent notificationIntent = new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE);
             notificationIntent.setClass(this, UpdateService.class);
@@ -238,7 +247,7 @@ public class UpdateService extends IntentService {
             applyUpdate(pkg);
         } else {
             // Prompt to apply the update
-            Notification notification = new Notification(R.drawable.icon, getResources().getString(R.string.updater_apply_ticker), System.currentTimeMillis());
+            Notification notification = new Notification(R.drawable.ic_status_logo, null, System.currentTimeMillis());
 
             Intent notificationIntent = new Intent(UpdateServiceHelper.ACTION_APPLY_UPDATE);
             notificationIntent.setClass(this, UpdateService.class);
@@ -336,7 +345,7 @@ public class UpdateService extends IntentService {
     }
 
     private void showDownloadNotification(File downloadFile) {
-        Notification notification = new Notification(android.R.drawable.stat_sys_download, getResources().getString(R.string.updater_downloading_ticker), System.currentTimeMillis());
+        Notification notification = new Notification(android.R.drawable.stat_sys_download, null, System.currentTimeMillis());
 
         Intent notificationIntent = new Intent(UpdateServiceHelper.ACTION_APPLY_UPDATE);
         notificationIntent.setClass(this, UpdateService.class);
@@ -347,22 +356,21 @@ public class UpdateService extends IntentService {
         PendingIntent contentIntent = PendingIntent.getService(this, 0, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
         notification.setLatestEventInfo(this, getResources().getString(R.string.updater_downloading_title),
-                                        mApplyImmediately ? getResources().getString(R.string.updater_downloading_willapply) :
-                                            getResources().getString(R.string.updater_downloading_select),
+                                        mApplyImmediately ? "" : getResources().getString(R.string.updater_downloading_select),
                                         contentIntent);
         
         mNotificationManager.notify(NOTIFICATION_ID, notification);
     }
 
     private void showDownloadFailure() {
-        Notification notification = new Notification(android.R.drawable.stat_sys_warning, getResources().getString(R.string.updater_downloading_ticker_failed), System.currentTimeMillis());
+        Notification notification = new Notification(R.drawable.ic_status_logo, null, System.currentTimeMillis());
 
         Intent notificationIntent = new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE);
         notificationIntent.setClass(this, UpdateService.class);
 
         PendingIntent contentIntent = PendingIntent.getService(this, 0, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        notification.setLatestEventInfo(this, getResources().getString(R.string.updater_downloading_title),
+        notification.setLatestEventInfo(this, getResources().getString(R.string.updater_downloading_title_failed),
                                         getResources().getString(R.string.updater_downloading_retry),
                                         contentIntent);
         
@@ -520,6 +528,16 @@ public class UpdateService extends IntentService {
     private void setLastAttemptDate() {
         SharedPreferences.Editor editor = mPrefs.edit();
         editor.putLong(KEY_LAST_ATTEMPT_DATE, System.currentTimeMillis());
+        editor.commit();
+    }
+
+    private int getAutoDownloadPolicy() {
+        return mPrefs.getInt(KEY_AUTODOWNLOAD_POLICY, UpdateServiceHelper.AUTODOWNLOAD_WIFI);
+    }
+
+    private void setAutoDownloadPolicy(int policy) {
+        SharedPreferences.Editor editor = mPrefs.edit();
+        editor.putInt(KEY_AUTODOWNLOAD_POLICY, policy);
         editor.commit();
     }
 

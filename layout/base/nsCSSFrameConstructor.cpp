@@ -3870,7 +3870,7 @@ nsCSSFrameConstructor::CreateAnonymousFrames(nsFrameConstructorState& aState,
 }
 
 static void
-SetFlagsOnSubtree(nsIContent *aNode, PtrBits aFlagsToSet)
+SetFlagsOnSubtree(nsIContent *aNode, uintptr_t aFlagsToSet)
 {
 #ifdef DEBUG
   // Make sure that the node passed to us doesn't have any XBL children
@@ -3914,8 +3914,7 @@ nsCSSFrameConstructor::GetAnonymousContent(nsIContent* aParent,
 
     // least-surprise CSS binding until we do the SVG specified
     // cascading rules for <svg:use> - bug 265894
-    if (aParent &&
-        aParent->NodeInfo()->Equals(nsGkAtoms::use, kNameSpaceID_SVG)) {
+    if (aParentFrame->GetType() == nsGkAtoms::svgUseFrame) {
       content->SetFlags(NODE_IS_ANONYMOUS);
     } else {
       content->SetNativeAnonymous();
@@ -7704,16 +7703,47 @@ UpdateViewsForTree(nsIFrame* aFrame,
           DoApplyRenderingChangeToTree(child, aFrameManager,
                                        aChange);
         } else {  // regular frame
-          if ((child->GetStateBits() & NS_FRAME_HAS_CONTAINER_LAYER) &&
-              (aChange & nsChangeHint_RepaintFrame)) {
-            FrameLayerBuilder::InvalidateThebesLayerContents(child,
-              child->GetVisualOverflowRectRelativeToSelf());
-          }
           UpdateViewsForTree(child, aFrameManager, aChange);
         }
       }
     }
   }
+}
+
+/**
+ * To handle nsChangeHint_ChildrenOnlyTransform we must iterate over the child
+ * frames of the SVG frame concerned. This helper function is used to find that
+ * SVG frame when we encounter nsChangeHint_ChildrenOnlyTransform to ensure
+ * that we iterate over the intended children, since sometimes we end up
+ * handling that hint while processing hints for one of the SVG frame's
+ * ancestor frames.
+ *
+ * The reason that we sometimes end up trying to process the hint for an
+ * ancestor of the SVG frame that the hint is intended for is due to the way we
+ * process restyle events. ApplyRenderingChangeToTree adjusts the frame from
+ * the restyled element's principle frame to one of its ancestor frames based
+ * on what nsCSSRendering::FindBackground returns, since the background style
+ * may have been propagated up to an ancestor frame. Processing hints using an
+ * ancestor frame is fine in general, but nsChangeHint_ChildrenOnlyTransform is
+ * a special case since it is intended to update the children of a specific
+ * frame.
+ */
+static nsIFrame*
+GetFrameForChildrenOnlyTransformHint(nsIFrame *aFrame)
+{
+  if (aFrame->GetType() == nsGkAtoms::viewportFrame) {
+    // This happens if the root-<svg> is fixed positioned, in which case we
+    // can't use aFrame->GetContent() to find the primary frame, since
+    // GetContent() returns nullptr for ViewportFrame.
+    aFrame = aFrame->GetFirstPrincipalChild();
+  }
+  // For an nsHTMLScrollFrame, this will get the SVG frame that has the
+  // children-only transforms:
+  aFrame = aFrame->GetContent()->GetPrimaryFrame();
+  NS_ABORT_IF_FALSE(aFrame->IsFrameOfType(nsIFrame::eSVG |
+                                          nsIFrame::eSVGContainer),
+                    "Children-only transforms only expected on SVG frames");
+  return aFrame;
 }
 
 static void
@@ -7737,49 +7767,56 @@ DoApplyRenderingChangeToTree(nsIFrame* aFrame,
                        nsChangeHint(aChange & (nsChangeHint_RepaintFrame |
                                                nsChangeHint_SyncFrameView |
                                                nsChangeHint_UpdateOpacityLayer)));
+    // This must be set to true if the rendering change needs to
+    // invalidate content.  If it's false, a composite-only paint
+    // (empty transaction) will be scheduled.
+    bool needInvalidatingPaint = false;
 
     // if frame has view, will already be invalidated
     if (aChange & nsChangeHint_RepaintFrame) {
       if (aFrame->IsFrameOfType(nsIFrame::eSVG) &&
           !(aFrame->GetStateBits() & NS_STATE_IS_OUTER_SVG)) {
         if (aChange & nsChangeHint_UpdateEffects) {
+          needInvalidatingPaint = true;
           // Invalidate and update our area:
           nsSVGUtils::InvalidateAndScheduleReflowSVG(aFrame);
         } else {
+          needInvalidatingPaint = true;
           // Just invalidate our area:
           nsSVGUtils::InvalidateBounds(aFrame);
         }
       } else {
-        aFrame->InvalidateOverflowRect();
+        needInvalidatingPaint = true;
+        aFrame->InvalidateFrameSubtree();
       }
     }
     if (aChange & nsChangeHint_UpdateOpacityLayer) {
+      // FIXME/bug 796697: we can get away with empty transactions for
+      // opacity updates in many cases.
+      needInvalidatingPaint = true;
       aFrame->MarkLayersActive(nsChangeHint_UpdateOpacityLayer);
-      aFrame->InvalidateLayer(aFrame->GetVisualOverflowRectRelativeToSelf(),
-                              nsDisplayItem::TYPE_OPACITY);
     }
-    
     if (aChange & nsChangeHint_UpdateTransformLayer) {
       aFrame->MarkLayersActive(nsChangeHint_UpdateTransformLayer);
-      // Invalidate the old transformed area. The new transformed area
-      // will be invalidated by nsFrame::FinishAndStoreOverflowArea.
-      aFrame->InvalidateTransformLayer();
-    }
-    if (aChange & nsChangeHint_ChildrenOnlyTransform) {
-      // The long comment in ProcessRestyledFrames that precedes the
-      // |frame->GetContent()->GetPrimaryFrame()| and abort applies here too.
-      nsIFrame *f = aFrame->GetContent()->GetPrimaryFrame();
-      NS_ABORT_IF_FALSE(f->IsFrameOfType(nsIFrame::eSVG |
-                                         nsIFrame::eSVGContainer),
-                        "Children-only transforms only expected on SVG frames");
-      nsIFrame* childFrame = f->GetFirstPrincipalChild();
-      for ( ; childFrame; childFrame = childFrame->GetNextSibling()) {
-        childFrame->MarkLayersActive(nsChangeHint_UpdateTransformLayer);
-        // Invalidate the old transformed area. The new transformed area
-        // will be invalidated by nsFrame::FinishAndStoreOverflowArea.
-        childFrame->InvalidateTransformLayer();
+      // If we're not already going to do an invalidating paint, see
+      // if we can get away with only updating the transform on a
+      // layer for this frame, and not scheduling an invalidating
+      // paint.
+      if (!needInvalidatingPaint) {
+        needInvalidatingPaint |= !aFrame->TryUpdateTransformOnly();
       }
     }
+    if (aChange & nsChangeHint_ChildrenOnlyTransform) {
+      needInvalidatingPaint = true;
+      nsIFrame* childFrame =
+        GetFrameForChildrenOnlyTransformHint(aFrame)->GetFirstPrincipalChild();
+      for ( ; childFrame; childFrame = childFrame->GetNextSibling()) {
+        childFrame->MarkLayersActive(nsChangeHint_UpdateTransformLayer);
+      }
+    }
+    aFrame->SchedulePaint(needInvalidatingPaint ?
+                          nsIFrame::PAINT_DEFAULT :
+                          nsIFrame::PAINT_COMPOSITE_ONLY);
   }
 }
 
@@ -7988,11 +8025,11 @@ nsCSSFrameConstructor::CharacterDataChanged(nsIContent* aContent,
 NS_DECLARE_FRAME_PROPERTY(ChangeListProperty, nullptr)
 
 /**
- * Return true if aFrame's subtree has placeholders for abs-pos or fixed-pos
- * content.
+ * Return true if aFrame's subtree has placeholders for out-of-flow content
+ * whose 'position' style's bit in aPositionMask is set.
  */
 static bool
-FrameHasAbsPosPlaceholderDescendants(nsIFrame* aFrame)
+FrameHasPositionedPlaceholderDescendants(nsIFrame* aFrame, uint32_t aPositionMask)
 {
   const nsIFrame::ChildListIDs skip(nsIFrame::kAbsoluteList |
                                     nsIFrame::kFixedList);
@@ -8001,15 +8038,50 @@ FrameHasAbsPosPlaceholderDescendants(nsIFrame* aFrame)
       for (nsFrameList::Enumerator childFrames(lists.CurrentList());
            !childFrames.AtEnd(); childFrames.Next()) {
         nsIFrame* f = childFrames.get();
-        if ((f->GetType() == nsGkAtoms::placeholderFrame &&
-             nsPlaceholderFrame::GetRealFrameForPlaceholder(f)->IsAbsolutelyPositioned()) ||
-            FrameHasAbsPosPlaceholderDescendants(f)) {
+        if (f->GetType() == nsGkAtoms::placeholderFrame) {
+          nsIFrame* outOfFlow = nsPlaceholderFrame::GetRealFrameForPlaceholder(f);
+          // If SVG text frames could appear here, they could confuse us since
+          // they ignore their position style ... but they can't.
+          NS_ASSERTION(!outOfFlow->IsSVGText(),
+                       "SVG text frames can't be out of flow");
+          if (aPositionMask & (1 << outOfFlow->GetStyleDisplay()->mPosition)) {
+            return true;
+          }
+        }
+        if (FrameHasPositionedPlaceholderDescendants(f, aPositionMask)) {
           return true;
         }
       }
     }
   }
   return false;
+}
+
+static bool
+NeedToReframeForAddingOrRemovingTransform(nsIFrame* aFrame)
+{
+  MOZ_STATIC_ASSERT(0 <= NS_STYLE_POSITION_ABSOLUTE &&
+                    NS_STYLE_POSITION_ABSOLUTE < 32, "Style constant out of range");
+  MOZ_STATIC_ASSERT(0 <= NS_STYLE_POSITION_FIXED &&
+                    NS_STYLE_POSITION_FIXED < 32, "Style constant out of range");
+
+  uint32_t positionMask;
+  // Don't call aFrame->IsPositioned here, since that returns true if
+  // the frame already has a transform, and we want to ignore that here
+  if (aFrame->IsAbsolutelyPositioned() ||
+      aFrame->IsRelativelyPositioned()) {
+    // This frame is a container for abs-pos descendants whether or not it
+    // has a transform.
+    // So abs-pos descendants are no problem; we only need to reframe if
+    // we have fixed-pos descendants.
+    positionMask = 1 << NS_STYLE_POSITION_FIXED;
+  } else {
+    // This frame may not be a container for abs-pos descendants already.
+    // So reframe if we have abs-pos or fixed-pos descendants.
+    positionMask = (1 << NS_STYLE_POSITION_FIXED) |
+        (1 << NS_STYLE_POSITION_ABSOLUTE);
+  }
+  return FrameHasPositionedPlaceholderDescendants(aFrame, positionMask);
 }
 
 nsresult
@@ -8045,8 +8117,6 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
   }
 
   index = count;
-  bool didInvalidate = false;
-  bool didReflow = false;
 
   while (0 <= --index) {
     nsIFrame* frame;
@@ -8076,7 +8146,7 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
 
     if ((hint & nsChangeHint_AddOrRemoveTransform) && frame &&
         !(hint & nsChangeHint_ReconstructFrame)) {
-      if (FrameHasAbsPosPlaceholderDescendants(frame)) {
+      if (NeedToReframeForAddingOrRemovingTransform(frame)) {
         NS_UpdateHint(hint, nsChangeHint_ReconstructFrame);
       } else {
         // We can just add this state bit unconditionally, since it's
@@ -8103,19 +8173,16 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
       }
       if (hint & nsChangeHint_NeedReflow) {
         StyleChangeReflow(frame, hint);
-        didReflow = true;
         didReflowThisFrame = true;
       }
       if (hint & (nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView |
                   nsChangeHint_UpdateOpacityLayer | nsChangeHint_UpdateTransformLayer |
                   nsChangeHint_ChildrenOnlyTransform)) {
         ApplyRenderingChangeToTree(presContext, frame, hint);
-        didInvalidate = true;
       }
       if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
         // It is possible for this to fall back to a reflow
         if (!RecomputePosition(frame)) {
-          didReflow = true;
           didReflowThisFrame = true;
         }
       }
@@ -8124,25 +8191,9 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
                    "nsChangeHint_UpdateOverflow should be passed too");
       if ((hint & nsChangeHint_UpdateOverflow) && !didReflowThisFrame) {
         if (hint & nsChangeHint_ChildrenOnlyTransform) {
-          // When we process restyle events starting from the root of the frame
-          // tree, we start at a ViewportFrame and traverse down the tree from
-          // there. When we reach its nsHTMLScrollFrame child, that frame's
-          // GetContent() returns the root element of the document, even though
-          // that frame is not the root element's primary frame. The result of
-          // this quirk is that we remove any pending change hints for the
-          // root element and process them for the nsHTMLScrollFrame instead of
-          // the root element's primary frame. For most change hints this is
-          // not a problem, but for nsChangeHint_ChildrenOnlyTransform it is,
-          // since the children that we want to call UpdateOverflow on are the
-          // frames for the children of the root element, not the nsCanvasFrame
-          // child of the nsHTMLScrollFrame. As a result we need to ignore
-          // |frame| here and use frame->GetContent()->GetPrimaryFrame().
-          nsIFrame *f = frame->GetContent()->GetPrimaryFrame();
-          NS_ABORT_IF_FALSE(f->IsFrameOfType(nsIFrame::eSVG |
-                                             nsIFrame::eSVGContainer),
-                            "Children-only transforms only expected on SVG frames");
           // Update overflow areas of children first:
-          nsIFrame* childFrame = f->GetFirstPrincipalChild();
+          nsIFrame* childFrame =
+            GetFrameForChildrenOnlyTransformHint(frame)->GetFirstPrincipalChild();
           for ( ; childFrame; childFrame = childFrame->GetNextSibling()) {
             NS_ABORT_IF_FALSE(childFrame->IsFrameOfType(nsIFrame::eSVG),
                               "Not expecting non-SVG children");
@@ -8187,16 +8238,6 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
   }
 
   EndUpdate();
-
-  if (didInvalidate && !didReflow) {
-    // RepaintFrame changes can indicate changes in opacity etc which
-    // can require plugin clipping to change. If we requested a reflow,
-    // we don't need to do this since the reflow will do it for us.
-    nsRootPresContext* rootPC = presContext->GetRootPresContext();
-    if (rootPC) {
-      rootPC->RequestUpdatePluginGeometry();
-    }
-  }
 
   // cleanup references and verify the style tree.  Note that the latter needs
   // to happen once we've processed the whole list, since until then the tree
@@ -9041,23 +9082,42 @@ nsCSSFrameConstructor::CaptureStateForFramesOf(nsIContent* aContent,
   }
 }
 
+static bool EqualURIs(mozilla::css::URLValue *aURI1,
+                      mozilla::css::URLValue *aURI2)
+{
+  return aURI1 == aURI2 ||    // handle null==null, and optimize
+         (aURI1 && aURI2 && aURI1->URIEquals(*aURI2));
+}
+
 nsresult
 nsCSSFrameConstructor::MaybeRecreateFramesForElement(Element* aElement)
 {
-  nsresult result = NS_OK;
+  nsRefPtr<nsStyleContext> oldContext = GetUndisplayedContent(aElement);
+  if (!oldContext) {
+    return NS_OK;
+  }
 
-  nsStyleContext *oldContext = GetUndisplayedContent(aElement);
-  if (oldContext) {
-    // The parent has a frame, so try resolving a new context.
-    nsRefPtr<nsStyleContext> newContext = mPresShell->StyleSet()->
-      ResolveStyleFor(aElement, oldContext->GetParent());
+  // The parent has a frame, so try resolving a new context.
+  nsRefPtr<nsStyleContext> newContext = mPresShell->StyleSet()->
+    ResolveStyleFor(aElement, oldContext->GetParent());
 
-    ChangeUndisplayedContent(aElement, newContext);
-    if (newContext->GetStyleDisplay()->mDisplay != NS_STYLE_DISPLAY_NONE) {
-      result = RecreateFramesForContent(aElement, false);
+  ChangeUndisplayedContent(aElement, newContext);
+  const nsStyleDisplay* disp = newContext->GetStyleDisplay();
+  if (disp->mDisplay == NS_STYLE_DISPLAY_NONE) {
+    // We can skip trying to recreate frames here, but only if our style
+    // context does not have a binding URI that differs from our old one.
+    // Otherwise, we should try to recreate, because we may want to apply the
+    // new binding
+    if (!disp->mBinding) {
+      return NS_OK;
+    }
+    const nsStyleDisplay* oldDisp = oldContext->PeekStyleDisplay();
+    if (oldDisp && EqualURIs(disp->mBinding, oldDisp->mBinding)) {
+      return NS_OK;
     }
   }
-  return result;
+
+  return RecreateFramesForContent(aElement, false);
 }
 
 static nsIFrame*
@@ -9324,7 +9384,7 @@ nsCSSFrameConstructor::RecreateFramesForContent(nsIContent* aContent,
     return rv;
   }
 
-  nsINode* containerNode = aContent->GetNodeParent();
+  nsINode* containerNode = aContent->GetParentNode();
   // XXXbz how can containerNode be null here?
   if (containerNode) {
     // Before removing the frames associated with the content object,
@@ -12433,15 +12493,14 @@ nsCSSFrameConstructor::RecomputePosition(nsIFrame* aFrame)
     return true;
   }
 
+  aFrame->SchedulePaint();
+
   // For relative positioning, we can simply update the frame rect
   if (display->mPosition == NS_STYLE_POSITION_RELATIVE) {
     nsIFrame* cb = aFrame->GetContainingBlock();
     const nsSize size = cb->GetSize();
     const nsPoint oldOffsets = aFrame->GetRelativeOffset();
     nsMargin newOffsets;
-
-    // Invalidate the old rect
-    aFrame->InvalidateOverflowRect();
 
     // Move the frame
     nsHTMLReflowState::ComputeRelativeOffsets(
@@ -12452,9 +12511,6 @@ nsCSSFrameConstructor::RecomputePosition(nsIFrame* aFrame)
                  "ComputeRelativeOffsets should return valid results");
     aFrame->SetPosition(aFrame->GetPosition() - oldOffsets +
                         nsPoint(newOffsets.left, newOffsets.top));
-
-    // Invalidate the new rect
-    aFrame->InvalidateFrameSubtree();
 
     return true;
   }
@@ -12526,19 +12582,13 @@ nsCSSFrameConstructor::RecomputePosition(nsIFrame* aFrame)
                                          size.height -
                                          reflowState.mComputedMargin.top;
     }
-
-    // Invalidate the old rect
-    aFrame->InvalidateFrameSubtree();
-
+    
     // Move the frame
     nsPoint pos(parentBorder.left + reflowState.mComputedOffsets.left +
                 reflowState.mComputedMargin.left,
                 parentBorder.top + reflowState.mComputedOffsets.top +
                 reflowState.mComputedMargin.top);
     aFrame->SetPosition(pos);
-
-    // Invalidate the new rect
-    aFrame->InvalidateFrameSubtree();
 
     return true;
   }

@@ -6,7 +6,6 @@
 #ifndef GFX_PLATFORM_H
 #define GFX_PLATFORM_H
 
-#include "prtypes.h"
 #include "prlog.h"
 #include "nsTArray.h"
 #include "nsStringGlue.h"
@@ -199,7 +198,6 @@ public:
       CreateDrawTargetForData(unsigned char* aData, const mozilla::gfx::IntSize& aSize, 
                               int32_t aStride, mozilla::gfx::SurfaceFormat aFormat);
 
-    bool SupportsAzureCanvas();
     bool SupportsAzureContent() {
       return GetContentBackend() != mozilla::gfx::BACKEND_NONE;
     }
@@ -381,9 +379,6 @@ public:
     // Break large OMTC tiled thebes layer painting into small paints.
     static bool UseProgressiveTilePainting();
 
-    // helper method to indicate if we want to use Azure content drawing
-    static bool UseAzureContentDrawing();
-
     static bool OffMainThreadCompositingEnabled();
 
     /**
@@ -498,9 +493,10 @@ protected:
     static mozilla::gfx::BackendType GetContentBackendPref(uint32_t aBackendBitmask);
 
     /**
-     * Checks the aEnabledPrefName pref and returns BACKEND_NONE if the pref is
-     * not enabled. Otherwise it will return the first backend named in
-     * aBackendPrefName allowed by aBackendBitmask, a bitmask of backend types.
+     * If aEnabledPrefName is non-null, checks the aEnabledPrefName pref and
+     * returns BACKEND_NONE if the pref is not enabled.
+     * Otherwise it will return the first backend named in aBackendPrefName
+     * allowed by aBackendBitmask, a bitmask of backend types.
      */
     static mozilla::gfx::BackendType GetBackendPref(const char* aEnabledPrefName,
                                                     const char* aBackendPrefName,

@@ -59,6 +59,7 @@
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "nsSandboxFlags.h"
+#include "mozilla/Preferences.h"
 
 #ifdef USEWEAKREFS
 #include "nsIWeakReference.h"
@@ -897,6 +898,31 @@ nsWindowWatcher::OpenWindowInternal(nsIDOMWindow *aParent,
     }
   }
 
+  if (windowIsNew) {
+    // See if the caller has requested a private browsing window, or if all
+    // windows should be private.
+    bool isPrivateBrowsingWindow =
+      Preferences::GetBool("browser.privatebrowsing.autostart") ||
+      !!(chromeFlags & nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW);
+    // Otherwise, propagate the privacy status of the parent window, if
+    // available, to the child.
+    if (!isPrivateBrowsingWindow) {
+      nsCOMPtr<nsIDocShellTreeItem> parentItem;
+      GetWindowTreeItem(aParent, getter_AddRefs(parentItem));
+      nsCOMPtr<nsILoadContext> parentContext = do_QueryInterface(parentItem);
+      if (parentContext) {
+        isPrivateBrowsingWindow = parentContext->UsePrivateBrowsing();
+      }
+    }
+
+    nsCOMPtr<nsIDocShellTreeItem> childRoot;
+    newDocShellItem->GetRootTreeItem(getter_AddRefs(childRoot));
+    nsCOMPtr<nsILoadContext> childContext = do_QueryInterface(childRoot);
+    if (childContext) {
+      childContext->SetUsePrivateBrowsing(isPrivateBrowsingWindow);
+    }
+  }
+
   if (uriToLoad && aNavigate) { // get the script principal and pass it to docshell
     JSContextAutoPopper contextGuard;
 
@@ -1475,6 +1501,12 @@ uint32_t nsWindowWatcher::CalculateChromeFlags(nsIDOMWindow *aParent,
     }
   }
 
+  // Determine whether the window is a private browsing window
+  if (isChrome) {
+    chromeFlags |= WinHasOption(aFeatures, "private", 0, &presenceFlag) ?
+      nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW : 0;
+  }
+
   nsCOMPtr<nsIPrefBranch> prefBranch;
   nsCOMPtr<nsIPrefService> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, true);
@@ -1861,18 +1893,18 @@ nsWindowWatcher::CalcSizeSpec(const char* aFeatures, SizeSpec& aResult)
   aResult.mTopSpecified = present;
 
   // Parse size spec, if any. Chrome size overrides content size.
-  if ((temp = WinHasOption(aFeatures, "outerWidth", PR_INT32_MIN, nullptr))) {
-    if (temp == PR_INT32_MIN) {
+  if ((temp = WinHasOption(aFeatures, "outerWidth", INT32_MIN, nullptr))) {
+    if (temp == INT32_MIN) {
       aResult.mUseDefaultWidth = true;
     }
     else {
       aResult.mOuterWidth = temp;
     }
     aResult.mOuterWidthSpecified = true;
-  } else if ((temp = WinHasOption(aFeatures, "width", PR_INT32_MIN, nullptr)) ||
-             (temp = WinHasOption(aFeatures, "innerWidth", PR_INT32_MIN,
+  } else if ((temp = WinHasOption(aFeatures, "width", INT32_MIN, nullptr)) ||
+             (temp = WinHasOption(aFeatures, "innerWidth", INT32_MIN,
                                   nullptr))) {
-    if (temp == PR_INT32_MIN) {
+    if (temp == INT32_MIN) {
       aResult.mUseDefaultWidth = true;
     } else {
       aResult.mInnerWidth = temp;
@@ -1880,19 +1912,19 @@ nsWindowWatcher::CalcSizeSpec(const char* aFeatures, SizeSpec& aResult)
     aResult.mInnerWidthSpecified = true;
   }
 
-  if ((temp = WinHasOption(aFeatures, "outerHeight", PR_INT32_MIN, nullptr))) {
-    if (temp == PR_INT32_MIN) {
+  if ((temp = WinHasOption(aFeatures, "outerHeight", INT32_MIN, nullptr))) {
+    if (temp == INT32_MIN) {
       aResult.mUseDefaultHeight = true;
     }
     else {
       aResult.mOuterHeight = temp;
     }
     aResult.mOuterHeightSpecified = true;
-  } else if ((temp = WinHasOption(aFeatures, "height", PR_INT32_MIN,
+  } else if ((temp = WinHasOption(aFeatures, "height", INT32_MIN,
                                   nullptr)) ||
-             (temp = WinHasOption(aFeatures, "innerHeight", PR_INT32_MIN,
+             (temp = WinHasOption(aFeatures, "innerHeight", INT32_MIN,
                                   nullptr))) {
-    if (temp == PR_INT32_MIN) {
+    if (temp == INT32_MIN) {
       aResult.mUseDefaultHeight = true;
     } else {
       aResult.mInnerHeight = temp;
@@ -1929,8 +1961,8 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin(do_QueryInterface(treeOwner));
   if (!treeOwnerAsWin) // we'll need this to actually size the docshell
     return;
-    
-  float devPixelsPerCSSPixel = 1.0;
+
+  double openerZoom = 1.0;
   if (aParent) {
     nsCOMPtr<nsIDOMDocument> openerDoc;
     aParent->GetDocument(getter_AddRefs(openerDoc));
@@ -1940,11 +1972,14 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
       if (shell) {
         nsPresContext* presContext = shell->GetPresContext();
         if (presContext) {
-          devPixelsPerCSSPixel = presContext->CSSPixelsToDevPixels(1.0f);
+          openerZoom = presContext->GetFullZoom();
         }
       }
     }
   }
+
+  double scale;
+  treeOwnerAsWin->GetUnscaledDevicePixelsPerCSSPixel(&scale);
 
   /* The current position and size will be unchanged if not specified
      (and they fit entirely onscreen). Also, calculate the difference
@@ -1954,29 +1989,35 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
      back from too far off the right or bottom edges of the screen. */
 
   treeOwnerAsWin->GetPositionAndSize(&left, &top, &width, &height);
+  left = NSToIntRound(left / scale);
+  top = NSToIntRound(top / scale);
+  width = NSToIntRound(width / scale);
+  height = NSToIntRound(height / scale);
   { // scope shellWindow why not
     nsCOMPtr<nsIBaseWindow> shellWindow(do_QueryInterface(aDocShellItem));
     if (shellWindow) {
       int32_t cox, coy;
+      double shellScale;
       shellWindow->GetSize(&cox, &coy);
-      chromeWidth = width - cox;
-      chromeHeight = height - coy;
+      shellWindow->GetUnscaledDevicePixelsPerCSSPixel(&shellScale);
+      chromeWidth = width - NSToIntRound(cox / shellScale);
+      chromeHeight = height - NSToIntRound(coy / shellScale);
     }
   }
 
   // Set up left/top
   if (aSizeSpec.mLeftSpecified) {
-    left = NSToIntRound(aSizeSpec.mLeft * devPixelsPerCSSPixel);
+    left = NSToIntRound(aSizeSpec.mLeft * openerZoom);
   }
 
   if (aSizeSpec.mTopSpecified) {
-    top = NSToIntRound(aSizeSpec.mTop * devPixelsPerCSSPixel);
+    top = NSToIntRound(aSizeSpec.mTop * openerZoom);
   }
 
   // Set up width
   if (aSizeSpec.mOuterWidthSpecified) {
     if (!aSizeSpec.mUseDefaultWidth) {
-      width = NSToIntRound(aSizeSpec.mOuterWidth * devPixelsPerCSSPixel);
+      width = NSToIntRound(aSizeSpec.mOuterWidth * openerZoom);
     } // Else specified to default; just use our existing width
   }
   else if (aSizeSpec.mInnerWidthSpecified) {
@@ -1984,14 +2025,14 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
     if (aSizeSpec.mUseDefaultWidth) {
       width = width - chromeWidth;
     } else {
-      width = NSToIntRound(aSizeSpec.mInnerWidth * devPixelsPerCSSPixel);
+      width = NSToIntRound(aSizeSpec.mInnerWidth * openerZoom);
     }
   }
 
   // Set up height
   if (aSizeSpec.mOuterHeightSpecified) {
     if (!aSizeSpec.mUseDefaultHeight) {
-      height = NSToIntRound(aSizeSpec.mOuterHeight * devPixelsPerCSSPixel);
+      height = NSToIntRound(aSizeSpec.mOuterHeight * openerZoom);
     } // Else specified to default; just use our existing height
   }
   else if (aSizeSpec.mInnerHeightSpecified) {
@@ -1999,7 +2040,7 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
     if (aSizeSpec.mUseDefaultHeight) {
       height = height - chromeHeight;
     } else {
-      height = NSToIntRound(aSizeSpec.mInnerHeight * devPixelsPerCSSPixel);
+      height = NSToIntRound(aSizeSpec.mInnerHeight * openerZoom);
     }
   }
 
@@ -2050,8 +2091,8 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
       int32_t winWidth = width + (sizeChromeWidth ? 0 : chromeWidth),
               winHeight = height + (sizeChromeHeight ? 0 : chromeHeight);
 
-      screen->GetAvailRect(&screenLeft, &screenTop,
-                           &screenWidth, &screenHeight);
+      screen->GetAvailRectDisplayPix(&screenLeft, &screenTop,
+                                     &screenWidth, &screenHeight);
 
       if (aSizeSpec.SizeSpecified()) {
         /* Unlike position, force size out-of-bounds check only if
@@ -2067,12 +2108,12 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
           width = screenWidth - (sizeChromeWidth ? 0 : chromeWidth);
       }
 
-      if (left+winWidth > screenLeft+screenWidth)
-        left = screenLeft+screenWidth - winWidth;
+      if (left + winWidth > screenLeft + screenWidth)
+        left = screenLeft + screenWidth - winWidth;
       if (left < screenLeft)
         left = screenLeft;
-      if (top+winHeight > screenTop+screenHeight)
-        top = screenTop+screenHeight - winHeight;
+      if (top + winHeight > screenTop + screenHeight)
+        top = screenTop + screenHeight - winHeight;
       if (top < screenTop)
         top = screenTop;
       if (top != oldTop || left != oldLeft)
@@ -2082,20 +2123,24 @@ nsWindowWatcher::SizeOpenedDocShellItem(nsIDocShellTreeItem *aDocShellItem,
 
   // size and position the window
 
-  if (positionSpecified)
-    treeOwnerAsWin->SetPosition(left, top);
+  if (positionSpecified) {
+    treeOwnerAsWin->SetPosition(left * scale, top * scale);
+    // moving the window may have changed its scale factor
+    treeOwnerAsWin->GetUnscaledDevicePixelsPerCSSPixel(&scale);
+  }
   if (aSizeSpec.SizeSpecified()) {
     /* Prefer to trust the interfaces, which think in terms of pure
        chrome or content sizes. If we have a mix, use the chrome size
        adjusted by the chrome/content differences calculated earlier. */
-    if (!sizeChromeWidth && !sizeChromeHeight)
-      treeOwner->SizeShellTo(aDocShellItem, width, height);
+    if (!sizeChromeWidth && !sizeChromeHeight) {
+      treeOwner->SizeShellTo(aDocShellItem, width * scale, height * scale);
+    }
     else {
       if (!sizeChromeWidth)
         width += chromeWidth;
       if (!sizeChromeHeight)
         height += chromeHeight;
-      treeOwnerAsWin->SetSize(width, height, false);
+      treeOwnerAsWin->SetSize(width * scale, height * scale, false);
     }
   }
   treeOwnerAsWin->SetVisibility(true);

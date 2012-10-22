@@ -181,6 +181,7 @@ public:
                                        const char* aURL,
                                        uint32_t aLineNo,
                                        uint32_t aVersion,
+                                       bool aIsXBL,
                                        nsScriptObjectHolder<JSObject>& aHandler) = 0;
 
   /**
@@ -241,6 +242,7 @@ public:
                                    uint32_t aLineNo,
                                    uint32_t aVersion,
                                    bool aShared,
+                                   bool aIsXBL,
                                    JSObject** aFunctionObject) = 0;
 
   /**
@@ -327,12 +329,6 @@ public:
   // SetProperty is suspect and jst believes should not be needed.  Currenly
   // used only for "arguments".
   virtual nsresult SetProperty(JSObject* aTarget, const char* aPropName, nsISupports* aVal) = 0;
-  /** 
-   * Called to set/get information if the script context is
-   * currently processing a script tag
-   */
-  virtual bool GetProcessingScriptTag() = 0;
-  virtual void SetProcessingScriptTag(bool aResult) = 0;
 
   /**
    * Called to find out if this script context might be executing script.

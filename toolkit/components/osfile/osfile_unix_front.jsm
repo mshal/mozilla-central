@@ -80,7 +80,7 @@
      /**
       * Read some bytes from a file.
       *
-      * @param {ArrayBuffer} buffer A buffer for holding the data
+      * @param {C pointer} buffer A buffer for holding the data
       * once it is read.
       * @param {number} nbytes The number of bytes to read. It must not
       * exceed the size of |buffer| in bytes but it may exceed the number
@@ -101,7 +101,7 @@
      /**
       * Write some bytes to a file.
       *
-      * @param {ArrayBuffer} buffer A buffer holding the data that must be
+      * @param {C pointer} buffer A buffer holding the data that must be
       * written.
       * @param {number} nbytes The number of bytes to write. It must not
       * exceed the size of |buffer| in bytes.
@@ -258,6 +258,21 @@
      };
 
      /**
+      * Checks if a file exists
+      *
+      * @param {string} path The path to the file.
+      *
+      * @return {bool} true if the file exists, false otherwise.
+      */
+     File.exists = function Unix_exists(path) {
+       if (UnixFile.access(path, OS.Constants.libc.F_OK) == -1) {
+         return false;
+       } else {
+         return true;
+       }
+     };
+
+     /**
       * Remove an existing file.
       *
       * @param {string} path The name of the file.
@@ -348,6 +363,9 @@
       * @option {bool} noOverwrite - If set, this function will fail if
       * a file already exists at |destPath|. Otherwise, if this file exists,
       * it will be erased silently.
+      * @option {bool} noCopy - If set, this function will fail if the
+      * operation is more sophisticated than a simple renaming, i.e. if
+      * |sourcePath| and |destPath| are not situated on the same device.
       *
       * @throws {OS.File.Error} In case of any error.
       *
@@ -559,9 +577,11 @@
          return;
 
        // If the error is not EXDEV ("not on the same device"),
-       // throw it.
-       if (ctypes.errno != Const.EXDEV) {
-         throw new File.Error();
+       // or if the error is EXDEV and we have passed an option
+       // that prevents us from crossing devices, throw the
+       // error.
+       if (ctypes.errno != Const.EXDEV || options.noCopy) {
+         throw new File.Error("move");
        }
 
        // Otherwise, copy and remove.
@@ -822,20 +842,37 @@
        return new File.Info(gStatData);
      };
 
+     File.read = exports.OS.Shared.AbstractFile.read;
+     File.writeAtomic = exports.OS.Shared.AbstractFile.writeAtomic;
+
+     /**
+      * Get the current directory by getCurrentDirectory.
+      */
+     File.getCurrentDirectory = function getCurrentDirectory() {
+       let path = UnixFile.get_current_dir_name?UnixFile.get_current_dir_name():
+         UnixFile.getwd_auto(null);
+       throw_on_null("getCurrentDirectory",path);
+       return path.readString();
+     };
+
+     /**
+      * Set the current directory by setCurrentDirectory.
+      */
+     File.setCurrentDirectory = function setCurrentDirectory(path) {
+       throw_on_negative("setCurrentDirectory",
+         UnixFile.chdir(path)
+       );
+     };
+
      /**
       * Get/set the current directory.
       */
      Object.defineProperty(File, "curDir", {
          set: function(path) {
-           throw_on_negative("curDir",
-             UnixFile.chdir(path)
-           );
+           this.setCurrentDirectory(path);
          },
          get: function() {
-           let path = UnixFile.get_current_dir_name?UnixFile.get_current_dir_name():
-             UnixFile.getwd_auto(null);
-           throw_on_null("curDir",path);
-           return path.readString();
+           return this.getCurrentDirectory();
          }
        }
      );

@@ -101,11 +101,11 @@ var stringBundle;
         // displays a download dialog (remove these 3 lines for silent download)
         let xfer = Components.classes["@mozilla.org/transfer;1"].
                    createInstance(Components.interfaces.nsITransfer);
-        xfer.init(source, target, "", null, null, null, persist);
+        xfer.init(source, target, "", null, null, null, persist, false);
         persist.progressListener = xfer;
 
         // save the canvas data to the file
-        persist.saveURI(source, null, null, null, null, file);
+        persist.saveURI(source, null, null, null, null, file, null);
       }
     };
 
@@ -158,7 +158,7 @@ var stringBundle;
           }
 
           // write, create, truncate
-          foStream.init(file, 0x02 | 0x08 | 0x20, 0664, 0);
+          foStream.init(file, 0x02 | 0x08 | 0x20, parseInt("0664", 8), 0);
           converter.init(foStream, "UTF-8", 0, 0);
           converter.writeString(csvString);
           converter.close();

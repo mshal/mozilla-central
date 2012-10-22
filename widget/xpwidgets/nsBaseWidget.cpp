@@ -90,11 +90,11 @@ nsBaseWidget::nsBaseWidget()
 , mCursor(eCursor_standard)
 , mWindowType(eWindowType_child)
 , mBorderStyle(eBorderStyle_none)
-, mOnDestroyCalled(false)
 , mUseAcceleratedRendering(false)
 , mForceLayersAcceleration(false)
 , mTemporarilyUseBasicLayerManager(false)
 , mUseAttachedEvents(false)
+, mContextInitialized(false)
 , mBounds(0,0,0,0)
 , mOriginalBounds(nullptr)
 , mClipRectCount(0)
@@ -691,8 +691,12 @@ NS_IMETHODIMP nsBaseWidget::MakeFullScreen(bool aFullScreen)
     NS_ASSERTION(screenManager, "Unable to grab screenManager.");
     if (screenManager) {
       nsCOMPtr<nsIScreen> screen;
-      screenManager->ScreenForRect(mOriginalBounds->x, mOriginalBounds->y,
-                                   mOriginalBounds->width, mOriginalBounds->height,
+      // convert dev pix to display/CSS pix for ScreenForRect
+      double scale = GetDefaultScale();
+      screenManager->ScreenForRect(mOriginalBounds->x / scale,
+                                   mOriginalBounds->y / scale,
+                                   mOriginalBounds->width / scale,
+                                   mOriginalBounds->height / scale,
                                    getter_AddRefs(screen));
       if (screen) {
         int32_t left, top, width, height;
@@ -803,7 +807,7 @@ nsBaseWidget::GetShouldAccelerate()
   
   if (!whitelisted) {
     NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
-#ifdef MOZ_JAVA_COMPOSITOR
+#ifdef MOZ_ANDROID_OMTC
     NS_RUNTIMEABORT("OpenGL-accelerated layers are a hard requirement on this platform. "
                     "Cannot continue without support for them.");
 #endif
@@ -820,7 +824,7 @@ nsBaseWidget::GetShouldAccelerate()
 void nsBaseWidget::CreateCompositor()
 {
   bool renderToEGLSurface = false;
-#ifdef MOZ_JAVA_COMPOSITOR
+#ifdef MOZ_ANDROID_OMTC
   renderToEGLSurface = true;
 #endif
   nsIntRect rect;
@@ -921,6 +925,11 @@ BasicLayerManager* nsBaseWidget::CreateBasicLayerManager()
       return new BasicShadowLayerManager(this);
 }
 
+CompositorChild* nsBaseWidget::GetRemoteRenderer()
+{
+  return mCompositorChild;
+}
+
 //-------------------------------------------------------------------------
 //
 // Return the used device context
@@ -928,6 +937,10 @@ BasicLayerManager* nsBaseWidget::CreateBasicLayerManager()
 //-------------------------------------------------------------------------
 nsDeviceContext* nsBaseWidget::GetDeviceContext() 
 {
+  if (!mContextInitialized) {
+    mContext->Init(this);
+    mContextInitialized = true;
+  }
   return mContext; 
 }
 
@@ -1042,13 +1055,6 @@ NS_METHOD nsBaseWidget::GetScreenBounds(nsIntRect &aRect)
 nsIntPoint nsBaseWidget::GetClientOffset()
 {
   return nsIntPoint(0, 0);
-}
-
-NS_METHOD nsBaseWidget::SetBounds(const nsIntRect &aRect)
-{
-  mBounds = aRect;
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP

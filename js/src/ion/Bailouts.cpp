@@ -77,6 +77,8 @@ IonBailoutIterator::dump() const
 static JSScript*
 GetBailedJSScript(JSContext *cx)
 {
+    AutoAssertNoGC nogc;
+
     // Just after the frame conversion, we can safely interpret the ionTop as JS
     // frame because it targets the bailed JS frame converted to an exit frame.
     IonJSFrameLayout *frame = reinterpret_cast<IonJSFrameLayout*>(cx->runtime->ionTop);
@@ -96,6 +98,7 @@ GetBailedJSScript(JSContext *cx)
 void
 StackFrame::initFromBailout(JSContext *cx, SnapshotIterator &iter)
 {
+    AutoAssertNoGC nogc;
     uint32 exprStackSlots = iter.slots() - script()->nfixed;
 
 #ifdef TRACK_SNAPSHOTS
@@ -182,6 +185,8 @@ StackFrame::initFromBailout(JSContext *cx, SnapshotIterator &iter)
 static StackFrame *
 PushInlinedFrame(JSContext *cx, StackFrame *callerFrame)
 {
+    AssertCanGC();
+
     // Grab the callee object out of the caller's frame, which has already been restored.
     // N.B. we currently assume that the caller frame is at a JSOP_CALL pc for the caller frames,
     // which will not be the case when we inline getters (in which case it would be a
@@ -191,10 +196,10 @@ PushInlinedFrame(JSContext *cx, StackFrame *callerFrame)
     int callerArgc = GET_ARGC(regs.pc);
     const Value &calleeVal = regs.sp[-callerArgc - 2];
 
-    JSFunction *fun = calleeVal.toObject().toFunction();
-    JSScript *script = fun->script();
+    RootedFunction fun(cx, calleeVal.toObject().toFunction());
+    RootedScript script(cx, fun->script());
     CallArgs inlineArgs = CallArgsFromSp(callerArgc, regs.sp);
-    
+
     // Bump the stack pointer to make it look like the inline args have been pushed, but they will
     // really get filled in by RestoreOneFrame.
     regs.sp = inlineArgs.end();
@@ -209,7 +214,7 @@ PushInlinedFrame(JSContext *cx, StackFrame *callerFrame)
     StackFrame *fp = cx->stack.fp();
     JS_ASSERT(fp == regs.fp());
     JS_ASSERT(fp->prev() == callerFrame);
-    
+
     fp->formals()[-2].setObject(*fun);
 
     return fp;
@@ -218,6 +223,7 @@ PushInlinedFrame(JSContext *cx, StackFrame *callerFrame)
 static uint32
 ConvertFrames(JSContext *cx, IonActivation *activation, IonBailoutIterator &it)
 {
+    AssertCanGC();
     IonSpew(IonSpew_Bailouts, "Bailing out %s:%u, IonScript %p",
             it.script()->filename, it.script()->lineno, (void *) it.ionScript());
     IonSpew(IonSpew_Bailouts, " reading from snapshot offset %u size %u",
@@ -247,16 +253,17 @@ ConvertFrames(JSContext *cx, IonActivation *activation, IonBailoutIterator &it)
     activation->setBailout(br);
 
     StackFrame *fp;
-    if (it.isEntryJSFrame() && cx->fp()->runningInIon()) {
+    if (it.isEntryJSFrame() && cx->fp()->runningInIon() && activation->entryfp()) {
         // Avoid creating duplicate interpreter frames. This is necessary to
         // avoid blowing out the interpreter stack, and must be used in
         // conjunction with inline-OSR from within bailouts (since each Ion
         // activation must be tied to a unique JSStackFrame for StackIter to
         // work).
-        // 
+        //
         // Note: If the entry frame is a placeholder (a stub frame pushed for
         // JM -> Ion calls), then we cannot re-use it as it does not have
         // enough slots.
+        JS_ASSERT(cx->fp() == activation->entryfp());
         fp = cx->fp();
         cx->regs().sp = fp->base();
     } else {
@@ -317,7 +324,7 @@ ConvertFrames(JSContext *cx, IonActivation *activation, IonBailoutIterator &it)
       // we flag it here manually that the entry has happened.
       case Bailout_ArgumentCheck:
         fp->unsetPushedSPSFrame();
-        Probes::enterScript(cx, fp->script(), fp->script()->function(), fp);
+        Probes::enterScript(cx, fp->script().unsafeGet(), fp->script()->function(), fp);
         return BAILOUT_RETURN_ARGUMENT_CHECK;
     }
 
@@ -350,6 +357,7 @@ EnsureExitFrame(IonCommonFrameLayout *frame)
 uint32
 ion::Bailout(BailoutStack *sp)
 {
+    AssertCanGC();
     JSContext *cx = GetIonContext()->cx;
     // We don't have an exit frame.
     cx->runtime->ionTop = NULL;
@@ -372,6 +380,7 @@ ion::Bailout(BailoutStack *sp)
 uint32
 ion::InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut)
 {
+    AssertCanGC();
     sp->checkInvariants();
 
     JSContext *cx = GetIonContext()->cx;
@@ -410,12 +419,14 @@ ion::InvalidationBailout(InvalidationBailoutStack *sp, size_t *frameSizeOut)
         cx->regs().sp[-1] = cx->runtime->takeIonReturnOverride();
 
     if (retval != BAILOUT_RETURN_FATAL_ERROR) {
-        if (void *annotation = activation->entryfp()->annotation()) {
-            // If the entry frame has an annotation, then we invalidated and have
-            // immediately returned into this bailout. Transfer the annotation to
-            // the new topmost frame.
-            activation->entryfp()->setAnnotation(NULL);
-            cx->fp()->setAnnotation(annotation);
+        if (activation->entryfp()) {
+            if (void *annotation = activation->entryfp()->annotation()) {
+                // If the entry frame has an annotation, then we invalidated and have
+                // immediately returned into this bailout. Transfer the annotation to
+                // the new topmost frame.
+                activation->entryfp()->setAnnotation(NULL);
+                cx->fp()->setAnnotation(annotation);
+            }
         }
 
         // If invalidation was triggered inside a stub call, we may still have to
@@ -492,7 +503,7 @@ uint32
 ion::RecompileForInlining()
 {
     JSContext *cx = GetIonContext()->cx;
-    JSScript *script = cx->fp()->script();
+    RawScript script = cx->fp()->script().unsafeGet();
 
     IonSpew(IonSpew_Inlining, "Recompiling script to inline calls %s:%d", script->filename,
             script->lineno);
@@ -594,6 +605,40 @@ ion::ThunkToInterpreter(Value *vp)
         pc += GET_JUMP_OFFSET(pc);
     if (JSOp(*pc) == JSOP_LOOPENTRY)
         cx->regs().pc = GetNextPc(pc);
+
+    // When JSScript::argumentsOptimizationFailed, we cannot access Ion frames
+    // in order to create an arguments object for them.  However, there is an
+    // invariant that script->needsArgsObj() implies fp->hasArgsObj() (after the
+    // prologue), so we must create one now for each inlined frame which needs
+    // one.
+    {
+        br->entryfp()->clearRunningInIon();
+        ScriptFrameIter iter(cx);
+        StackFrame *fp = NULL;
+        Rooted<JSScript*> script(cx, NULL);
+        do {
+            fp = iter.interpFrame();
+            script = iter.script();
+            if (script->needsArgsObj()) {
+                // Currently IonMonkey does not compile if the script needs an
+                // arguments object, so the frame should not have any argument
+                // object yet.
+                JS_ASSERT(!fp->hasArgsObj());
+                ArgumentsObject *argsobj = ArgumentsObject::createExpected(cx, fp);
+                if (!argsobj)
+                    return Interpret_Error;
+                InternalBindingsHandle bindings(script, &script->bindings);
+                const unsigned var = Bindings::argumentsVarIndex(cx, bindings);
+                // The arguments is a local binding and needsArgsObj does not
+                // check if it is clobbered. Ensure that the local binding
+                // restored during bailout before storing the arguments object
+                // to the slot.
+                if (fp->unaliasedLocal(var).isMagic(JS_OPTIMIZED_ARGUMENTS))
+                    fp->unaliasedLocal(var) = ObjectValue(*argsobj);
+            }
+            ++iter;
+        } while (fp != br->entryfp());
+    }
 
     if (activation->entryfp() == br->entryfp()) {
         // If the bailout entry fp is the same as the activation entryfp, then

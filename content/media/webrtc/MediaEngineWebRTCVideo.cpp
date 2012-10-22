@@ -9,14 +9,17 @@
 
 namespace mozilla {
 
+#ifdef PR_LOGGING
+extern PRLogModuleInfo* gMediaManagerLog;
+#define LOG(msg) PR_LOG(gMediaManagerLog, PR_LOG_DEBUG, msg)
+#else
+#define LOG(msg)
+#endif
+
 /**
  * Webrtc video source.
  */
 NS_IMPL_THREADSAFE_ISUPPORTS1(MediaEngineWebRTCVideoSource, nsIRunnable)
-
-// Static variables to hold device names and UUIDs.
-const unsigned int MediaEngineWebRTCVideoSource::KMaxDeviceNameLength = 128;
-const unsigned int MediaEngineWebRTCVideoSource::KMaxUniqueIdLength = 256;
 
 // ViEExternalRenderer Callback.
 int
@@ -33,8 +36,6 @@ int
 MediaEngineWebRTCVideoSource::DeliverFrame(
    unsigned char* buffer, int size, uint32_t time_stamp, int64_t render_time)
 {
-  ReentrantMonitorAutoEnter enter(mMonitor);
-
   if (mInSnapshotMode) {
     // Set the condition variable to false and notify Snapshot().
     PR_Lock(mSnapshotLock);
@@ -46,11 +47,13 @@ MediaEngineWebRTCVideoSource::DeliverFrame(
 
   // Check for proper state.
   if (mState != kStarted) {
+    LOG(("DeliverFrame: video not started"));
     return 0;
   }
 
   // Create a video frame and append it to the track.
   ImageFormat format = PLANAR_YCBCR;
+
   nsRefPtr<layers::Image> image = mImageContainer->CreateImage(&format, 1);
 
   layers::PlanarYCbCrImage* videoImage = static_cast<layers::PlanarYCbCrImage*>(image.get());
@@ -74,44 +77,113 @@ MediaEngineWebRTCVideoSource::DeliverFrame(
 
   videoImage->SetData(data);
 
-  VideoSegment segment;
-  segment.AppendFrame(image.forget(), 1, gfxIntSize(mWidth, mHeight));
-  mSource->AppendToTrack(mTrackID, &(segment));
+#ifdef LOG_ALL_FRAMES
+  static uint32_t frame_num = 0;
+  LOG(("frame %d; timestamp %u, render_time %lu", frame_num++, time_stamp, render_time));
+#endif
+
+  // we don't touch anything in 'this' until here (except for snapshot,
+  // which has it's own lock)
+  ReentrantMonitorAutoEnter enter(mMonitor);
+
+  // implicitly releases last image
+  mImage = image.forget();
+
   return 0;
+}
+
+// Called if the graph thinks it's running out of buffered video; repeat
+// the last frame for whatever minimum period it think it needs.  Note that
+// this means that no *real* frame can be inserted during this period.
+void
+MediaEngineWebRTCVideoSource::NotifyPull(MediaStreamGraph* aGraph,
+                                         StreamTime aDesiredTime)
+{
+  VideoSegment segment;
+
+  ReentrantMonitorAutoEnter enter(mMonitor);
+  if (mState != kStarted)
+    return;
+
+  // Note: we're not giving up mImage here
+  nsRefPtr<layers::Image> image = mImage;
+  TrackTicks target = TimeToTicksRoundUp(USECS_PER_S, aDesiredTime);
+  TrackTicks delta = target - mLastEndTime;
+#ifdef LOG_ALL_FRAMES
+  LOG(("NotifyPull, target = %lu, delta = %lu", (uint64_t) target, (uint64_t) delta));
+#endif
+  // NULL images are allowed
+  segment.AppendFrame(image ? image.forget() : nullptr, delta, gfxIntSize(mWidth, mHeight));
+  mSource->AppendToTrack(mTrackID, &(segment));
+  mLastEndTime = target;
+}
+
+void
+MediaEngineWebRTCVideoSource::ChooseCapability(uint32_t aWidth, uint32_t aHeight, uint32_t aMinFPS)
+{
+  int num = mViECapture->NumberOfCapabilities(mUniqueId, KMaxUniqueIdLength);
+
+  NS_WARN_IF_FALSE(!mCapabilityChosen,"Shouldn't select capability of a device twice");
+
+  if (num <= 0) {
+    // Set to default values
+    mCapability.width  = mOpts.mWidth  = aWidth;
+    mCapability.height = mOpts.mHeight = aHeight;
+    mCapability.maxFPS = mOpts.mMaxFPS = DEFAULT_VIDEO_FPS;
+    mOpts.codecType = kVideoCodecI420;
+
+    // Mac doesn't support capabilities.
+    mCapabilityChosen = true;
+    return;
+  }
+
+  // Default is closest to available capability but equal to or below;
+  // otherwise closest above.  Since we handle the num=0 case above and
+  // take the first entry always, we can never exit uninitialized.
+  webrtc::CaptureCapability cap;
+  bool higher = true;
+  for (int i = 0; i < num; i++) {
+    mViECapture->GetCaptureCapability(mUniqueId, KMaxUniqueIdLength, i, cap);
+    if (higher) {
+      if (i == 0 ||
+          (mOpts.mWidth > cap.width && mOpts.mHeight > cap.height)) {
+        mOpts.mWidth = cap.width;
+        mOpts.mHeight = cap.height;
+        mOpts.mMaxFPS = cap.maxFPS;
+        mCapability = cap;
+        // FIXME: expose expected capture delay?
+      }
+      if (cap.width <= aWidth && cap.height <= aHeight) {
+        higher = false;
+      }
+    } else {
+      if (cap.width > aWidth || cap.height > aHeight || cap.maxFPS < aMinFPS) {
+        continue;
+      }
+      if (mOpts.mWidth < cap.width && mOpts.mHeight < cap.height) {
+        mOpts.mWidth = cap.width;
+        mOpts.mHeight = cap.height;
+        mOpts.mMaxFPS = cap.maxFPS;
+        mCapability = cap;
+        // FIXME: expose expected capture delay?
+      }
+    }
+  }
+  mCapabilityChosen = true;
 }
 
 void
 MediaEngineWebRTCVideoSource::GetName(nsAString& aName)
 {
-  char deviceName[KMaxDeviceNameLength];
-  memset(deviceName, 0, KMaxDeviceNameLength);
-
-  char uniqueId[KMaxUniqueIdLength];
-  memset(uniqueId, 0, KMaxUniqueIdLength);
-
-  if (mInitDone) {
-    mViECapture->GetCaptureDevice(
-      mCapIndex, deviceName, KMaxDeviceNameLength, uniqueId, KMaxUniqueIdLength
-    );
-    aName.Assign(NS_ConvertASCIItoUTF16(deviceName));
-  }
+  // mDeviceName is UTF8
+  CopyUTF8toUTF16(mDeviceName, aName);
 }
 
 void
 MediaEngineWebRTCVideoSource::GetUUID(nsAString& aUUID)
 {
-  char deviceName[KMaxDeviceNameLength];
-  memset(deviceName, 0, KMaxDeviceNameLength);
-
-  char uniqueId[KMaxUniqueIdLength];
-  memset(uniqueId, 0, KMaxUniqueIdLength);
-
-  if (mInitDone) {
-    mViECapture->GetCaptureDevice(
-      mCapIndex, deviceName, KMaxDeviceNameLength, uniqueId, KMaxUniqueIdLength
-    );
-    aUUID.Assign(NS_ConvertASCIItoUTF16(uniqueId));
-  }
+  // mUniqueId is UTF8
+  CopyUTF8toUTF16(mUniqueId, aUUID);
 }
 
 nsresult
@@ -121,21 +193,12 @@ MediaEngineWebRTCVideoSource::Allocate()
     return NS_ERROR_FAILURE;
   }
 
-  char deviceName[KMaxDeviceNameLength];
-  memset(deviceName, 0, KMaxDeviceNameLength);
-
-  char uniqueId[KMaxUniqueIdLength];
-  memset(uniqueId, 0, KMaxUniqueIdLength);
-
-  mViECapture->GetCaptureDevice(
-    mCapIndex, deviceName, KMaxDeviceNameLength, uniqueId, KMaxUniqueIdLength
-  );
-
-  if (mViECapture->AllocateCaptureDevice(uniqueId, KMaxUniqueIdLength, mCapIndex)) {
-    return NS_ERROR_FAILURE;
+  if (!mCapabilityChosen) {
+    // XXX these should come from constraints
+    ChooseCapability(mWidth, mHeight, mMinFps);
   }
 
-  if (mViECapture->StartCapture(mCapIndex) < 0) {
+  if (mViECapture->AllocateCaptureDevice(mUniqueId, KMaxUniqueIdLength, mCaptureIndex)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -150,21 +213,18 @@ MediaEngineWebRTCVideoSource::Deallocate()
     return NS_ERROR_FAILURE;
   }
 
-  mViECapture->StopCapture(mCapIndex);
-  mViECapture->ReleaseCaptureDevice(mCapIndex);
+  mViECapture->ReleaseCaptureDevice(mCaptureIndex);
   mState = kReleased;
   return NS_OK;
 }
 
-MediaEngineVideoOptions
+const MediaEngineVideoOptions*
 MediaEngineWebRTCVideoSource::GetOptions()
 {
-  MediaEngineVideoOptions aOpts;
-  aOpts.mWidth = mWidth;
-  aOpts.mHeight = mHeight;
-  aOpts.mMaxFPS = mFps;
-  aOpts.codecType = kVideoCodecI420;
-  return aOpts;
+  if (!mCapabilityChosen) {
+    ChooseCapability(mWidth, mHeight, mMinFps);
+  }
+  return &mOpts;
 }
 
 nsresult
@@ -187,16 +247,22 @@ MediaEngineWebRTCVideoSource::Start(SourceMediaStream* aStream, TrackID aID)
   mTrackID = aID;
 
   mImageContainer = layers::LayerManager::CreateImageContainer();
-  mSource->AddTrack(aID, mFps, 0, new VideoSegment());
-  mSource->AdvanceKnownTracksTime(STREAM_TIME_MAX);
 
-  error = mViERender->AddRenderer(mCapIndex, webrtc::kVideoI420, (webrtc::ExternalRenderer*)this);
+  mSource->AddTrack(aID, USECS_PER_S, 0, new VideoSegment());
+  mSource->AdvanceKnownTracksTime(STREAM_TIME_MAX);
+  mLastEndTime = 0;
+
+  error = mViERender->AddRenderer(mCaptureIndex, webrtc::kVideoI420, (webrtc::ExternalRenderer*)this);
   if (error == -1) {
     return NS_ERROR_FAILURE;
   }
 
-  error = mViERender->StartRender(mCapIndex);
+  error = mViERender->StartRender(mCaptureIndex);
   if (error == -1) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (mViECapture->StartCapture(mCaptureIndex, mCapability) < 0) {
     return NS_ERROR_FAILURE;
   }
 
@@ -211,13 +277,16 @@ MediaEngineWebRTCVideoSource::Stop()
     return NS_ERROR_FAILURE;
   }
 
-  mSource->EndTrack(mTrackID);
-  mSource->Finish();
+  {
+    ReentrantMonitorAutoEnter enter(mMonitor);
+    mState = kStopped;
+    mSource->EndTrack(mTrackID);
+  }
 
-  mViERender->StopRender(mCapIndex);
-  mViERender->RemoveRenderer(mCapIndex);
+  mViERender->StopRender(mCaptureIndex);
+  mViERender->RemoveRenderer(mCaptureIndex);
+  mViECapture->StopCapture(mCaptureIndex);
 
-  mState = kStopped;
   return NS_OK;
 }
 
@@ -256,11 +325,11 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
   if (!mInitDone || mState != kAllocated) {
     return NS_ERROR_FAILURE;
   }
-  error = mViERender->AddRenderer(mCapIndex, webrtc::kVideoI420, (webrtc::ExternalRenderer*)this);
+  error = mViERender->AddRenderer(mCaptureIndex, webrtc::kVideoI420, (webrtc::ExternalRenderer*)this);
   if (error == -1) {
     return NS_ERROR_FAILURE;
   }
-  error = mViERender->StartRender(mCapIndex);
+  error = mViERender->StartRender(mCaptureIndex);
   if (error == -1) {
     return NS_ERROR_FAILURE;
   }
@@ -291,15 +360,15 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
   }
 
   NS_ConvertUTF16toUTF8 path(*mSnapshotPath);
-  if (vieFile->GetCaptureDeviceSnapshot(mCapIndex, path.get()) < 0) {
+  if (vieFile->GetCaptureDeviceSnapshot(mCaptureIndex, path.get()) < 0) {
     delete mSnapshotPath;
     mSnapshotPath = NULL;
     return NS_ERROR_FAILURE;
   }
 
   // Stop the camera.
-  mViERender->StopRender(mCapIndex);
-  mViERender->RemoveRenderer(mCapIndex);
+  mViERender->StopRender(mCaptureIndex);
+  mViERender->RemoveRenderer(mCaptureIndex);
 
   nsCOMPtr<nsIFile> file;
   nsresult rv = NS_NewLocalFile(*mSnapshotPath, false, getter_AddRefs(file));
@@ -322,6 +391,9 @@ MediaEngineWebRTCVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
 void
 MediaEngineWebRTCVideoSource::Init()
 {
+  mDeviceName[0] = '\0'; // paranoia
+  mUniqueId[0] = '\0';
+
   if (mVideoEngine == NULL) {
     return;
   }
@@ -339,6 +411,12 @@ MediaEngineWebRTCVideoSource::Init()
     return;
   }
 
+  if (mViECapture->GetCaptureDevice(mCaptureIndex,
+                                    mDeviceName, sizeof(mDeviceName),
+                                    mUniqueId, sizeof(mUniqueId))) {
+    return;
+  }
+
   mInitDone = true;
 }
 
@@ -352,14 +430,14 @@ MediaEngineWebRTCVideoSource::Shutdown()
   }
 
   if (mState == kStarted) {
-    mViERender->StopRender(mCapIndex);
-    mViERender->RemoveRenderer(mCapIndex);
+    mViERender->StopRender(mCaptureIndex);
+    mViERender->RemoveRenderer(mCaptureIndex);
     continueShutdown = true;
   }
 
   if (mState == kAllocated || continueShutdown) {
-    mViECapture->StopCapture(mCapIndex);
-    mViECapture->ReleaseCaptureDevice(mCapIndex);
+    mViECapture->StopCapture(mCaptureIndex);
+    mViECapture->ReleaseCaptureDevice(mCaptureIndex);
     continueShutdown = false;
   }
 

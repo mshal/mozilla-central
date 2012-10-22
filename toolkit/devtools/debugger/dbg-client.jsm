@@ -22,6 +22,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "socketTransportService",
                                    "@mozilla.org/network/socket-transport-service;1",
                                    "nsISocketTransportService");
 
+XPCOMUtils.defineLazyModuleGetter(this, "WebConsoleClient",
+                                  "resource://gre/modules/devtools/WebConsoleClient.jsm");
+
 let wantLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 
 function dumpn(str)
@@ -164,10 +167,16 @@ const ThreadStateTypes = {
  * by the client.
  */
 const UnsolicitedNotifications = {
+  "consoleAPICall": "consoleAPICall",
+  "eventNotification": "eventNotification",
+  "fileActivity": "fileActivity",
+  "locationChange": "locationChange",
+  "networkEvent": "networkEvent",
+  "networkEventUpdate": "networkEventUpdate",
   "newScript": "newScript",
   "tabDetached": "tabDetached",
   "tabNavigated": "tabNavigated",
-  "profilerStateChanged": "profilerStateChanged"
+  "pageError": "pageError"
 };
 
 /**
@@ -194,6 +203,7 @@ function DebuggerClient(aTransport)
   this._transport.hooks = this;
   this._threadClients = {};
   this._tabClients = {};
+  this._consoleClients = {};
 
   this._pendingRequests = [];
   this._activeRequests = {};
@@ -249,10 +259,32 @@ DebuggerClient.prototype = {
       }
     }.bind(this);
 
-    if (this.activeThread) {
-      this.activeThread.detach(detachTab);
-    } else {
-      detachTab();
+    let detachThread = function _detachThread() {
+      if (this.activeThread) {
+        this.activeThread.detach(detachTab);
+      } else {
+        detachTab();
+      }
+    }.bind(this);
+
+    let consolesClosed = 0;
+    let consolesToClose = 0;
+
+    let onConsoleClose = function _onConsoleClose() {
+      consolesClosed++;
+      if (consolesClosed >= consolesToClose) {
+        this._consoleClients = {};
+        detachThread();
+      }
+    }.bind(this);
+
+    for each (let client in this._consoleClients) {
+      consolesToClose++;
+      client.close(onConsoleClose);
+    }
+
+    if (!consolesToClose) {
+      detachThread();
     }
   },
 
@@ -282,12 +314,43 @@ DebuggerClient.prototype = {
     let self = this;
     let packet = { to: aTabActor, type: "attach" };
     this.request(packet, function(aResponse) {
+      let tabClient;
       if (!aResponse.error) {
-        var tabClient = new TabClient(self, aTabActor);
+        tabClient = new TabClient(self, aTabActor);
         self._tabClients[aTabActor] = tabClient;
         self.activeTab = tabClient;
       }
       aOnResponse(aResponse, tabClient);
+    });
+  },
+
+  /**
+   * Attach to a Web Console actor.
+   *
+   * @param string aConsoleActor
+   *        The ID for the console actor to attach to.
+   * @param array aListeners
+   *        The console listeners you want to start.
+   * @param function aOnResponse
+   *        Called with the response packet and a WebConsoleClient
+   *        instance (which will be undefined on error).
+   */
+  attachConsole:
+  function DC_attachConsole(aConsoleActor, aListeners, aOnResponse) {
+    let self = this;
+    let packet = {
+      to: aConsoleActor,
+      type: "startListeners",
+      listeners: aListeners,
+    };
+
+    this.request(packet, function(aResponse) {
+      let consoleClient;
+      if (!aResponse.error) {
+        consoleClient = new WebConsoleClient(self, aConsoleActor);
+        self._consoleClients[aConsoleActor] = consoleClient;
+      }
+      aOnResponse(aResponse, consoleClient);
     });
   },
 
@@ -311,6 +374,23 @@ DebuggerClient.prototype = {
       }
       aOnResponse(aResponse, threadClient);
     });
+  },
+
+  /**
+   * Release an object actor.
+   *
+   * @param string aActor
+   *        The actor ID to send the request to.
+   * @param aOnResponse function
+   *        If specified, will be called with the response packet when
+   *        debugging server responds.
+   */
+  release: function DC_release(aActor, aOnResponse) {
+    let packet = {
+      to: aActor,
+      type: "release",
+    };
+    this.request(packet, aOnResponse);
   },
 
   /**
@@ -487,6 +567,7 @@ function ThreadClient(aClient, aActor) {
   this._frameCache = [];
   this._scriptCache = {};
   this._pauseGrips = {};
+  this._threadGrips = {};
 }
 
 ThreadClient.prototype = {
@@ -709,6 +790,23 @@ ThreadClient.prototype = {
   },
 
   /**
+   * Release multiple thread-lifetime object actors. If any pause-lifetime
+   * actors are included in the request, a |notReleasable| error will return,
+   * but all the thread-lifetime ones will have been released.
+   *
+   * @param array aActors
+   *        An array with actor IDs to release.
+   */
+  releaseMany: function TC_releaseMany(aActors, aOnResponse) {
+    let packet = {
+      to: this._actor,
+      type: "releaseMany",
+      actors: aActors
+    };
+    this._client.request(packet, aOnResponse);
+  },
+
+  /**
    * Request the loaded scripts for the current thread.
    *
    * @param aOnResponse integer
@@ -861,30 +959,74 @@ ThreadClient.prototype = {
   },
 
   /**
-   * Return an instance of LongStringClient for the given long string grip.
+   * Get or create a long string client, checking the grip client cache if it
+   * already exists.
+   *
+   * @param aGrip Object
+   *        The long string grip returned by the protocol.
+   * @param aGripCacheName String
+   *        The property name of the grip client cache to check for existing
+   *        clients in.
+   */
+  _longString: function TC__longString(aGrip, aGripCacheName) {
+    if (aGrip.actor in this[aGripCacheName]) {
+      return this[aGripCacheName][aGrip.actor];
+    }
+
+    let client = new LongStringClient(this._client, aGrip);
+    this[aGripCacheName][aGrip.actor] = client;
+    return client;
+  },
+
+  /**
+   * Return an instance of LongStringClient for the given long string grip that
+   * is scoped to the current pause.
    *
    * @param aGrip Object
    *        The long string grip returned by the protocol.
    */
-  longString: function TC_longString(aGrip) {
-    if (aGrip.actor in this._pauseGrips) {
-      return this._pauseGrips[aGrip.actor];
-    }
+  pauseLongString: function TC_pauseLongString(aGrip) {
+    return this._longString(aGrip, "_pauseGrips");
+  },
 
-    let client = new LongStringClient(this._client, aGrip);
-    this._pauseGrips[aGrip.actor] = client;
-    return client;
+  /**
+   * Return an instance of LongStringClient for the given long string grip that
+   * is scoped to the thread lifetime.
+   *
+   * @param aGrip Object
+   *        The long string grip returned by the protocol.
+   */
+  threadLongString: function TC_threadLongString(aGrip) {
+    return this._longString(aGrip, "_threadGrips");
+  },
+
+  /**
+   * Clear and invalidate all the grip clients from the given cache.
+   *
+   * @param aGripCacheName
+   *        The property name of the grip cache we want to clear.
+   */
+  _clearGripClients: function TC_clearGrips(aGripCacheName) {
+    for each (let grip in this[aGripCacheName]) {
+      grip.valid = false;
+    }
+    this[aGripCacheName] = {};
   },
 
   /**
    * Invalidate pause-lifetime grip clients and clear the list of
    * current grip clients.
    */
-  _clearPauseGrips: function TC_clearPauseGrips(aPacket) {
-    for each (let grip in this._pauseGrips) {
-      grip.valid = false;
-    }
-    this._pauseGrips = {};
+  _clearPauseGrips: function TC_clearPauseGrips() {
+    this._clearGripClients("_pauseGrips");
+  },
+
+  /**
+   * Invalidate pause-lifetime grip clients and clear the list of
+   * current grip clients.
+   */
+  _clearThreadGrips: function TC_clearPauseGrips() {
+    this._clearGripClients("_threadGrips");
   },
 
   /**
@@ -895,8 +1037,17 @@ ThreadClient.prototype = {
     this._state = ThreadStateTypes[aPacket.type];
     this._clearFrames();
     this._clearPauseGrips();
+    aPacket.type === ThreadStateTypes.detached && this._clearThreadGrips();
     this._client._eventsEnabled && this.notify(aPacket.type, aPacket);
   },
+
+  /**
+   * Return an instance of SourceClient for the given actor.
+   */
+  source: function TC_source(aActor) {
+    return new SourceClient(this._client, aActor);
+  }
+
 };
 
 eventSource(ThreadClient.prototype);
@@ -1036,6 +1187,55 @@ LongStringClient.prototype = {
                    start: aStart,
                    end: aEnd };
     this._client.request(packet, aCallback);
+  }
+};
+
+/**
+ * A SourceClient provides a way to access the source text of a script.
+ *
+ * @param aClient DebuggerClient
+ *        The debugger client parent.
+ * @param aActor String
+ *        The name of the source actor.
+ */
+function SourceClient(aClient, aActor) {
+  this._actor = aActor;
+  this._client = aClient;
+}
+
+SourceClient.prototype = {
+  /**
+   * Get a long string grip for this SourceClient's source.
+   */
+  source: function SC_source(aCallback) {
+    let packet = {
+      to: this._actor,
+      type: "source"
+    };
+    this._client.request(packet, function (aResponse) {
+      if (aResponse.error) {
+        aCallback(aResponse);
+        return;
+      }
+
+      if (typeof aResponse.source === "string") {
+        aCallback(aResponse);
+        return;
+      }
+
+      let longString = this._client.activeThread.threadLongString(
+        aResponse.source);
+      longString.substring(0, longString.length, function (aResponse) {
+        if (aResponse.error) {
+          aCallback(aResponse);
+          return;
+        }
+
+        aCallback({
+          source: aResponse.substring
+        });
+      });
+    }.bind(this));
   }
 };
 

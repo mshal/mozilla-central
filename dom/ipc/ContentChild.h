@@ -61,13 +61,15 @@ public:
     void InitXPCOM();
 
     static ContentChild* GetSingleton() {
-        NS_ASSERTION(sSingleton, "not initialized");
         return sSingleton;
     }
 
     const AppInfo& GetAppInfo() {
         return mAppInfo;
     }
+
+    void SetProcessName(const nsAString& aName);
+    const void GetProcessName(nsAString& aName);
 
     PCompositorChild*
     AllocPCompositor(mozilla::ipc::Transport* aTransport,
@@ -107,6 +109,14 @@ public:
 
     virtual bool
     RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* child);
+
+    virtual bool
+    RecvDumpMemoryReportsToFile(const nsString& aIdentifier,
+                                const bool& aMinimizeMemoryUsage,
+                                const bool& aDumpChildProcesses);
+    virtual bool
+    RecvDumpGCAndCCLogsToFile(const nsString& aIdentifier,
+                              const bool& aDumpChildProcesses);
 
     virtual PTestShellChild* AllocPTestShell();
     virtual bool DeallocPTestShell(PTestShellChild*);
@@ -222,6 +232,7 @@ private:
 
     bool mIsForApp;
     bool mIsForBrowser;
+    nsString mProcessName;
 
     static ContentChild* sSingleton;
 

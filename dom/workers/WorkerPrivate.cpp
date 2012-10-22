@@ -2231,7 +2231,8 @@ WorkerPrivateParent<Derived>::ForgetMainThreadObjects(
 
 template <class Derived>
 bool
-WorkerPrivateParent<Derived>::PostMessage(JSContext* aCx, jsval aMessage)
+WorkerPrivateParent<Derived>::PostMessage(JSContext* aCx, jsval aMessage,
+                                          jsval aTransferable)
 {
   AssertIsOnParentThread();
 
@@ -2265,7 +2266,7 @@ WorkerPrivateParent<Derived>::PostMessage(JSContext* aCx, jsval aMessage)
   nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
   JSAutoStructuredCloneBuffer buffer;
-  if (!buffer.write(aCx, aMessage, callbacks, &clonedObjects)) {
+  if (!buffer.write(aCx, aMessage, aTransferable, callbacks, &clonedObjects)) {
     return false;
   }
 
@@ -3132,11 +3133,11 @@ uint32_t
 WorkerPrivate::RemainingRunTimeMS() const
 {
   if (mKillTime.IsNull()) {
-    return PR_UINT32_MAX;
+    return UINT32_MAX;
   }
   TimeDuration runtime = mKillTime - TimeStamp::Now();
   double ms = runtime > TimeDuration(0) ? runtime.ToMilliseconds() : 0;
-  return ms > double(PR_UINT32_MAX) ? PR_UINT32_MAX : uint32_t(ms);
+  return ms > double(UINT32_MAX) ? UINT32_MAX : uint32_t(ms);
 }
 
 bool
@@ -3337,7 +3338,7 @@ WorkerPrivate::CreateNewSyncLoop()
 {
   AssertIsOnWorkerThread();
 
-  NS_ASSERTION(mSyncQueues.Length() < PR_UINT32_MAX,
+  NS_ASSERTION(mSyncQueues.Length() < UINT32_MAX,
                "Should have bailed by now!");
 
   mSyncQueues.AppendElement(new SyncQueue());
@@ -3422,7 +3423,8 @@ WorkerPrivate::StopSyncLoop(uint32_t aSyncLoopKey, bool aSyncResult)
 }
 
 bool
-WorkerPrivate::PostMessageToParent(JSContext* aCx, jsval aMessage)
+WorkerPrivate::PostMessageToParent(JSContext* aCx, jsval aMessage,
+                                   jsval aTransferable)
 {
   AssertIsOnWorkerThread();
 
@@ -3434,7 +3436,7 @@ WorkerPrivate::PostMessageToParent(JSContext* aCx, jsval aMessage)
   nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
   JSAutoStructuredCloneBuffer buffer;
-  if (!buffer.write(aCx, aMessage, callbacks, &clonedObjects)) {
+  if (!buffer.write(aCx, aMessage, aTransferable, callbacks, &clonedObjects)) {
     return false;
   }
 
@@ -3482,36 +3484,42 @@ WorkerPrivate::NotifyInternal(JSContext* aCx, Status aStatus)
   // Let all our features know the new status.
   NotifyFeatures(aCx, aStatus);
 
-  // There's nothing to do here if we never succeeded in running the worker
-  // script or if the close handler has already run.
-  if (!JS_GetGlobalObject(aCx) || mCloseHandlerFinished) {
+  // If this is the first time our status has changed then we need to clear the
+  // main event queue.
+  if (previousStatus == Running) {
+    MutexAutoLock lock(mMutex);
+    ClearQueue(&mQueue);
+  }
+
+  // If we've run the close handler, we don't need to do anything else.
+  if (mCloseHandlerFinished) {
     return true;
   }
 
-  // If this is the first time our status has changed then we need to clear the
-  // main event queue. We also need to schedule the close handler unless we're
-  // being shut down.
-  if (previousStatus == Running) {
+  // If the worker script never ran, or failed to compile, we don't need to do
+  // anything else, except pretend that we ran the close handler.
+  if (!JS_GetGlobalObject(aCx)) {
+    mCloseHandlerStarted = true;
+    mCloseHandlerFinished = true;
+    return true;
+  }
+
+  // If this is the first time our status has changed we also need to schedule
+  // the close handler unless we're being shut down.
+  if (previousStatus == Running && aStatus != Killing) {
     NS_ASSERTION(!mCloseHandlerStarted && !mCloseHandlerFinished,
                  "This is impossible!");
 
-    {
-      MutexAutoLock lock(mMutex);
-      ClearQueue(&mQueue);
+    nsRefPtr<CloseEventRunnable> closeRunnable = new CloseEventRunnable(this);
+
+    MutexAutoLock lock(mMutex);
+
+    if (!mQueue.Push(closeRunnable)) {
+      NS_WARNING("Failed to push closeRunnable!");
+      return false;
     }
 
-    if (aStatus != Killing) {
-      nsRefPtr<CloseEventRunnable> closeRunnable = new CloseEventRunnable(this);
-
-      MutexAutoLock lock(mMutex);
-
-      if (!mQueue.Push(closeRunnable)) {
-        NS_WARNING("Failed to push closeRunnable!");
-        return false;
-      }
-
-      closeRunnable.forget();
-    }
+    closeRunnable.forget();
   }
 
   if (aStatus == Closing) {
@@ -3674,7 +3682,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx, unsigned aArgc, jsval* aVp,
   newInfo->mIsInterval = aIsInterval;
   newInfo->mId = timerId;
 
-  if (NS_UNLIKELY(timerId == PR_UINT32_MAX)) {
+  if (NS_UNLIKELY(timerId == UINT32_MAX)) {
     NS_WARNING("Timeout ids overflowed!");
     mNextTimeoutId = 1;
   }
@@ -3778,7 +3786,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx, unsigned aArgc, jsval* aVp,
 }
 
 bool
-WorkerPrivate::ClearTimeout(JSContext* aCx, uint32 aId)
+WorkerPrivate::ClearTimeout(JSContext* aCx, uint32_t aId)
 {
   AssertIsOnWorkerThread();
 
@@ -3938,7 +3946,7 @@ WorkerPrivate::RescheduleTimeoutTimer(JSContext* aCx)
 
   double delta =
     (mTimeouts[0]->mTargetTime - TimeStamp::Now()).ToMilliseconds();
-  uint32_t delay = delta > 0 ? NS_MIN(delta, double(PR_UINT32_MAX)) : 0;
+  uint32_t delay = delta > 0 ? NS_MIN(delta, double(UINT32_MAX)) : 0;
 
   nsresult rv = mTimer->InitWithFuncCallback(DummyCallback, nullptr, delay,
                                              nsITimer::TYPE_ONE_SHOT);

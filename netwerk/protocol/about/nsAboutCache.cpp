@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "NSPRFormatTime.h" // must be before anything that includes prtime.h
 #include "nsAboutCache.h"
 #include "nsIIOService.h"
 #include "nsIServiceManager.h"
@@ -13,7 +14,6 @@
 #include "nsIURI.h"
 #include "nsCOMPtr.h"
 #include "nsNetUtil.h"
-#include "prtime.h"
 #include "nsEscape.h"
 
 #include "nsICacheService.h"
@@ -21,10 +21,9 @@
 static PRTime SecondsToPRTime(uint32_t t_sec)
 {
     PRTime t_usec, usec_per_sec;
-    LL_I2L(t_usec, t_sec);
-    LL_I2L(usec_per_sec, PR_USEC_PER_SEC);
-    LL_MUL(t_usec, t_usec, usec_per_sec);
-    return t_usec;
+    t_usec = t_sec;
+    usec_per_sec = PR_USEC_PER_SEC;
+    return t_usec *= usec_per_sec;
 }
 static void PrintTimeString(char *buf, uint32_t bufsize, uint32_t t_sec)
 {

@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import re, sys, os, os.path, logging, shutil, signal, math, time
+import re, sys, os, os.path, logging, shutil, signal, math, time, traceback
 import xml.dom.minidom
 from glob import glob
 from optparse import OptionParser
@@ -316,6 +316,20 @@ class XPCShellTests(object):
       On a remote system, this is overloaded to handle remote process communication.
     """
     return proc.communicate()
+
+  def poll(self, proc):
+    """
+      Simple wrapper to check if a process has terminated.
+      On a remote system, this is overloaded to handle remote process communication.
+    """
+    return proc.poll()
+
+  def kill(self, proc):
+    """
+      Simple wrapper to kill a process.
+      On a remote system, this is overloaded to handle remote process communication.
+    """
+    return proc.kill()
 
   def removeDir(self, dirname):
     """
@@ -860,10 +874,96 @@ class XPCShellTests(object):
         if self.logfiles and stdout:
           self.createLogFile(name, stdout, leakLogs)
       finally:
+        # We can sometimes get here before the process has terminated, which would
+        # cause removeDir() to fail - so check for the process & kill it it needed.
+        if self.poll(proc) is None:
+          message = "TEST-UNEXPECTED-FAIL | %s | Process still running after test!" % name
+          self.log.error(message)
+          print_stdout(stdout)
+          self.failCount += 1
+          xunitResult["passed"] = False
+          xunitResult["failure"] = {
+            "type": "TEST-UNEXPECTED-FAIL",
+            "message": message,
+            "text": stdout
+          }
+          self.kill(proc)
         # We don't want to delete the profile when running check-interactive
         # or check-one.
         if self.profileDir and not self.interactive and not self.singleFile:
-          self.removeDir(self.profileDir)
+          try:
+            self.removeDir(self.profileDir)
+          except Exception:
+            message = "TEST-UNEXPECTED-FAIL | %s | Failed to clean up the test profile directory: %s" % (name, sys.exc_info()[0])
+            self.log.error(message)
+            print_stdout(stdout)
+            print_stdout(traceback.format_exc())
+
+            # What follows is code to dump the directory listing similar to ls.
+            # This should only be needed until we track down the source of
+            # failures on the buildbot machines.
+            try:
+                import pwd
+                import grp
+            except ImportError:
+                pwd = None
+                grp = None
+
+            def get_username(uid):
+                if pwd is None:
+                    return None
+
+                try:
+                    return pwd.getpwuid(uid).pw_name
+                except KeyError:
+                    return '%d missing' % uid
+
+            def get_groupname(gid):
+                if grp is None:
+                    return None
+
+                try:
+                    return grp.getgrgid(gid).gr_name
+                except KeyError:
+                    return '%d missing' % gid
+
+            self.log.info('Files in profile directory:')
+            def on_error(error):
+                self.log.info('OS Error while performing os.walk!')
+                self.log.info(traceback.format_exc())
+
+            for d, dirs, files in os.walk(self.profileDir, onerror=on_error):
+                try:
+                    d_stat = os.stat(d)
+                except Exception:
+                    self.log.info('Could not stat directory %s' % d)
+                    self.log.info(traceback.format_exc())
+                else:
+                    self.log.info('%o %s %s %s/' % (d_stat.st_mode,
+                        get_username(d_stat.st_uid),
+                        get_groupname(d_stat.st_gid), d))
+
+                for f in files:
+                    path = os.path.join(d, f)
+
+                    try:
+                        f_stat = os.stat(path)
+                    except Exception:
+                        self.log.info('Could not stat file %s' % path)
+                        self.log.info(traceback.format_exc())
+                    else:
+                        self.log.info('%o %s %s %s' % (f_stat.st_mode,
+                            get_username(f_stat.st_uid),
+                            get_groupname(f_stat.st_gid), path))
+
+            self.failCount += 1
+            xunitResult["passed"] = False
+            xunitResult["failure"] = {
+              "type": "TEST-UNEXPECTED-FAIL",
+              "message": message,
+              "text": "%s\n%s" % (stdout, traceback.format_exc())
+            }
+
       if gotSIGINT:
         xunitResult["passed"] = False
         xunitResult["time"] = "0.0"

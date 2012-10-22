@@ -41,30 +41,10 @@ XPCOMUtils.defineLazyServiceGetter(this, "gSettingsService",
 // expected results).
 var WifiManager = (function() {
   function getSdkVersionAndDevice() {
-    Cu.import("resource://gre/modules/ctypes.jsm");
-    try {
-      let cutils = ctypes.open("libcutils.so");
-      let cbuf = ctypes.char.array(4096)();
-      let c_property_get = cutils.declare("property_get", ctypes.default_abi,
-                                          ctypes.int,       // return value: length
-                                          ctypes.char.ptr,  // key
-                                          ctypes.char.ptr,  // value
-                                          ctypes.char.ptr); // default
-      let property_get = function (key, defaultValue) {
-        if (defaultValue === undefined) {
-          defaultValue = null;
-        }
-        c_property_get(key, cbuf, defaultValue);
-        return cbuf.readString();
-      }
-      return { sdkVersion: parseInt(property_get("ro.build.version.sdk")),
-               device: property_get("ro.product.device") };
-    } catch(e) {
-      // Eat it.  Hopefully we're on a non-Gonk system ...
-      //
-      // XXX we should check that
-      return 0;
-    }
+    Cu.import("resource://gre/modules/systemlibs.js");
+    let sdkVersion = libcutils.property_get("ro.build.version.sdk");
+    return { sdkVersion: parseInt(sdkVersion, 10),
+               device: libcutils.property_get("ro.product.device") };
   }
 
   let { sdkVersion, device } = getSdkVersionAndDevice();
@@ -148,11 +128,12 @@ var WifiManager = (function() {
   }
 
   function unloadDriver(callback) {
-    // Otoro ICS can't unload and then load the driver, so never unload it.
-    if (device === "otoro") {
-      callback(0);
-      return;
-    }
+    // Unloading drivers is generally unnecessary and
+    // can trigger bugs in some drivers.
+    // On properly written drivers, bringing the interface
+    // down powers down the interface.
+    callback(0);
+    return;
 
     voidControlMessage("unload_driver", function(status) {
       driverLoaded = (status < 0);
@@ -1279,10 +1260,35 @@ function calculateSignal(strength) {
   return Math.floor(((strength - MIN_RSSI) / (MAX_RSSI - MIN_RSSI)) * 100);
 }
 
-function ScanResult(ssid, bssid, flags, signal) {
+function Network(ssid, capabilities, password) {
   this.ssid = ssid;
+  this.capabilities = capabilities;
+
+  if (typeof password !== "undefined")
+    this.password = password;
+  // TODO connected here as well?
+
+  this.__exposedProps__ = Network.api;
+}
+
+Network.api = {
+  ssid: "r",
+  capabilities: "r",
+  known: "r",
+
+  password: "rw",
+  keyManagement: "rw",
+  psk: "rw",
+  identity: "rw",
+  wep: "rw",
+  hidden: "rw"
+};
+
+// Note: We never use ScanResult.prototype, so the fact that it's unrelated to
+// Network.prototype is OK.
+function ScanResult(ssid, bssid, flags, signal) {
+  Network.call(this, ssid, getKeyManagement(flags));
   this.bssid = bssid;
-  this.capabilities = getKeyManagement(flags);
   this.signalStrength = signal;
   this.relSignalStrength = calculateSignal(Number(signal));
 
@@ -1292,19 +1298,15 @@ function ScanResult(ssid, bssid, flags, signal) {
 // XXX This should probably live in the DOM-facing side, but it's hard to do
 // there, so we stick this here.
 ScanResult.api = {
-  ssid: "r",
   bssid: "r",
-  capabilities: "r",
   signalStrength: "r",
   relSignalStrength: "r",
-  connected: "r",
-
-  keyManagement: "rw",
-  psk: "rw",
-  identity: "rw",
-  password: "rw",
-  wep: "rw"
+  connected: "r"
 };
+
+for (let i in Network.api) {
+  ScanResult.api[i] = Network.api[i];
+}
 
 function quote(s) {
   return '"' + s + '"';
@@ -1368,6 +1370,7 @@ let WifiNetworkInterface = {
 
 };
 
+function WifiScanResult() {}
 
 // TODO Make the difference between a DOM-based network object and our
 // networks objects much clearer.
@@ -1379,11 +1382,11 @@ function WifiWorker() {
 
   this._mm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
                .getService(Ci.nsIMessageListenerManager);
-  const messages = ["WifiManager:getNetworks",
+  const messages = ["WifiManager:getNetworks", "WifiManager:getKnownNetworks",
                     "WifiManager:associate", "WifiManager:forget",
                     "WifiManager:wps", "WifiManager:getState",
                     "WifiManager:setPowerSavingMode",
-                    "WifiManager:managerFinished"];
+                    "child-process-shutdown"];
 
   messages.forEach((function(msgName) {
     this._mm.addMessageListener(msgName, this);
@@ -1408,6 +1411,7 @@ function WifiWorker() {
   this.configuredNetworks = Object.create(null);
 
   this.currentNetwork = null;
+  this.ipAddress = "";
 
   this._lastConnectionInfo = null;
   this._connectionInfoTimer = null;
@@ -1419,9 +1423,26 @@ function WifiWorker() {
   // Given a connection status network, takes a network from
   // self.configuredNetworks and prepares it for the DOM.
   netToDOM = function(net) {
-    var pub = { ssid: dequote(net.ssid) };
+    var ssid = dequote(net.ssid);
+    var capabilities = (net.key_mgmt === "NONE" && net.wep_key0)
+                       ? ["WEP"]
+                       : (net.key_mgmt && net.key_mgmt !== "NONE")
+                       ? [net.key_mgmt]
+                       : [];
+    var password;
+    if (("psk" in net && net.psk) ||
+        ("password" in net && net.password) ||
+        ("wep_key0" in net && net.wep_key0)) {
+      password = "*";
+    }
+
+    var pub = new Network(ssid, capabilities, password);
+    if (net.identity)
+      pub.identity = dequote(net.identity);
     if (net.netId)
       pub.known = true;
+    if (net.scan_ssid === 1)
+      pub.hidden = true;
     return pub;
   };
 
@@ -1456,6 +1477,11 @@ function WifiWorker() {
       configured.key_mgmt = net.key_mgmt = "NONE";
     }
 
+    if (net.hidden) {
+      configured.scan_ssid = net.scan_ssid = 1;
+      delete net.hidden;
+    }
+
     function checkAssign(name, checkStar) {
       if (name in net) {
         let value = net[name];
@@ -1486,6 +1512,7 @@ function WifiWorker() {
     WifiManager.enabled = true;
     self._updateWifiSetting(true);
     WifiManager.getMacAddress(function (mac) {
+      self.macAddress = mac;
       debug("Got mac: " + mac);
     });
 
@@ -1607,6 +1634,7 @@ function WifiWorker() {
       case "DISCONNECTED":
         self._fireEvent("ondisconnect", {});
         self.currentNetwork = null;
+        self.ipAddress = "";
 
         WifiManager.connectionDropped(function() {
           // We've disconnected from a network because of a call to forgetNetwork.
@@ -1656,6 +1684,13 @@ function WifiWorker() {
                                    kNetworkInterfaceStateChangedTopic,
                                    null);
 
+      self.ipAddress = this.info.ipaddr_str;
+
+      // We start the connection information timer when we associate, but
+      // don't have our IP address until here. Make sure that we fire a new
+      // connectionInformation event with the IP address the next time the
+      // timer fires.
+      self._lastConnectionInfo = null;
       self._fireEvent("onconnect", { network: netToDOM(self.currentNetwork) });
     } else {
       WifiManager.reassociate(function(){});
@@ -1824,7 +1859,8 @@ WifiWorker.prototype = {
 
         let info = { signalStrength: rssi,
                      relSignalStrength: calculateSignal(rssi),
-                     linkSpeed: linkspeed };
+                     linkSpeed: linkspeed,
+                     ipAddress: self.ipAddress };
         let last = self._lastConnectionInfo;
 
         // Only fire the event if the link speed changed or the signal
@@ -1961,15 +1997,10 @@ WifiWorker.prototype = {
 
   _domManagers: [],
   _fireEvent: function(message, data) {
-    // TODO (bug 791911): Managers don't correctly tell us when they're getting
-    // destroyed, so prune dead managers here.
-    this._domManagers = this._domManagers.filter(function(obj) {
-      try {
-        obj.manager.sendAsyncMessage("WifiManager:" + message, data);
-        return true;
-      } catch(e) {
-        return false;
-      }
+    this._domManagers.forEach(function(manager) {
+      // Note: We should never have a dead message manager here because we
+      // observe our child message managers shutting down, below.
+      manager.sendAsyncMessage("WifiManager:" + message, data);
     });
   },
 
@@ -1979,12 +2010,31 @@ WifiWorker.prototype = {
   },
 
   receiveMessage: function MessageManager_receiveMessage(aMessage) {
-    let msg = aMessage.json || {};
+    let msg = aMessage.data || {};
     msg.manager = aMessage.target;
+
+    // Note: By the time we receive child-process-shutdown, the child process
+    // has already forgotten its permissions so we do this before the
+    // permissions check.
+    if (aMessage.name === "child-process-shutdown") {
+      let i;
+      if ((i = this._domManagers.indexOf(msg.manager)) != -1) {
+        this._domManagers.splice(i, 1);
+      }
+
+      return;
+    }
+
+    if (!aMessage.target.assertPermission("wifi-manage")) {
+      return;
+    }
 
     switch (aMessage.name) {
       case "WifiManager:getNetworks":
         this.getNetworks(msg);
+        break;
+      case "WifiManager:getKnownNetworks":
+        this.getKnownNetworks(msg);
         break;
       case "WifiManager:associate":
         this.associate(msg);
@@ -1999,37 +2049,17 @@ WifiWorker.prototype = {
         this.setPowerSavingMode(msg);
         break;
       case "WifiManager:getState": {
-        let net = this.currentNetwork ? netToDOM(this.currentNetwork) : null;
         let i;
-        for (i = 0; i < this._domManagers.length; ++i) {
-          let obj = this._domManagers[i];
-          if (obj.manager === msg.manager) {
-            obj.count++;
-            break;
-          }
+        if ((i = this._domManagers.indexOf(msg.manager)) === -1) {
+          this._domManagers.push(msg.manager);
         }
 
-        if (i === this._domManagers.length) {
-          this._domManagers.push({ manager: msg.manager, count: 1 });
-        }
-
+        let net = this.currentNetwork ? netToDOM(this.currentNetwork) : null;
         return { network: net,
                  connectionInfo: this._lastConnectionInfo,
                  enabled: WifiManager.enabled,
-                 status: translateState(WifiManager.state) };
-      }
-      case "WifiManager:managerFinished": {
-        for (let i = 0; i < this._domManagers.length; ++i) {
-          let obj = this._domManagers[i];
-          if (obj.manager === msg.manager) {
-            if (--obj.count === 0) {
-              this._domManagers.splice(i, 1);
-            }
-            break;
-          }
-        }
-
-        break;
+                 status: translateState(WifiManager.state),
+                 macAddress: this.macAddress };
       }
     }
   },
@@ -2057,6 +2087,101 @@ WifiWorker.prototype = {
       // Otherwise, let the client know that it failed, it's responsible for
       // trying again in a few seconds.
       this._sendMessage(message, false, "ScanFailed", msg);
+    }).bind(this));
+  },
+
+  getWifiScanResults: function(callback) {
+    var count = 0;
+    var timer = null;
+    var self = this;
+
+    self.waitForScan(waitForScanCallback);
+    doScan();
+    function doScan() {
+      WifiManager.scan(true, function (ok) {
+        if (!ok) {
+          if (!timer) {
+            count = 0;
+            timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+          }
+
+          if (count++ >= 3) {
+            timer = null;
+            this.wantScanResults.splice(this.wantScanResults.indexOf(waitForScanCallback), 1);
+            callback.onfailure();
+            return;
+          }
+
+          // Else it's still running, continue waiting.
+          timer.initWithCallback(doScan, 10000, Ci.nsITimer.TYPE_ONE_SHOT);
+          return;
+        }
+      });
+    }
+
+    function waitForScanCallback(networks) {
+      if (networks === null) {
+        callback.onfailure();
+        return;
+      }
+
+      var wifiScanResults = new Array();
+      var net;
+      for (let net in networks) {
+        let value = networks[net];
+        wifiScanResults.push(transformResult(value));
+      }
+      callback.onready(wifiScanResults.length, wifiScanResults);
+    }
+
+    function transformResult(element) {
+      var result = new WifiScanResult();
+      result.connected = false;
+      for (let id in element) {
+        if (id === "__exposedProps__") {
+          continue;
+        }
+        if (id === "capabilities") {
+          result[id] = 0;
+          var capabilities = element[id];
+          for (let j = 0; j < capabilities.length; j++) {
+            if (capabilities[j] === "WPA-PSK") {
+              result[id] |= Ci.nsIWifiScanResult.WPA_PSK;
+            } else if (capabilities[j] === "WPA-EAP") {
+              result[id] |= Ci.nsIWifiScanResult.WPA_EAP;
+            } else if (capabilities[j] === "WEP") {
+              result[id] |= Ci.nsIWifiScanResult.WEP;
+            } else {
+             result[id] = 0;
+            }
+          }
+        } else {
+          result[id] = element[id];
+        }
+      }
+      return result;
+    }
+  },
+
+  getKnownNetworks: function(msg) {
+    const message = "WifiManager:getKnownNetworks:Return";
+    if (!WifiManager.enabled) {
+      this._sendMessage(message, false, "Wifi is disabled", msg);
+      return;
+    }
+
+    this._reloadConfiguredNetworks((function(ok) {
+      if (!ok) {
+        this._sendMessage(message, false, "Failed", msg);
+        return;
+      }
+
+      var networks = {};
+      for (let ssid in this.configuredNetworks) {
+        networks[ssid] = netToDOM(this.configuredNetworks[ssid]);
+      }
+
+      this._sendMessage(message, true, networks, msg);
     }).bind(this));
   },
 

@@ -19,7 +19,6 @@ DOMCI_CLASS(DOMConstructor)
 // Core classes
 DOMCI_CLASS(XMLDocument)
 DOMCI_CLASS(DocumentType)
-DOMCI_CLASS(DOMImplementation)
 DOMCI_CLASS(DOMException)
 DOMCI_CLASS(DOMTokenList)
 DOMCI_CLASS(DOMSettableTokenList)
@@ -446,25 +445,6 @@ DOMCI_CLASS(SimpleGestureEvent)
 
 DOMCI_CLASS(MathMLElement)
 
-// WebGL
-DOMCI_CLASS(WebGLBuffer)
-DOMCI_CLASS(WebGLTexture)
-DOMCI_CLASS(WebGLProgram)
-DOMCI_CLASS(WebGLShader)
-DOMCI_CLASS(WebGLFramebuffer)
-DOMCI_CLASS(WebGLRenderbuffer)
-DOMCI_CLASS(WebGLUniformLocation)
-DOMCI_CLASS(WebGLShaderPrecisionFormat)
-DOMCI_CLASS(WebGLActiveInfo)
-DOMCI_CLASS(WebGLExtension)
-DOMCI_CLASS(WebGLExtensionStandardDerivatives)
-DOMCI_CLASS(WebGLExtensionTextureFilterAnisotropic)
-DOMCI_CLASS(WebGLExtensionLoseContext)
-DOMCI_CLASS(WebGLExtensionCompressedTextureS3TC)
-DOMCI_CLASS(WebGLExtensionCompressedTextureATC)
-DOMCI_CLASS(WebGLExtensionCompressedTexturePVRTC)
-DOMCI_CLASS(WebGLExtensionDepthTexture)
-
 DOMCI_CLASS(PaintRequest)
 DOMCI_CLASS(PaintRequestList)
 
@@ -547,3 +527,7 @@ DOMCI_CLASS(LockedFile)
 DOMCI_CLASS(MozActivity)
 
 DOMCI_CLASS(MozTimeManager)
+
+#ifdef MOZ_WEBRTC
+DOMCI_CLASS(DataChannel)
+#endif

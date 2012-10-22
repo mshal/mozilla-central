@@ -794,8 +794,7 @@ nsresult nsPluginStreamListenerPeer::ServeStreamAsFile(nsIRequest *request,
   // mPluginInstance->Stop calls mPStreamListener->CleanUpStream(), so stream will be properly clean up
   mPluginInstance->Stop();
   mPluginInstance->Start();
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  mPluginInstance->GetOwner(getter_AddRefs(owner));
+  nsRefPtr<nsPluginInstanceOwner> owner = mPluginInstance->GetOwner();
   if (owner) {
     NPWindow* window = nullptr;
     owner->GetWindow(window);
@@ -1184,8 +1183,7 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest *request,
       PR_ParseTimeString(lastModified.get(), true, &time64);  //convert string time to integer time
       
       // Convert PRTime to unix-style time_t, i.e. seconds since the epoch
-      double fpTime;
-      LL_L2D(fpTime, time64);
+      double fpTime = double(time64);
       mModified = (uint32_t)(fpTime * 1e-6 + 0.5);
     }
   }
@@ -1252,8 +1250,7 @@ nsPluginStreamListenerPeer::GetInterfaceGlobal(const nsIID& aIID, void** result)
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  mPluginInstance->GetOwner(getter_AddRefs(owner));
+  nsRefPtr<nsPluginInstanceOwner> owner = mPluginInstance->GetOwner();
   if (owner) {
     nsCOMPtr<nsIDocument> doc;
     nsresult rv = owner->GetDocument(getter_AddRefs(doc));

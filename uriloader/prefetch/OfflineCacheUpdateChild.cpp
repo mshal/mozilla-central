@@ -44,6 +44,7 @@ using namespace mozilla::ipc;
 //
 extern PRLogModuleInfo *gOfflineCacheUpdateLog;
 #endif
+#undef LOG
 #define LOG(args) PR_LOG(gOfflineCacheUpdateLog, 4, args)
 #define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
@@ -55,6 +56,7 @@ namespace docshell {
 //-----------------------------------------------------------------------------
 
 NS_INTERFACE_MAP_BEGIN(OfflineCacheUpdateChild)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_INTERFACE_MAP_ENTRY(nsIOfflineCacheUpdate)
 NS_INTERFACE_MAP_END
 

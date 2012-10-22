@@ -680,7 +680,7 @@ imgCacheQueue::const_iterator imgCacheQueue::end() const
 }
 
 nsresult imgLoader::CreateNewProxyForRequest(imgRequest *aRequest, nsILoadGroup *aLoadGroup,
-                                             imgIDecoderObserver *aObserver,
+                                             imgINotificationObserver *aObserver,
                                              nsLoadFlags aLoadFlags, imgIRequest *aProxyRequest,
                                              imgIRequest **_retval)
 {
@@ -708,7 +708,7 @@ nsresult imgLoader::CreateNewProxyForRequest(imgRequest *aRequest, nsILoadGroup 
   aRequest->GetURI(getter_AddRefs(uri));
 
   // init adds itself to imgRequest's list of observers
-  nsresult rv = proxyRequest->Init(aRequest, aLoadGroup, aRequest->mImage, uri, aObserver);
+  nsresult rv = proxyRequest->Init(&aRequest->GetStatusTracker(), aLoadGroup, uri, aObserver);
   if (NS_FAILED(rv)) {
     NS_RELEASE(proxyRequest);
     return rv;
@@ -1162,7 +1162,7 @@ bool imgLoader::ValidateRequestWithNewChannel(imgRequest *request,
                                                 nsIURI *aInitialDocumentURI,
                                                 nsIURI *aReferrerURI,
                                                 nsILoadGroup *aLoadGroup,
-                                                imgIDecoderObserver *aObserver,
+                                                imgINotificationObserver *aObserver,
                                                 nsISupports *aCX,
                                                 nsLoadFlags aLoadFlags,
                                                 imgIRequest *aExistingRequest,
@@ -1284,7 +1284,7 @@ bool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
                                 nsIURI *aInitialDocumentURI,
                                 nsIURI *aReferrerURI,
                                 nsILoadGroup *aLoadGroup,
-                                imgIDecoderObserver *aObserver,
+                                imgINotificationObserver *aObserver,
                                 nsISupports *aCX,
                                 nsLoadFlags aLoadFlags,
                                 bool aCanMakeNewChannel,
@@ -1521,14 +1521,14 @@ nsresult imgLoader::EvictEntries(imgCacheQueue &aQueueToClear)
                                   nsIRequest::VALIDATE_ONCE_PER_SESSION)
 
 
-/* imgIRequest loadImage (in nsIURI aURI, in nsIURI initialDocumentURI, in nsIPrincipal loadingPrincipal, in nsILoadGroup aLoadGroup, in imgIDecoderObserver aObserver, in nsISupports aCX, in nsLoadFlags aLoadFlags, in nsISupports cacheKey, in imgIRequest aRequest); */
+/* imgIRequest loadImage (in nsIURI aURI, in nsIURI initialDocumentURI, in nsIPrincipal loadingPrincipal, in nsILoadGroup aLoadGroup, in imgINotificationObserver aObserver, in nsISupports aCX, in nsLoadFlags aLoadFlags, in nsISupports cacheKey, in imgIRequest aRequest); */
 
 NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI, 
                                    nsIURI *aInitialDocumentURI,
                                    nsIURI *aReferrerURI,
                                    nsIPrincipal* aLoadingPrincipal,
                                    nsILoadGroup *aLoadGroup,
-                                   imgIDecoderObserver *aObserver,
+                                   imgINotificationObserver *aObserver,
                                    nsISupports *aCX,
                                    nsLoadFlags aLoadFlags,
                                    nsISupports *aCacheKey,
@@ -1559,9 +1559,7 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
 
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
   if (channel) {
-    nsCOMPtr<nsILoadContext> loadContext;
-    NS_QueryNotificationCallbacks(channel, loadContext);
-    isPrivate = loadContext && loadContext->UsePrivateBrowsing();
+    isPrivate = NS_UsePrivateBrowsing(channel);
   } else if (aLoadGroup) {
     nsCOMPtr<nsIInterfaceRequestor> callbacks;
     aLoadGroup->GetNotificationCallbacks(getter_AddRefs(callbacks));
@@ -1664,11 +1662,7 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
     if (NS_FAILED(rv))
       return NS_ERROR_FAILURE;
 
-#ifdef DEBUG
-    nsCOMPtr<nsILoadContext> loadContext;
-    NS_QueryNotificationCallbacks(newChannel, loadContext);
-    MOZ_ASSERT_IF(loadContext, loadContext->UsePrivateBrowsing() == mRespectPrivacy);
-#endif
+    MOZ_ASSERT(NS_UsePrivateBrowsing(newChannel) == mRespectPrivacy);
 
     NewRequestAndEntry(forcePrincipalCheck, this, getter_AddRefs(request), getter_AddRefs(entry));
 
@@ -1790,16 +1784,12 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
   return NS_OK;
 }
 
-/* imgIRequest loadImageWithChannel(in nsIChannel channel, in imgIDecoderObserver aObserver, in nsISupports cx, out nsIStreamListener); */
-NS_IMETHODIMP imgLoader::LoadImageWithChannel(nsIChannel *channel, imgIDecoderObserver *aObserver, nsISupports *aCX, nsIStreamListener **listener, imgIRequest **_retval)
+/* imgIRequest loadImageWithChannel(in nsIChannel channel, in imgINotificationObserver aObserver, in nsISupports cx, out nsIStreamListener); */
+NS_IMETHODIMP imgLoader::LoadImageWithChannel(nsIChannel *channel, imgINotificationObserver *aObserver, nsISupports *aCX, nsIStreamListener **listener, imgIRequest **_retval)
 {
   NS_ASSERTION(channel, "imgLoader::LoadImageWithChannel -- NULL channel pointer");
 
-#ifdef DEBUG
-  nsCOMPtr<nsILoadContext> loadContext;
-  NS_QueryNotificationCallbacks(channel, loadContext);
-  MOZ_ASSERT_IF(loadContext, loadContext->UsePrivateBrowsing() == mRespectPrivacy);
-#endif
+  MOZ_ASSERT(NS_UsePrivateBrowsing(channel) == mRespectPrivacy);
 
   nsRefPtr<imgRequest> request;
 
@@ -1921,14 +1911,11 @@ NS_IMETHODIMP imgLoader::LoadImageWithChannel(nsIChannel *channel, imgIDecoderOb
   return rv;
 }
 
-NS_IMETHODIMP imgLoader::SupportImageWithMimeType(const char* aMimeType, bool *_retval)
+bool imgLoader::SupportImageWithMimeType(const char* aMimeType)
 {
-  *_retval = false;
   nsAutoCString mimeType(aMimeType);
   ToLowerCase(mimeType);
-  *_retval = (Image::GetDecoderType(mimeType.get()) == Image::eDecoderType_unknown)
-    ? false : true;
-  return NS_OK;
+  return Image::GetDecoderType(mimeType.get()) != Image::eDecoderType_unknown;
 }
 
 NS_IMETHODIMP imgLoader::GetMIMETypeFromContent(nsIRequest* aRequest,

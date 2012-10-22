@@ -50,6 +50,11 @@ Voicemail::Voicemail(nsPIDOMWindow* aWindow, nsIRILContentHelper* aRIL)
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed registering voicemail callback with RIL");
   }
+
+  rv = aRIL->RegisterVoicemailMsg();
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Failed registering voicemail messages with RIL");
+  }
 }
 
 Voicemail::~Voicemail()
@@ -100,14 +105,7 @@ Voicemail::VoicemailNotification(nsIDOMMozVoicemailStatus* aStatus)
                                           false, false, aStatus);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = event->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool dummy;
-  rv = DispatchEvent(static_cast<nsIDOMMozVoicemailEvent*>(event), &dummy);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
+  return DispatchTrustedEvent(static_cast<nsIDOMMozVoicemailEvent*>(event));
 }
 
 nsresult

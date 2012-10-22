@@ -27,6 +27,7 @@ pref("browser.cache.memory.capacity", 1024); // kilobytes
 
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
+pref("image.high_quality_downscaling.enabled", false);
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", false);
@@ -81,12 +82,6 @@ pref("browser.download.manager.openDelay", 0);
 pref("browser.download.manager.focusWhenStarting", false);
 pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
-
-/* download alerts (disabled above) */
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 6000);
-pref("alerts.height", 50);
 
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
@@ -177,8 +172,6 @@ pref("content.sink.pending_event_mode", 0);
 pref("content.sink.perf_deflect_count", 1000000);
 pref("content.sink.perf_parse_time", 50000000);
 
-pref("javascript.options.mem.high_water_mark", 32);
-
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
@@ -263,16 +256,21 @@ pref("media.preload.default", 1); // default to preload none
 pref("media.preload.auto", 2);    // preload metadata if preload=auto
 pref("media.cache_size", 4096);    // 4MB media cache
 
+// The default number of decoded video frames that are enqueued in
+// nsBuiltinDecoderReader's mVideoQueue.
+pref("media.video-queue.default-size", 3);
+
 //  0: don't show fullscreen keyboard
 //  1: always show fullscreen keyboard
 // -1: show fullscreen keyboard based on threshold pref
 pref("widget.ime.android.landscape_fullscreen", -1);
 pref("widget.ime.android.fullscreen_threshold", 250); // in hundreths of inches
 
-// optimize images memory usage
+// optimize images' memory usage
 pref("image.mem.decodeondraw", true);
 pref("content.image.allow_locking", false);
 pref("image.mem.min_discard_timeout_ms", 10000);
+pref("image.mem.max_decoded_image_kb", 5120); /* 5MB */
 
 // enable touch events interfaces
 pref("dom.w3c_touch_events.enabled", true);
@@ -382,12 +380,18 @@ pref("dom.ipc.browser_frames.oop_by_default", false);
 
 // Temporary permission hack for WebSMS
 pref("dom.sms.enabled", true);
+pref("dom.sms.strict7BitEncoding", false); // Disabled by default.
 
 // Temporary permission hack for WebContacts
 pref("dom.mozContacts.enabled", true);
 
 // WebAlarms
 pref("dom.mozAlarms.enabled", true);
+
+// NetworkStats
+#ifdef MOZ_B2G_RIL
+pref("dom.mozNetworkStats.enabled", true);
+#endif
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
@@ -445,8 +449,8 @@ pref("marionette.defaultPrefs.port", 2828);
 pref("shutdown.watchdog.timeoutSecs", 5);
 // Timeout before the update prompt automatically installs the update
 pref("b2g.update.apply-prompt-timeout", 60000); // milliseconds
-// Optional timeout the user can wait before getting another update prompt
-pref("b2g.update.apply-wait-timeout", 1800000); // milliseconds
+// Amount of time to wait after the user is idle before prompting to apply an update
+pref("b2g.update.apply-idle-timeout", 600000); // milliseconds
 // Amount of time the updater waits for the process to exit cleanly before
 // forcefully exiting the process
 pref("b2g.update.self-destruct-timeout", 5000); // milliseconds
@@ -460,13 +464,11 @@ pref("app.update.staging.enabled", true);
 pref("app.update.service.enabled", true);
 
 // The URL hosting the update manifest.
-pref("app.update.url", "http://update.boot2gecko.org/nightly/update.xml");
+pref("app.update.url", "http://update.boot2gecko.org/%CHANNEL%/update.xml");
+pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
+
 // Interval at which update manifest is fetched.  In units of seconds.
 pref("app.update.interval", 86400); // 1 day
-// First interval to elapse before checking for update.  In units of
-// milliseconds.  Capped at 10 seconds.
-pref("app.update.timerFirstInterval", 3600000); // 1 hour
-pref("app.update.timerMinimumDelay", 3600); // 1 hour in seconds
 // Don't throttle background updates.
 pref("app.update.download.backgroundInterval", 0);
 
@@ -490,7 +492,8 @@ pref("ui.click_hold_context_menus.delay", 1000);
 // Enable device storage
 pref("device.storage.enabled", true);
 
-pref("media.plugins.enabled", true);
+pref("media.plugins.enabled", false);
+pref("media.omx.enabled", true);
 
 // Disable printing (particularly, window.print())
 pref("dom.disable_window_print", true);
@@ -515,7 +518,7 @@ pref("javascript.options.mem.gc_high_frequency_heap_growth_min", 101);
 pref("javascript.options.mem.gc_high_frequency_high_limit_mb", 40);
 pref("javascript.options.mem.gc_high_frequency_low_limit_mb", 10);
 pref("javascript.options.mem.gc_low_frequency_heap_growth", 105);
-pref("javascript.options.mem.high_water_mark", 16);
+pref("javascript.options.mem.high_water_mark", 6);
 
 // Show/Hide scrollbars when active/inactive
 pref("ui.showHideScrollbars", 1);
@@ -535,9 +538,9 @@ pref("hal.processPriorityManager.gonk.backgroundNice", 10);
 #ifndef DEBUG
 // Enable pre-launching content processes for improved startup time
 // (hiding latency).
-pref("dom.ipc.processPrelauch.enabled", true);
+pref("dom.ipc.processPrelaunch.enabled", true);
 // Wait this long before pre-launching a new subprocess.
-pref("dom.ipc.processPrelauch.delayMs", 1000);
+pref("dom.ipc.processPrelaunch.delayMs", 1000);
 #endif
 
 // Ignore the "dialog=1" feature in window.open.
@@ -547,8 +550,27 @@ pref("dom.disable_window_open_dialog_feature", true);
 pref("accessibility.accessfu.activate", 2);
 
 // Enable hit-target fluffing
-pref("ui.touch.radius.enabled", true);
-pref("ui.mouse.radius.enabled", true);
+pref("ui.touch.radius.enabled", false);
+pref("ui.touch.radius.leftmm", 3);
+pref("ui.touch.radius.topmm", 5);
+pref("ui.touch.radius.rightmm", 3);
+pref("ui.touch.radius.bottommm", 2);
+
+pref("ui.mouse.radius.enabled", false);
+pref("ui.mouse.radius.leftmm", 3);
+pref("ui.mouse.radius.topmm", 5);
+pref("ui.mouse.radius.rightmm", 3);
+pref("ui.mouse.radius.bottommm", 2);
 
 // Disable native prompt
 pref("browser.prompt.allowNative", false);
+
+// Minimum delay in milliseconds between network activity notifications (0 means
+// no notifications). The delay is the same for both download and upload, though
+// they are handled separately. This pref is only read once at startup:
+// a restart is required to enable a new value.
+pref("network.activity.blipIntervalMilliseconds", 250);
+
+// Send some sites a custom user-agent.
+pref("general.useragent.override.facebook.com", "\(Mobile#(Android; Mobile");
+pref("general.useragent.override.youtube.com", "\(Mobile#(Android; Mobile");

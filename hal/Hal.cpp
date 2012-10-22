@@ -32,15 +32,20 @@ using namespace mozilla::services;
 #define PROXY_IF_SANDBOXED(_call)                 \
   do {                                            \
     if (InSandbox()) {                            \
-      hal_sandbox::_call;                         \
+      if (!hal_sandbox::IsHalChildLive()) {  \
+        hal_sandbox::_call;                       \
+      }                                           \
     } else {                                      \
       hal_impl::_call;                            \
     }                                             \
   } while (0)
 
-#define RETURN_PROXY_IF_SANDBOXED(_call)          \
+#define RETURN_PROXY_IF_SANDBOXED(_call, defValue)\
   do {                                            \
     if (InSandbox()) {                            \
+      if (hal_sandbox::IsHalChildLive()) {   \
+        return defValue;                          \
+      }                                           \
       return hal_sandbox::_call;                  \
     } else {                                      \
       return hal_impl::_call;                     \
@@ -50,7 +55,7 @@ using namespace mozilla::services;
 namespace mozilla {
 namespace hal {
 
-PRLogModuleInfo *sHalLog = PR_LOG_DEFINE("hal");
+PRLogModuleInfo *sHalLog = PR_NewLogModule("hal");
 
 namespace {
 
@@ -64,6 +69,12 @@ bool
 InSandbox()
 {
   return GeckoProcessType_Content == XRE_GetProcessType();
+}
+
+void
+AssertMainProcess()
+{
+  MOZ_ASSERT(GeckoProcessType_Default == XRE_GetProcessType());
 }
 
 bool
@@ -357,7 +368,7 @@ NotifyBatteryChange(const BatteryInformation& aInfo)
 bool GetScreenEnabled()
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetScreenEnabled());
+  RETURN_PROXY_IF_SANDBOXED(GetScreenEnabled(), false);
 }
 
 void SetScreenEnabled(bool enabled)
@@ -373,7 +384,7 @@ bool GetCpuSleepAllowed()
   // what the battery API does. But since this is only used by
   // privileged interface, the synchronous getter is OK here.
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetCpuSleepAllowed());
+  RETURN_PROXY_IF_SANDBOXED(GetCpuSleepAllowed(), true);
 }
 
 void SetCpuSleepAllowed(bool allowed)
@@ -385,7 +396,7 @@ void SetCpuSleepAllowed(bool allowed)
 double GetScreenBrightness()
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetScreenBrightness());
+  RETURN_PROXY_IF_SANDBOXED(GetScreenBrightness(), 0);
 }
 
 void SetScreenBrightness(double brightness)
@@ -397,13 +408,13 @@ void SetScreenBrightness(double brightness)
 bool SetLight(LightType light, const hal::LightConfiguration& aConfig)
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(SetLight(light, aConfig));
+  RETURN_PROXY_IF_SANDBOXED(SetLight(light, aConfig), false);
 }
 
 bool GetLight(LightType light, hal::LightConfiguration* aConfig)
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetLight(light, aConfig));
+  RETURN_PROXY_IF_SANDBOXED(GetLight(light, aConfig), false);
 }
 
 class SystemTimeObserversManager : public ObserversManager<SystemTimeChange>
@@ -458,7 +469,7 @@ nsCString
 GetTimezone()
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetTimezone());
+  RETURN_PROXY_IF_SANDBOXED(GetTimezone(), nsCString(""));
 }
 
 void
@@ -561,14 +572,23 @@ NotifyNetworkChange(const NetworkInformation& aInfo)
 
 void Reboot()
 {
+  AssertMainProcess();
   AssertMainThread();
   PROXY_IF_SANDBOXED(Reboot());
 }
 
 void PowerOff()
 {
+  AssertMainProcess();
   AssertMainThread();
   PROXY_IF_SANDBOXED(PowerOff());
+}
+
+void StartForceQuitWatchdog(ShutdownMode aMode, int32_t aTimeoutSecs)
+{
+  AssertMainProcess();
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(StartForceQuitWatchdog(aMode, aTimeoutSecs));
 }
 
 void
@@ -640,7 +660,7 @@ bool
 LockScreenOrientation(const dom::ScreenOrientation& aOrientation)
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(LockScreenOrientation(aOrientation));
+  RETURN_PROXY_IF_SANDBOXED(LockScreenOrientation(aOrientation), false);
 }
 
 void
@@ -665,7 +685,7 @@ DisableSwitchNotifications(hal::SwitchDevice aDevice) {
 hal::SwitchState GetCurrentSwitchState(hal::SwitchDevice aDevice)
 {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetCurrentSwitchState(aDevice));
+  RETURN_PROXY_IF_SANDBOXED(GetCurrentSwitchState(aDevice), SWITCH_STATE_UNKNOWN);
 }
 
 typedef mozilla::ObserverList<SwitchEvent> SwitchObserverList;
@@ -743,7 +763,7 @@ RegisterTheOneAlarmObserver(AlarmObserver* aObserver)
   MOZ_ASSERT(!sAlarmObserver);
 
   sAlarmObserver = aObserver;
-  RETURN_PROXY_IF_SANDBOXED(EnableAlarm());
+  RETURN_PROXY_IF_SANDBOXED(EnableAlarm(), false);
 }
 
 void
@@ -768,18 +788,13 @@ SetAlarm(int32_t aSeconds, int32_t aNanoseconds)
 {
   // It's pointless to program an alarm nothing is going to observe ...
   MOZ_ASSERT(sAlarmObserver);
-  RETURN_PROXY_IF_SANDBOXED(SetAlarm(aSeconds, aNanoseconds));
+  RETURN_PROXY_IF_SANDBOXED(SetAlarm(aSeconds, aNanoseconds), false);
 }
 
 void
 SetProcessPriority(int aPid, ProcessPriority aPriority)
 {
-  if (InSandbox()) {
-    hal_sandbox::SetProcessPriority(aPid, aPriority);
-  }
-  else {
-    hal_impl::SetProcessPriority(aPid, aPriority);
-  }
+  PROXY_IF_SANDBOXED(SetProcessPriority(aPid, aPriority));
 }
 
 static StaticAutoPtr<ObserverList<FMRadioOperationInformation> > sFMRadioObservers;
@@ -846,19 +861,19 @@ SetFMRadioFrequency(const uint32_t aFrequency) {
 uint32_t
 GetFMRadioFrequency() {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetFMRadioFrequency());
+  RETURN_PROXY_IF_SANDBOXED(GetFMRadioFrequency(), 0);
 }
 
 bool
 IsFMRadioOn() {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(IsFMRadioOn());
+  RETURN_PROXY_IF_SANDBOXED(IsFMRadioOn(), false);
 }
 
 uint32_t
 GetFMRadioSignalStrength() {
   AssertMainThread();
-  RETURN_PROXY_IF_SANDBOXED(GetFMRadioSignalStrength());
+  RETURN_PROXY_IF_SANDBOXED(GetFMRadioSignalStrength(), 0);
 }
 
 void

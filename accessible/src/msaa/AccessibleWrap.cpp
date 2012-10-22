@@ -20,7 +20,7 @@
 #include "States.h"
 #include "uiaRawElmProvider.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
@@ -107,7 +107,7 @@ __try {
   }
 
   if (NULL == *ppv) {
-    HRESULT hr = CAccessibleValue::QueryInterface(iid, ppv);
+    HRESULT hr = ia2AccessibleValue::QueryInterface(iid, ppv);
     if (SUCCEEDED(hr))
       return hr;
   }
@@ -166,7 +166,7 @@ __try {
     // accessibles.
     if (!doc->ParentDocument() ||
         nsWinUtils::IsWindowEmulationStarted() &&
-        nsCoreUtils::IsTabDocument(doc->GetDocumentNode())) {
+        nsCoreUtils::IsTabDocument(doc->DocumentNode())) {
       HWND hwnd = static_cast<HWND>(doc->GetNativeWindow());
       if (hwnd && SUCCEEDED(::AccessibleObjectFromWindow(hwnd, OBJID_WINDOW,
                                                          IID_IAccessible,
@@ -264,7 +264,7 @@ __try {
 
   // The name was not provided, e.g. no alt attribute for an image. A screen
   // reader may choose to invent its own accessible name, e.g. from an image src
-  // attribute. Refer to NS_OK_EMPTY_NAME return value.
+  // attribute. Refer to eNoNameOnPurpose return value.
   if (name.IsVoid())
     return S_FALSE;
 
@@ -1440,11 +1440,7 @@ __try {
   if (IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  nsCOMPtr<nsIPersistentProperties> attributes;
-  nsresult rv = GetAttributes(getter_AddRefs(attributes));
-  if (NS_FAILED(rv))
-    return GetHRESULT(rv);
-
+  nsCOMPtr<nsIPersistentProperties> attributes = Attributes();
   return ConvertToIA2Attributes(attributes, aAttributes);
 
 } __except(nsAccessNodeWrap::FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
@@ -1577,7 +1573,7 @@ AccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
       aid->ToUTF8String(id);
   }
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (logging::IsEnabled(logging::ePlatforms)) {
     printf("\n\nMSAA event: event: %d, target: %s@id='%s', childid: %d, hwnd: %d\n\n",
            eventType, NS_ConvertUTF16toUTF8(tag).get(), id.get(),

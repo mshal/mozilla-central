@@ -102,12 +102,8 @@ SIMPLE_PROGRAMS += $(CPP_UNIT_TESTS:.cpp=$(BIN_SUFFIX))
 INCLUDES += -I$(DIST)/include/testing
 LIBS += $(XPCOM_GLUE_LDOPTS) $(NSPR_LIBS) $(MOZ_JS_LIBS) $(if $(JS_SHARED_LIBRARY),,$(MOZ_ZLIB_LIBS))
 
-# ...and run them the usual way
 check::
-	@$(EXIT_ON_ERROR) \
-	  for f in $(subst .cpp,$(BIN_SUFFIX),$(CPP_UNIT_TESTS)); do \
-	    XPCOM_DEBUG_BREAK=stack-and-abort $(RUN_TEST_PROGRAM) $(DIST)/bin/$$f; \
-	  done
+	@$(PYTHON) $(topsrcdir)/testing/runcppunittests.py --xre-path=$(DIST)/bin --symbols-path=$(DIST)/crashreporter-symbols $(subst .cpp,$(BIN_SUFFIX),$(CPP_UNIT_TESTS))
 
 endif # CPP_UNIT_TESTS
 
@@ -816,7 +812,14 @@ $(filter-out %.$(LIB_SUFFIX),$(LIBRARY)): $(filter %.$(LIB_SUFFIX),$(LIBRARY)) $
 	$(EXPAND_LIBS_GEN) -o $@ $(OBJS) $(LOBJS) $(SHARED_LIBRARY_LIBS)
 
 ifeq ($(OS_ARCH),WINNT)
-$(IMPORT_LIBRARY): $(SHARED_LIBRARY)
+# Import libraries are created by the rules creating shared libraries.
+# The rules to copy them to $(DIST)/lib depend on $(IMPORT_LIBRARY),
+# but make will happily consider the import library before it is refreshed
+# when rebuilding the corresponding shared library. Defining an empty recipe
+# for import libraries forces make to wait for the shared library recipe to
+# have run before considering other targets that depend on the import library.
+# See bug 795204.
+$(IMPORT_LIBRARY): $(SHARED_LIBRARY) ;
 endif
 
 ifeq ($(OS_ARCH),OS2)
@@ -1108,8 +1111,8 @@ ifndef NO_SUBMAKEFILES_RULE
 ifdef SUBMAKEFILES
 # VPATH does not work on some machines in this case, so add $(srcdir)
 $(SUBMAKEFILES): % : $(srcdir)/%.in
-	$(PYTHON) $(DEPTH)$(addprefix /,$(subsrcdir))/config.status -n --file=$@
-	@$(TOUCH) $@
+	$(PYTHON) $(DEPTH)$(addprefix /,$(subsrcdir))/config.status -n --file="$@"
+	@$(TOUCH) "$@"
 endif
 endif
 
@@ -1487,13 +1490,6 @@ $(foreach category,$(PP_TARGETS),\
 # Special gmake rules.
 ################################################################################
 
-
-#
-# Disallow parallel builds with MSVC < 8
-#
-ifneq (,$(filter 1200 1300 1310,$(_MSC_VER)))
-.NOTPARALLEL:
-endif
 
 #
 # Re-define the list of default suffixes, so gmake won't have to churn through

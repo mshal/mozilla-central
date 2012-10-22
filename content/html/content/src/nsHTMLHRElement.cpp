@@ -13,6 +13,7 @@
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsMappedAttributes.h"
+#include "nsAttrValueInlines.h"
 #include "nsRuleData.h"
 #include "nsCSSProps.h"
 
@@ -29,7 +30,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
   NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)

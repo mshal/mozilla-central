@@ -204,9 +204,9 @@ UpdateDepth(JSContext *cx, BytecodeEmitter *bce, ptrdiff_t target)
     }
 
     /*
-     * Specially handle any case that would call js_GetIndexFromBytecode since
-     * it requires a well-formed script. This allows us to safely pass NULL as
-     * the 'script' parameter.
+     * Specially handle any case in which StackUses or StackDefs would call
+     * NumBlockSlots, since that requires a well-formed script. This allows us
+     * to safely pass NULL as the 'script' parameter to StackUses and StackDefs.
      */
     int nuses, ndefs;
     if (op == JSOP_ENTERBLOCK) {
@@ -701,7 +701,7 @@ EnclosingStaticScope(BytecodeEmitter *bce)
         return NULL;
     }
 
-    return bce->sc->asFunbox()->fun();
+    return bce->sc->asFunbox()->function();
 }
 
 // Push a block scope statement and link blockObj into bce->blockChain.
@@ -886,14 +886,14 @@ ClonedBlockDepth(BytecodeEmitter *bce)
 }
 
 static uint16_t
-AliasedNameToSlot(JSScript *script, PropertyName *name)
+AliasedNameToSlot(HandleScript script, PropertyName *name)
 {
     /*
      * Beware: BindingIter may contain more than one Binding for a given name
      * (in the case of |function f(x,x) {}|) but only one will be aliased.
      */
     unsigned slot = CallObject::RESERVED_SLOTS;
-    for (BindingIter bi(script->bindings); ; bi++) {
+    for (BindingIter bi(script); ; bi++) {
         if (bi->aliased()) {
             if (bi->name() == name)
                 return slot;
@@ -917,7 +917,7 @@ EmitAliasedVarOp(JSContext *cx, JSOp op, ParseNode *pn, BytecodeEmitter *bce)
          */
         for (unsigned i = pn->pn_cookie.level(); i; i--) {
             skippedScopes += ClonedBlockDepth(bceOfDef);
-            JSFunction *funOfDef = bceOfDef->sc->asFunbox()->fun();
+            JSFunction *funOfDef = bceOfDef->sc->asFunbox()->function();
             if (funOfDef->isHeavyweight()) {
                 skippedScopes++;
                 if (funOfDef->isNamedLambda())
@@ -1378,7 +1378,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         if (dn->pn_cookie.level() != bce->script->staticLevel)
             return true;
 
-        RootedFunction fun(cx, bce->sc->asFunbox()->fun());
+        RootedFunction fun(cx, bce->sc->asFunbox()->function());
         JS_ASSERT(fun->flags & JSFUN_LAMBDA);
         JS_ASSERT(pn->pn_atom == fun->atom());
 
@@ -2198,7 +2198,7 @@ SetJumpOffsetAt(BytecodeEmitter *bce, ptrdiff_t off)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127.
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047.
  * LLVM is deciding to inline this function which uses a lot of stack space
  * into EmitTree which is recursive and uses relatively little stack space.
  */
@@ -2621,7 +2621,8 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
         bce->switchToProlog();
         if (Emit1(cx, bce, JSOP_ARGUMENTS) < 0)
             return false;
-        unsigned varIndex = bce->script->bindings.argumentsVarIndex(cx);
+        InternalBindingsHandle bindings(bce->script, &bce->script->bindings);
+        unsigned varIndex = Bindings::argumentsVarIndex(cx, bindings);
         if (bce->script->varIsAliased(varIndex)) {
             ScopeCoordinate sc;
             sc.hops = 0;
@@ -2667,7 +2668,7 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
     /* Initialize fun->script() so that the debugger has a valid fun->script(). */
     RootedFunction fun(cx, bce->script->function());
     JS_ASSERT(fun->isInterpreted());
-    JS_ASSERT(!fun->script());
+    JS_ASSERT(!fun->script().unsafeGet());
     fun->setScript(bce->script);
     if (!JSFunction::setTypeForScriptedFunction(cx, fun, singleton))
         return false;
@@ -2691,7 +2692,7 @@ MaybeEmitVarDecl(JSContext *cx, BytecodeEmitter *bce, JSOp prologOp, ParseNode *
     }
 
     if (JOF_OPTYPE(pn->getOp()) == JOF_ATOM &&
-        (!bce->sc->isFunction || bce->sc->asFunbox()->fun()->isHeavyweight()))
+        (!bce->sc->isFunction || bce->sc->asFunbox()->function()->isHeavyweight()))
     {
         bce->switchToProlog();
         if (!UpdateSourceCoordNotes(cx, bce, pn->pn_pos.begin))
@@ -3907,7 +3908,7 @@ EmitCatch(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4270,7 +4271,7 @@ EmitIf(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
  * let-expressions.
  */
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4342,7 +4343,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
 
 #if JS_HAS_XML_SUPPORT
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4423,7 +4424,7 @@ EmitXMLProcessingInstruction(JSContext *cx, BytecodeEmitter *bce, XMLProcessingI
 #endif
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4834,9 +4835,10 @@ EmitFor(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, ptrdiff_t top)
 static JS_NEVER_INLINE bool
 EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
-    RootedFunction fun(cx, pn->pn_funbox->fun());
+    AssertCanGC();
+    RootedFunction fun(cx, pn->pn_funbox->function());
     JS_ASSERT(fun->isInterpreted());
-    if (fun->script()) {
+    if (fun->script().unsafeGet()) {
         /*
          * This second pass is needed to emit JSOP_NOP with a source note
          * for the already-emitted function definition prolog opcode. See
@@ -4890,7 +4892,7 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     }
 
     /* Make the function object a literal in the outer script's pool. */
-    unsigned index = bce->objectList.add(&pn->pn_funbox->objbox);
+    unsigned index = bce->objectList.add(pn->pn_funbox);
 
     /* Non-hoisted functions simply emit their respective op. */
     if (!pn->functionIsHoisted()) {
@@ -4925,7 +4927,7 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             return false;
     } else {
 #ifdef DEBUG
-        BindingIter bi(bce->script->bindings);
+        BindingIter bi(bce->script);
         while (bi->name() != fun->atom())
             bi++;
         JS_ASSERT(bi->kind() == VARIABLE || bi->kind() == CONSTANT || bi->kind() == ARGUMENT);
@@ -5531,7 +5533,7 @@ EmitLogical(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -5625,7 +5627,7 @@ EmitIncOrDec(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -5731,7 +5733,7 @@ EmitConditionalExpression(JSContext *cx, BytecodeEmitter *bce, ConditionalExpres
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -6018,7 +6020,7 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
       case PNK_ARGSBODY:
       {
-        RootedFunction fun(cx, bce->sc->asFunbox()->fun());
+        RootedFunction fun(cx, bce->sc->asFunbox()->function());
         ParseNode *pnlast = pn->last();
 
         // Carefully emit everything in the right order:

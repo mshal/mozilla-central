@@ -92,29 +92,6 @@ class LayerManagerOGL;
 }
 }
 
-#ifndef NP_NO_CARBON
-enum {
-  // Currently focused ChildView (while this TSM document is active).
-  // Transient (only set while TSMProcessRawKeyEvent() is processing a key
-  // event), and the ChildView will be retained and released around the call
-  // to TSMProcessRawKeyEvent() -- so it can be weak.
-  kFocusedChildViewTSMDocPropertyTag  = 'GKFV', // type ChildView* [WEAK]
-};
-
-// Undocumented HIToolbox function used by WebKit to allow Carbon-based IME
-// to work in a Cocoa-based browser (like Safari or Cocoa-widgets Firefox).
-// (Recent WebKit versions actually use a thin wrapper around this function
-// called WKSendKeyEventToTSM().)
-//
-// Calling TSMProcessRawKeyEvent() from ChildView's keyDown: and keyUp:
-// methods (when the ChildView is a plugin view) bypasses Cocoa's IME
-// infrastructure and (instead) causes Carbon TSM events to be sent on each
-// NSKeyDown event.  We install a Carbon event handler
-// (PluginKeyEventsHandler()) to catch these events and pass them to Gecko
-// (which in turn passes them to the plugin).
-extern "C" long TSMProcessRawKeyEvent(EventRef carbonEvent);
-#endif // NP_NO_CARBON
-
 @interface NSEvent (Undocumented)
 
 // Return Cocoa event's corresponding Carbon event.  Not initialized (on
@@ -411,6 +388,20 @@ public:
   NS_IMETHOD              SetFocus(bool aRaise);
   NS_IMETHOD              GetBounds(nsIntRect &aRect);
 
+  // Returns the "backing scale factor" of the view's window, which is the
+  // ratio of pixels in the window's backing store to Cocoa points. Prior to
+  // HiDPI support in OS X 10.7, this was always 1.0, but in HiDPI mode it
+  // will be 2.0 (and might potentially other values as screen resolutions
+  // evolve). This gives the relationship between what Gecko calls "device
+  // pixels" and the Cocoa "points" coordinate system.
+  CGFloat                 BackingScaleFactor();
+
+  // Call if the window's backing scale factor changes - i.e., it is moved
+  // between HiDPI and non-HiDPI screens
+  void                    BackingScaleFactorChanged();
+
+  virtual double          GetDefaultScale();
+
   NS_IMETHOD              Invalidate(const nsIntRect &aRect);
 
   virtual void*           GetNativeData(uint32_t aDataType);
@@ -479,7 +470,7 @@ public:
   
   virtual bool      DispatchWindowEvent(nsGUIEvent& event);
 
-  bool PaintWindow(nsIntRegion aRegion);
+  bool PaintWindow(nsIntRegion aRegion, bool aIsAlternate);
 
 #ifdef ACCESSIBILITY
   already_AddRefed<Accessible> GetDocumentAccessible();
@@ -514,6 +505,20 @@ public:
   mozilla::widget::TextInputHandler* GetTextInputHandler()
   {
     return mTextInputHandler;
+  }
+
+  // unit conversion convenience functions
+  nsIntPoint        CocoaPointsToDevPixels(const NSPoint& aPt) {
+    return nsCocoaUtils::CocoaPointsToDevPixels(aPt, BackingScaleFactor());
+  }
+  nsIntRect         CocoaPointsToDevPixels(const NSRect& aRect) {
+    return nsCocoaUtils::CocoaPointsToDevPixels(aRect, BackingScaleFactor());
+  }
+  CGFloat           DevPixelsToCocoaPoints(int32_t aPixels) {
+    return nsCocoaUtils::DevPixelsToCocoaPoints(aPixels, BackingScaleFactor());
+  }
+  NSRect            DevPixelsToCocoaPoints(const nsIntRect& aRect) {
+    return nsCocoaUtils::DevPixelsToCocoaPoints(aRect, BackingScaleFactor());
   }
 
 protected:
@@ -551,6 +556,12 @@ protected:
 
   nsRefPtr<gfxASurface> mTempThebesSurface;
   nsRefPtr<mozilla::gl::TextureImage> mResizerImage;
+
+  // Cached value of [mView backingScaleFactor], to avoid sending two obj-c
+  // messages (respondsToSelector, backingScaleFactor) every time we need to
+  // use it.
+  // ** We'll need to reinitialize this if the backing resolution changes. **
+  CGFloat               mBackingScaleFactor;
 
   bool                  mVisible;
   bool                  mDrawing;

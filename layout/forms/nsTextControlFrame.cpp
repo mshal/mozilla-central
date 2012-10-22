@@ -55,9 +55,6 @@
 #include "nsIDOMNodeList.h" //for selection setting helper func
 #include "nsIDOMRange.h" //for selection setting helper func
 #include "nsPIDOMWindow.h" //needed for notify selection changed to update the menus ect.
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsIDOMNode.h"
 
 #include "nsITransactionManager.h"
@@ -70,6 +67,7 @@
 #include "nsTextEditRules.h"
 #include "nsPresState.h"
 #include "nsContentList.h"
+#include "nsAttrValueInlines.h"
 
 #include "mozilla/Selection.h"
 
@@ -93,16 +91,10 @@ NS_QUERYFRAME_HEAD(nsTextControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsTextControlFrame::CreateAccessible()
+a11y::AccType
+nsTextControlFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLTextFieldAccessible(mContent,
-                                                     PresContext()->PresShell());
-  }
-
-  return nullptr;
+  return a11y::eHTMLTextFieldAccessible;
 }
 #endif
 
@@ -304,50 +296,53 @@ nsTextControlFrame::EnsureEditorInitialized()
 
   // Make sure that editor init doesn't do things that would kill us off
   // (especially off the script blockers it'll create for its DOM mutations).
-  nsAutoScriptBlocker scriptBlocker;
+  {
+    nsAutoScriptBlocker scriptBlocker;
 
-  // Time to mess with our security context... See comments in GetValue()
-  // for why this is needed.
-  nsCxPusher pusher;
-  pusher.PushNull();
+    // Time to mess with our security context... See comments in GetValue()
+    // for why this is needed.
+    nsCxPusher pusher;
+    pusher.PushNull();
 
-  // Make sure that we try to focus the content even if the method fails
-  class EnsureSetFocus {
-  public:
-    explicit EnsureSetFocus(nsTextControlFrame* aFrame)
-      : mFrame(aFrame) {}
-    ~EnsureSetFocus() {
-      if (nsContentUtils::IsFocusedContent(mFrame->GetContent()))
-        mFrame->SetFocus(true, false);
-    }
-  private:
-    nsTextControlFrame *mFrame;
-  };
-  EnsureSetFocus makeSureSetFocusHappens(this);
+    // Make sure that we try to focus the content even if the method fails
+    class EnsureSetFocus {
+    public:
+      explicit EnsureSetFocus(nsTextControlFrame* aFrame)
+        : mFrame(aFrame) {}
+      ~EnsureSetFocus() {
+        if (nsContentUtils::IsFocusedContent(mFrame->GetContent()))
+          mFrame->SetFocus(true, false);
+      }
+    private:
+      nsTextControlFrame *mFrame;
+    };
+    EnsureSetFocus makeSureSetFocusHappens(this);
 
 #ifdef DEBUG
-  // Make sure we are not being called again until we're finished.
-  // If reentrancy happens, just pretend that we don't have an editor.
-  const EditorInitializerEntryTracker tracker(*this);
-  NS_ASSERTION(!tracker.EnteredMoreThanOnce(),
-               "EnsureEditorInitialized has been called while a previous call was in progress");
+    // Make sure we are not being called again until we're finished.
+    // If reentrancy happens, just pretend that we don't have an editor.
+    const EditorInitializerEntryTracker tracker(*this);
+    NS_ASSERTION(!tracker.EnteredMoreThanOnce(),
+                 "EnsureEditorInitialized has been called while a previous call was in progress");
 #endif
 
-  // Create an editor for the frame, if one doesn't already exist
-  nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
-  NS_ASSERTION(txtCtrl, "Content not a text control element");
-  nsresult rv = txtCtrl->CreateEditor();
-  NS_ENSURE_SUCCESS(rv, rv);
+    // Create an editor for the frame, if one doesn't already exist
+    nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
+    NS_ASSERTION(txtCtrl, "Content not a text control element");
+    nsresult rv = txtCtrl->CreateEditor();
+    NS_ENSURE_SUCCESS(rv, rv);
+    NS_ENSURE_STATE(weakFrame.IsAlive());
 
-  // Turn on mUseEditor so that subsequent calls will use the
-  // editor.
-  mUseEditor = true;
+    // Turn on mUseEditor so that subsequent calls will use the
+    // editor.
+    mUseEditor = true;
 
-  // Set the selection to the beginning of the text field.
-  if (weakFrame.IsAlive()) {
-    SetSelectionEndPoints(0, 0);
+    // Set the selection to the beginning of the text field.
+    if (weakFrame.IsAlive()) {
+      SetSelectionEndPoints(0, 0);
+    }
   }
-
+  NS_ENSURE_STATE(weakFrame.IsAlive());
   return NS_OK;
 }
 
@@ -443,7 +438,7 @@ nsTextControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
 nscoord
 nsTextControlFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
 {
-    nscoord result = 0;
+    DebugOnly<nscoord> result = 0;
     DISPLAY_PREF_WIDTH(this, result);
 
     float inflation = nsLayoutUtils::FontSizeInflationFor(this);
@@ -540,9 +535,6 @@ nsTextControlFrame::Reflow(nsPresContext*   aPresContext,
     ReflowTextControlChild(kid, aPresContext, aReflowState, aStatus, aDesiredSize);
     kid = kid->GetNextSibling();
   }
-
-  // If we're resizing, we might need to invalidate our border areas and such
-  CheckInvalidateSizeChange(aDesiredSize);
 
   // take into account css properties that affect overflow handling
   FinishAndStoreOverflow(&aDesiredSize);
@@ -1100,8 +1092,10 @@ nsTextControlFrame::GetSelectionRange(int32_t* aSelectionStart,
     return NS_OK;
   }
 
-  nsContentUtils::GetSelectionInTextControl(typedSel,
-    GetRootNodeAndInitializeEditor(), *aSelectionStart, *aSelectionEnd);
+  mozilla::dom::Element* root = GetRootNodeAndInitializeEditor();
+  NS_ENSURE_STATE(root);
+  nsContentUtils::GetSelectionInTextControl(typedSel, root,
+                                            *aSelectionStart, *aSelectionEnd);
 
   return NS_OK;
 }

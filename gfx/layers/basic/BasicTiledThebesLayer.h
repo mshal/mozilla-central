@@ -80,6 +80,7 @@ class BasicTiledLayerBuffer : public TiledLayerBuffer<BasicTiledLayerBuffer, Bas
 
 public:
   BasicTiledLayerBuffer()
+    : mLastPaintOpaque(false)
   {}
 
   void PaintThebes(BasicTiledThebesLayer* aLayer,
@@ -175,6 +176,7 @@ public:
   // Thebes Layer
   virtual Layer* AsLayer() { return this; }
   virtual void InvalidateRegion(const nsIntRegion& aRegion) {
+    mInvalidRegion.Or(mInvalidRegion, aRegion);
     mValidRegion.Sub(mValidRegion, aRegion);
   }
 

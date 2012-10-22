@@ -423,10 +423,6 @@ public:
     return mInner.GetScrolledFrame()->GetContentInsertionFrame();
   }
 
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                  uint32_t aFlags);
-
   virtual bool DoesClipChildren() { return true; }
   virtual nsSplittableType GetSplittableType() const;
 
@@ -549,7 +545,7 @@ public:
   bool DidHistoryRestore() { return mInner.mDidHistoryRestore; }
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<Accessible> CreateAccessible();
+  virtual mozilla::a11y::AccType AccessibleType() MOZ_OVERRIDE;
 #endif
 
 protected:
@@ -637,10 +633,6 @@ public:
   virtual nsIFrame* GetContentInsertionFrame() MOZ_OVERRIDE {
     return mInner.GetScrolledFrame()->GetContentInsertionFrame();
   }
-
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                  uint32_t aFlags);
 
   virtual bool DoesClipChildren() { return true; }
   virtual nsSplittableType GetSplittableType() const;

@@ -51,7 +51,6 @@
 #include "nsIConsoleService.h"
 #include "nsIStorageStream.h"
 #include "nsIStringStream.h"
-#include "prmem.h"
 #if defined(XP_WIN)
 #include "nsILocalFileWin.h"
 #endif
@@ -743,8 +742,8 @@ mozJSComponentLoader::GlobalForLocation(nsIFile *aComponentFile,
             }
 
             int64_t maxSize;
-            LL_UI2L(maxSize, PR_UINT32_MAX);
-            if (LL_CMP(fileSize, >, maxSize)) {
+            LL_UI2L(maxSize, UINT32_MAX);
+            if (fileSize > maxSize) {
                 NS_ERROR("file too large");
                 JS_SetOptions(cx, oldopts);
                 return NS_ERROR_FAILURE;
@@ -771,8 +770,7 @@ mozJSComponentLoader::GlobalForLocation(nsIFile *aComponentFile,
             // Make sure the file map is closed, no matter how we return.
             FileMapAutoCloser mapCloser(map);
 
-            uint32_t fileSize32;
-            LL_L2UI(fileSize32, fileSize);
+            uint32_t fileSize32 = fileSize;
 
             char *buf = static_cast<char*>(PR_MemMap(map, 0, fileSize32));
             if (!buf) {
@@ -845,7 +843,7 @@ mozJSComponentLoader::GlobalForLocation(nsIFile *aComponentFile,
 
             rv = scriptStream->Available(&len64);
             NS_ENSURE_SUCCESS(rv, rv);
-            NS_ENSURE_TRUE(len64 < PR_UINT32_MAX, NS_ERROR_FILE_TOO_BIG);
+            NS_ENSURE_TRUE(len64 < UINT32_MAX, NS_ERROR_FILE_TOO_BIG);
             if (!len64)
                 return NS_ERROR_FAILURE;
             uint32_t len = (uint32_t)len64;

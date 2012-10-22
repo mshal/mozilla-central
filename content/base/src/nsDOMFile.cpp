@@ -35,7 +35,7 @@
 
 #include "plbase64.h"
 #include "prmem.h"
-#include "dombindings.h"
+#include "mozilla/dom/FileListBinding.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -129,7 +129,8 @@ nsDOMFileBase::GetName(nsAString &aFileName)
 NS_IMETHODIMP
 nsDOMFileBase::GetLastModifiedDate(JSContext* cx, JS::Value *aLastModifiedDate)
 {
-  aLastModifiedDate->setNull();
+  JSObject* date = JS_NewDateObjectMsec(cx, JS_Now() / PR_USEC_PER_MSEC);
+  aLastModifiedDate->setObject(*date);
   return NS_OK;
 }
 
@@ -169,6 +170,14 @@ NS_IMETHODIMP
 nsDOMFileBase::GetType(nsAString &aType)
 {
   aType = mContentType;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMFileBase::GetMozLastModifiedDate(uint64_t* aLastModifiedDate)
+{
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+  *aLastModifiedDate = mLastModificationDate;
   return NS_OK;
 }
 
@@ -496,16 +505,27 @@ nsDOMFileFile::GetMozFullPathInternal(nsAString &aFilename)
 }
 
 NS_IMETHODIMP
-nsDOMFileFile::GetLastModifiedDate(JSContext* cx, JS::Value *aLastModifiedDate)
+nsDOMFileFile::GetLastModifiedDate(JSContext* cx, JS::Value* aLastModifiedDate)
 {
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+
   PRTime msecs;
   mFile->GetLastModifiedTime(&msecs);
+  if (IsDateUnknown()) {
+    nsresult rv = mFile->GetLastModifiedTime(&msecs);
+    NS_ENSURE_SUCCESS(rv, rv);
+    mLastModificationDate = msecs;
+  } else {
+    msecs = mLastModificationDate;
+  }
+
   JSObject* date = JS_NewDateObjectMsec(cx, msecs);
   if (date) {
     aLastModifiedDate->setObject(*date);
   }
   else {
-    aLastModifiedDate->setNull();
+    date = JS_NewDateObjectMsec(cx, JS_Now() / PR_USEC_PER_MSEC);
+    aLastModifiedDate->setObject(*date);
   }
 
   return NS_OK;
@@ -556,6 +576,14 @@ nsDOMFileFile::GetType(nsAString &aType)
 
   aType = mContentType;
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMFileFile::GetMozLastModifiedDate(uint64_t* aLastModifiedDate)
+{
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+  *aLastModifiedDate = mLastModificationDate;
   return NS_OK;
 }
 
@@ -653,7 +681,7 @@ nsDOMMemoryFile::CreateSlice(uint64_t aStart, uint64_t aLength,
 NS_IMETHODIMP
 nsDOMMemoryFile::GetInternalStream(nsIInputStream **aStream)
 {
-  if (mLength > PR_INT32_MAX)
+  if (mLength > INT32_MAX)
     return NS_ERROR_FAILURE;
 
   return DataOwnerAdapter::Create(mDataOwner, mStart, mLength, aStream);
@@ -680,13 +708,7 @@ JSObject*
 nsDOMFileList::WrapObject(JSContext *cx, JSObject *scope,
                           bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::FileList::create(cx, scope, this, triedToWrap);
-}
-
-nsIDOMFile*
-nsDOMFileList::GetItemAt(uint32_t aIndex)
-{
-  return Item(aIndex);
+  return FileListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 NS_IMETHODIMP

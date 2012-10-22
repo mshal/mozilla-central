@@ -16,13 +16,19 @@ FORCE_STATIC_LIB = 1
 MODULE_NAME	= nsImageLib2Module
 GRE_MODULE	= 1
 LIBXUL_LIBRARY  = 1
+FAIL_ON_WARNINGS = 1
 
+
+EXPORTS		=  imgLoader.h \
+		   imgRequest.h \
+		   $(NULL)
 
 CPPSRCS		= \
 			Image.cpp \
 			Decoder.cpp \
 			DiscardTracker.cpp \
 			RasterImage.cpp \
+			ScriptedNotificationObserver.cpp \
 			SVGDocumentWrapper.cpp \
 			VectorImage.cpp \
 			imgFrame.cpp \

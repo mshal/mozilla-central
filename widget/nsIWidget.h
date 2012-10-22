@@ -42,6 +42,7 @@ namespace dom {
 class TabChild;
 }
 namespace layers {
+class CompositorChild;
 class LayerManager;
 class PLayersChild;
 }
@@ -89,8 +90,8 @@ typedef nsEventStatus (* EVENT_CALLBACK)(nsGUIEvent *event);
 #endif
 
 #define NS_IWIDGET_IID \
-  { 0xb8f43b25, 0x9036, 0x44e7, \
-    { 0xaa, 0xe2, 0x33, 0x76, 0x6c, 0x35, 0x91, 0xfc } }
+  { 0x4e05b167, 0x475b, 0x422b, \
+    { 0x88, 0xc0, 0xa5, 0xb1, 0x61, 0xcf, 0x87, 0x79 } }
 
 /*
  * Window shadow styles
@@ -381,6 +382,7 @@ class nsIWidget : public nsISupports {
     typedef mozilla::dom::TabChild TabChild;
 
   public:
+    typedef mozilla::layers::CompositorChild CompositorChild;
     typedef mozilla::layers::LayerManager LayerManager;
     typedef mozilla::layers::LayersBackend LayersBackend;
     typedef mozilla::layers::PLayersChild PLayersChild;
@@ -407,6 +409,7 @@ class nsIWidget : public nsISupports {
     nsIWidget()
       : mLastChild(nullptr)
       , mPrevSibling(nullptr)
+      , mOnDestroyCalled(false)
     {}
 
         
@@ -428,6 +431,10 @@ class nsIWidget : public nsISupports {
      * In practice at least one of aParent and aNativeParent will be null. If
      * both are null the widget isn't parented (e.g. context menus or
      * independent top level windows).
+     *
+     * The dimensions given in aRect are specified in the parent's
+     * coordinate system, or for parentless widgets such as top-level
+     * windows, in global CSS pixels.
      *
      * @param     aParent       parent nsIWidget
      * @param     aNativeParent native parent widget
@@ -504,6 +511,12 @@ class nsIWidget : public nsISupports {
      */
 
     NS_IMETHOD Destroy(void) = 0;
+
+    /**
+     * Destroyed() returns true if Destroy() has been called already.
+     * Otherwise, false.
+     */
+    bool Destroyed() const { return mOnDestroyCalled; }
 
 
     /**
@@ -1629,6 +1642,13 @@ class nsIWidget : public nsISupports {
      */
     virtual TabChild* GetOwningTabChild() { return nullptr; }
 
+    /**
+     * If this isn't directly compositing to its window surface,
+     * return the compositor which is doing that on our behalf.
+     */
+    virtual CompositorChild* GetRemoteRenderer()
+    { return nullptr; }
+
 protected:
 
     // keep the list of children.  We also keep track of our siblings.
@@ -1641,6 +1661,8 @@ protected:
     nsIWidget* mLastChild;
     nsCOMPtr<nsIWidget> mNextSibling;
     nsIWidget* mPrevSibling;
+    // When Destroy() is called, the sub class should set this true.
+    bool mOnDestroyCalled;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIWidget, NS_IWIDGET_IID)

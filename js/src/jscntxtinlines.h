@@ -134,12 +134,6 @@ struct PreserveRegsGuard
     FrameRegs &regs_;
 };
 
-inline GSNCache *
-GetGSNCache(JSContext *cx)
-{
-    return &cx->runtime->gsnCache;
-}
-
 #if JS_HAS_XML_SUPPORT
 
 class AutoNamespaceArray : protected AutoGCRooter {
@@ -589,18 +583,6 @@ JSContext::setDefaultCompartmentObjectIfUnset(JSObject *obj)
 {
     if (!defaultCompartmentObject_)
         setDefaultCompartmentObject(obj);
-}
-
-/* Get the current frame, first lazily instantiating stack frames if needed. */
-static inline js::StackFrame *
-js_GetTopStackFrame(JSContext *cx, FrameExpandKind expand)
-{
-#ifdef JS_METHODJIT
-    if (expand)
-        js::mjit::ExpandInlineFrames(cx->compartment);
-#endif
-
-    return cx->maybefp();
 }
 
 #endif /* jscntxtinlines_h___ */

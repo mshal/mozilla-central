@@ -111,23 +111,15 @@ public:
   // have a mess on your hands.
   nsresult WriteFile();
 
-  // Drop memory used during the update process.
-  nsresult FinishUpdate();
-
-  // Force the entire store in memory
-  nsresult ReadEntireStore();
-
 private:
-  void Clear();
   nsresult Reset();
 
   nsresult ReadHeader();
-  nsresult SanityCheck(nsIFile* aStoreFile);
-  nsresult CalculateChecksum(nsAutoCString& aChecksum, bool aChecksumPresent);
+  nsresult SanityCheck();
+  nsresult CalculateChecksum(nsAutoCString& aChecksum, int64_t aSize, bool aChecksumPresent);
   nsresult CheckChecksum(nsIFile* aStoreFile);
   void UpdateHeader();
 
-  nsresult EnsureChunkNumbers();
   nsresult ReadChunkNumbers();
   nsresult ReadHashes();
   nsresult ReadAddPrefixes();
@@ -139,14 +131,14 @@ private:
   nsresult ProcessSubs();
 
   struct Header {
-    uint32 magic;
-    uint32 version;
-    uint32 numAddChunks;
-    uint32 numSubChunks;
-    uint32 numAddPrefixes;
-    uint32 numSubPrefixes;
-    uint32 numAddCompletes;
-    uint32 numSubCompletes;
+    uint32_t magic;
+    uint32_t version;
+    uint32_t numAddChunks;
+    uint32_t numSubChunks;
+    uint32_t numAddPrefixes;
+    uint32_t numSubPrefixes;
+    uint32_t numAddCompletes;
+    uint32_t numSubCompletes;
   };
 
   Header mHeader;
@@ -158,7 +150,6 @@ private:
 
   nsCOMPtr<nsIInputStream> mInputStream;
 
-  bool haveChunks;
   ChunkSet mAddChunks;
   ChunkSet mSubChunks;
 

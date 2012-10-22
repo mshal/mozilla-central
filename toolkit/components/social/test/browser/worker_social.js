@@ -25,6 +25,9 @@ onconnect = function(e) {
       case "test-profile":
         apiPort.postMessage({topic: "social.user-profile", data: data});
         break;
+      case "test-pending-msg":
+        port.postMessage({topic: "test-pending-response"})
+        break;
       case "test-ambient":
         apiPort.postMessage({topic: "social.ambient-notification", data: data});
         break;
@@ -33,6 +36,17 @@ onconnect = function(e) {
         break;
       case "social.cookies-get-response":
         testerPort.postMessage({topic: "test.cookies-get-response", data: data});
+        break;
+      case "test-reload-init":
+        // browser_social_sidebar.js started test, tell the sidebar to
+        // start
+        apiPort.postMessage({topic: 'social.reload-worker'});
+        break;
     }
   }
+  // used for "test-reload-worker"
+  if (apiPort && apiPort != port) {
+    port.postMessage({topic: "worker.connected"})
+  }
+
 }

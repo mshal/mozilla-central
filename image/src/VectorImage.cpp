@@ -382,6 +382,15 @@ VectorImage::GetFrame(uint32_t aWhichFrame,
 }
 
 //******************************************************************************
+/* [noscript] ImageContainer getImageContainer(); */
+NS_IMETHODIMP
+VectorImage::GetImageContainer(mozilla::layers::ImageContainer** _retval)
+{
+  *_retval = nullptr;
+  return NS_OK;
+}
+
+//******************************************************************************
 /* [noscript] gfxImageSurface copyFrame(in uint32_t aWhichFrame,
  *                                      in uint32_t aFlags); */
 NS_IMETHODIMP
@@ -575,6 +584,14 @@ VectorImage::RequestDecode()
   return NS_OK;
 }
 
+NS_IMETHODIMP
+VectorImage::StartDecoding()
+{
+  // Nothing to do for SVG images
+  return NS_OK;
+}
+
+
 //******************************************************************************
 /* void lockImage() */
 NS_IMETHODIMP
@@ -673,11 +690,11 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
   nsCOMPtr<imgIDecoderObserver> observer = do_QueryReferent(mObserver);
   if (observer) {
     // NOTE: This signals that width/height are available.
-    observer->OnStartContainer(nullptr, this);
+    observer->OnStartContainer();
 
-    observer->FrameChanged(nullptr, this, &nsIntRect::GetMaxSizedIntRect());
-    observer->OnStopFrame(nullptr, 0);
-    observer->OnStopDecode(nullptr, NS_OK, nullptr);
+    observer->FrameChanged(&nsIntRect::GetMaxSizedIntRect());
+    observer->OnStopFrame();
+    observer->OnStopDecode(NS_OK);
   }
   EvaluateAnimation();
 
@@ -714,12 +731,12 @@ VectorImage::InvalidateObserver()
 
   nsCOMPtr<imgIContainerObserver> containerObs(do_QueryReferent(mObserver));
   if (containerObs) {
-    containerObs->FrameChanged(nullptr, this, &nsIntRect::GetMaxSizedIntRect());
+    containerObs->FrameChanged(&nsIntRect::GetMaxSizedIntRect());
   }
 
   nsCOMPtr<imgIDecoderObserver> decoderObs(do_QueryReferent(mObserver));
   if (decoderObs) {
-    decoderObs->OnStopFrame(nullptr, imgIContainer::FRAME_CURRENT);
+    decoderObs->OnStopFrame();
   }
 }
 

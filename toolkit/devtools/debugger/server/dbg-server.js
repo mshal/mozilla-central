@@ -24,6 +24,8 @@ let wantLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 Cu.import("resource://gre/modules/jsdebugger.jsm");
 addDebuggerToGlobal(this);
 
+Cu.import("resource://gre/modules/devtools/_Promise.jsm");
+
 function dumpn(str) {
   if (wantLogging) {
     dump("DBG-SERVER: " + str + "\n");
@@ -183,6 +185,9 @@ var DebuggerServer = {
    */
   addBrowserActors: function DH_addBrowserActors() {
     this.addActors("chrome://global/content/devtools/dbg-browser-actors.js");
+    this.addActors("chrome://global/content/devtools/dbg-webconsole-actors.js");
+    this.addTabActor(this.WebConsoleActor, "consoleActor");
+    this.addGlobalActor(this.WebConsoleActor, "consoleActor");
     if ("nsIProfiler" in Ci)
       this.addActors("chrome://global/content/devtools/dbg-profiler-actors.js");
   },
@@ -386,9 +391,9 @@ ActorPool.prototype = {
   /**
    * Remove an actor from the actor pool.
    */
-  removeActor: function AP_remove(aActorID) {
-    delete this._actors[aActorID];
-    delete this._cleanups[aActorID];
+  removeActor: function AP_remove(aActor) {
+    delete this._actors[aActor.actorID];
+    delete this._cleanups[aActor.actorID];
   },
 
   /**
@@ -533,6 +538,7 @@ DebuggerServerConnection.prototype = {
                     "': " + safeErrorString(e))
         });
       }
+      instance.parentID = actor.parentID;
       // We want the newly-constructed actor to completely replace the factory
       // actor. Reusing the existing actor ID will make sure ActorPool.addActor
       // does the right thing.

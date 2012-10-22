@@ -65,8 +65,8 @@ WebappsRegistry.prototype = {
           Services.DOMRequest.fireSuccess(req, null);
         }
         break;
-      case "Webapps:IsInstalled:Return:OK":
-        Services.DOMRequest.fireSuccess(req, msg.installed);
+      case "Webapps:CheckInstalled:Return:OK":
+        Services.DOMRequest.fireSuccess(req, msg.app);
         break;
       case "Webapps:GetInstalled:Return:OK":
         Services.DOMRequest.fireSuccess(req, convertAppsArray(msg.apps, this._window));
@@ -110,13 +110,16 @@ WebappsRegistry.prototype = {
           manifest = JSON.parse(xhr.responseText, installOrigin);
         } catch (e) {
           Services.DOMRequest.fireError(request, "MANIFEST_PARSE_ERROR");
+          Cu.reportError("Error installing app from: " + installOrigin + ": " + "MANIFEST_PARSE_ERROR");
           return;
         }
 
         if (!AppsUtils.checkManifest(manifest, installOrigin)) {
           Services.DOMRequest.fireError(request, "INVALID_MANIFEST");
+          Cu.reportError("Error installing app from: " + installOrigin + ": " + "INVALID_MANIFEST");
         } else if (!this.checkAppStatus(manifest)) {
           Services.DOMRequest.fireError(request, "INVALID_SECURITY_LEVEL");
+          Cu.reportError("Error installing app, '" + manifest.name + "': " + "INVALID_SECURITY_LEVEL");
         } else {
           let receipts = (aParams && aParams.receipts && Array.isArray(aParams.receipts)) ? aParams.receipts : [];
           let categories = (aParams && aParams.categories && Array.isArray(aParams.categories)) ? aParams.categories : [];
@@ -134,11 +137,13 @@ WebappsRegistry.prototype = {
         }
       } else {
         Services.DOMRequest.fireError(request, "MANIFEST_URL_ERROR");
+        Cu.reportError("Error installing app from: " + installOrigin + ": " + "MANIFEST_URL_ERROR");
       }
     }).bind(this), false);
 
     xhr.addEventListener("error", (function() {
       Services.DOMRequest.fireError(request, "NETWORK_ERROR");
+      Cu.reportError("Error installing app from: " + installOrigin + ": " + "NETWORK_ERROR");
     }).bind(this), false);
 
     xhr.send(null);
@@ -154,15 +159,15 @@ WebappsRegistry.prototype = {
     return request;
   },
 
-  isInstalled: function(aManifestURL) {
+  checkInstalled: function(aManifestURL) {
     let manifestURL = Services.io.newURI(aManifestURL, null, this._window.document.baseURIObject);
     this._window.document.nodePrincipal.checkMayLoad(manifestURL, true, false);
 
     let request = this.createRequest();
-    cpmm.sendAsyncMessage("Webapps:IsInstalled", { origin: this._getOrigin(this._window.location.href),
-                                                   manifestURL: manifestURL.spec,
-                                                   oid: this._id,
-                                                   requestID: this.getRequestId(request) });
+    cpmm.sendAsyncMessage("Webapps:CheckInstalled", { origin: this._getOrigin(this._window.location.href),
+                                                      manifestURL: manifestURL.spec,
+                                                      oid: this._id,
+                                                      requestID: this.getRequestId(request) });
     return request;
   },
 
@@ -188,8 +193,10 @@ WebappsRegistry.prototype = {
 
   // mozIDOMApplicationRegistry2 implementation
 
-  installPackage: function(aPackageURL, aParams) {
-    this._validateScheme(aPackageURL);
+  installPackage: function(aURL, aParams) {
+    let installURL = this._window.location.href;
+    let installOrigin = this._getOrigin(installURL);
+    this._validateScheme(aURL);
 
     let request = this.createRequest();
     let requestID = this.getRequestId(request);
@@ -198,13 +205,54 @@ WebappsRegistry.prototype = {
                     Array.isArray(aParams.receipts)) ? aParams.receipts : [];
     let categories = (aParams && aParams.categories &&
                       Array.isArray(aParams.categories)) ? aParams.categories : [];
-    cpmm.sendAsyncMessage("Webapps:InstallPackage", { url: aPackageURL,
-                                                      receipts: receipts,
-                                                      categories: categories,
-                                                      requestID: requestID,
-                                                      oid: this._id,
-                                                      from: this._window.location.href,
-                                                      installOrigin: this._getOrigin(this._window.location.href) });
+    let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    xhr.open("GET", aURL, true);
+    xhr.channel.loadFlags |= Ci.nsIRequest.VALIDATE_ALWAYS;
+
+    xhr.addEventListener("load", (function() {
+      if (xhr.status == 200) {
+        let manifest;
+        try {
+          manifest = JSON.parse(xhr.responseText, installOrigin);
+        } catch(e) {
+          Services.DOMRequest.fireError(request, "MANIFEST_PARSE_ERROR");
+          return;
+        }
+        if (!(AppsUtils.checkManifest(manifest, installOrigin) &&
+              manifest.package_path)) {
+          Services.DOMRequest.fireError(request, "INVALID_MANIFEST");
+        } else {
+          if (!this.checkAppStatus(manifest)) {
+            Services.DOMRequest.fireError(request, "INVALID_SECURITY_LEVEL");
+          } else {
+            let receipts = (aParams && aParams.receipts && Array.isArray(aParams.receipts)) ? aParams.receipts : [];
+            let categories = (aParams && aParams.categories && Array.isArray(aParams.categories)) ? aParams.categories : [];
+            let etag = xhr.getResponseHeader("Etag");
+            cpmm.sendAsyncMessage("Webapps:InstallPackage", { app: {
+                                                              installOrigin: installOrigin,
+                                                              origin: this._getOrigin(aURL),
+                                                              manifestURL: aURL,
+                                                              updateManifest: manifest,
+                                                              etag: etag,
+                                                              receipts: receipts,
+                                                              categories: categories },
+                                                              from: installURL,
+                                                              oid: this._id,
+                                                              requestID: requestID,
+                                                              isPackage: true });
+          }
+        }
+      }
+      else {
+        Services.DOMRequest.fireError(request, "MANIFEST_URL_ERROR");
+      }
+    }).bind(this), false);
+
+    xhr.addEventListener("error", (function() {
+      Services.DOMRequest.fireError(request, "NETWORK_ERROR");
+    }).bind(this), false);
+
+    xhr.send(null);
     return request;
   },
 
@@ -213,7 +261,7 @@ WebappsRegistry.prototype = {
     this.initHelper(aWindow, ["Webapps:Install:Return:OK", "Webapps:Install:Return:KO",
                               "Webapps:GetInstalled:Return:OK",
                               "Webapps:GetSelf:Return:OK",
-                              "Webapps:IsInstalled:Return:OK" ]);
+                              "Webapps:CheckInstalled:Return:OK" ]);
 
     let util = this._window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
     this._id = util.outerWindowID;
@@ -308,10 +356,10 @@ WebappsApplication.prototype = {
   __proto__: DOMRequestIpcHelper.prototype,
 
   init: function(aWindow, aApp) {
+    this._window = aWindow;
     this.origin = aApp.origin;
-    this.manifest = ObjectWrapper.wrap(aApp.manifest, aWindow);
-    this.updateManifest = aApp.updateManifest ? ObjectWrapper.wrap(aApp.updateManifest, aWindow)
-                                              : null;
+    this._manifest = aApp.manifest;
+    this._updateManifest = aApp.updateManifest;
     this.manifestURL = aApp.manifestURL;
     this.receipts = aApp.receipts;
     this.installOrigin = aApp.installOrigin;
@@ -338,9 +386,20 @@ WebappsApplication.prototype = {
                               "Webapps:Uninstall:Return:KO",
                               "Webapps:OfflineCache",
                               "Webapps:CheckForUpdate:Return:OK",
-                              "Webapps:CheckForUpdate:Return:KO"]);
+                              "Webapps:CheckForUpdate:Return:KO",
+                              "Webapps:PackageEvent"]);
     cpmm.sendAsyncMessage("Webapps:RegisterForMessages",
-                          ["Webapps:Uninstall:Return:OK", "Webapps:OfflineCache"]);
+                          ["Webapps:Uninstall:Return:OK", "Webapps:OfflineCache",
+                           "Webapps:PackageEvent"]);
+  },
+
+  get manifest() {
+    return this.manifest = ObjectWrapper.wrap(this._manifest, this._window);
+  },
+
+  get updateManifest() {
+    return this.updateManifest = this._updateManifest ? ObjectWrapper.wrap(this._updateManifest, this._window)
+                                                      : null;
   },
 
   set onprogress(aCallback) {
@@ -388,7 +447,8 @@ WebappsApplication.prototype = {
   },
 
   download: function() {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+    cpmm.sendAsyncMessage("Webapps:Download",
+                          { manifestURL: this.manifestURL });
   },
 
   cancelDownload: function() {
@@ -434,7 +494,8 @@ WebappsApplication.prototype = {
   uninit: function() {
     this._onprogress = null;
     cpmm.sendAsyncMessage("Webapps:UnregisterForMessages",
-                          ["Webapps:Uninstall:Return:OK", "Webapps:OfflineCache"]);
+                          ["Webapps:Uninstall:Return:OK", "Webapps:OfflineCache",
+                           "Webapps:PackageEvent"]);
   },
 
   _fireEvent: function(aName, aHandler) {
@@ -445,9 +506,11 @@ WebappsApplication.prototype = {
   },
 
   receiveMessage: function(aMessage) {
-    var msg = aMessage.json;
+    let msg = aMessage.json;
     let req = this.takeRequest(msg.requestID);
-    if ((msg.oid != this._id || !req) && aMessage.name !== "Webapps:OfflineCache")
+    if ((msg.oid != this._id || !req) &&
+        aMessage.name !== "Webapps:OfflineCache" &&
+        aMessage.name !== "Webapps:PackageEvent")
       return;
     switch (aMessage.name) {
       case "Webapps:Uninstall:Return:OK":
@@ -466,9 +529,10 @@ WebappsApplication.prototype = {
         if (msg.manifest != this.manifestURL)
           return;
 
-        if (installState in msg) {
+        if ("installState" in msg) {
           this.installState = msg.installState;
           if (this.installState == "installed") {
+            this._downloadError = null;
             this._fireEvent("downloadsuccess", this._ondownloadsuccess);
             this._fireEvent("downloadapplied", this._ondownloadapplied);
           } else {
@@ -476,6 +540,7 @@ WebappsApplication.prototype = {
           }
         } else if (msg.error) {
           this._downloadError = msg.error;
+          this.downloading = false;
           this._fireEvent("downloaderror", this._ondownloaderror);
         }
         break;
@@ -485,11 +550,63 @@ WebappsApplication.prototype = {
             if (msg.event == "downloadapplied") {
               Services.DOMRequest.fireSuccess(req, this.manifestURL);
               this._fireEvent("downloadapplied", this._ondownloadapplied);
+            } else if (msg.event == "downloadavailable") {
+              Services.DOMRequest.fireSuccess(req, this.manifestURL);
+              this._fireEvent("downloadavailable", this._ondownloadavailable);
             }
           }
           break;
         case "Webapps:CheckForUpdate:Return:KO":
           Services.DOMRequest.fireError(req, msg.error);
+          break;
+        case "Webapps:PackageEvent":
+          if (msg.manifestURL != this.manifestURL)
+            return;
+          switch(msg.type) {
+            case "error":
+              this._downloadError = msg.error;
+              this._fireEvent("downloaderror", this._ondownloaderror);
+              break;
+            case "progress":
+              this.progress = msg.progress;
+              this._fireEvent("downloadprogress", this._onprogress);
+              break;
+            case "installed":
+              let app = msg.app;
+              this.progress = app.progress || 0;
+              this.downloadAvailable = app.downloadAvailable;
+              this.downloading = app.downloading;
+              this.readyToApplyDownload = app.readyToApplyDownload;
+              this.downloadSize = app.downloadSize || 0;
+              this.installState = app.installState;
+              this.manifest = app.manifest;
+              this._fireEvent("downloaded", this._ondownloaded);
+              this._fireEvent("downloadapplied", this._ondownloadapplied);
+              break;
+            case "canceled":
+              app = msg.app;
+              this.progress = app.progress || 0;
+              this.downloadAvailable = app.downloadAvailable;
+              this.downloading = app.downloading;
+              this.readyToApplyDownload = app.readyToApplyDownload;
+              this.downloadSize = app.downloadSize || 0;
+              this.installState = app.installState;
+              this._downloadError = msg.error;
+              this._fireEvent("downloaderror", this._ondownloaderror);
+              break;
+            case "downloaded":
+              app = msg.app;
+              this.downloading = app.downloading;
+              this.downloadavailable = app.downloadavailable;
+              this.readyToApplyDownload = app.readyToApplyDownload;
+              this._fireEvent("downloaded", this._ondownloaded);
+              break;
+            case "applied":
+              app = msg.app;
+              this.readyToApplyDownload = app.readyToApplyDownload;
+              this._fireEvent("downloadapplied", this._ondownloadapplied);
+              break;
+          }
           break;
     }
   },
@@ -548,7 +665,12 @@ WebappsApplicationMgmt.prototype = {
   },
 
   applyDownload: function(aApp) {
-    return Cr.NS_ERROR_NOT_IMPLEMENTED;
+    if (!aApp.readyToApplyDownload) {
+      return;
+    }
+
+    cpmm.sendAsyncMessage("Webapps::ApplyDownload",
+                          { manifestURL: aApp.manifestURL });
   },
 
   getAll: function() {

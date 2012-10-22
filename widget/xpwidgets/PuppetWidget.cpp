@@ -400,7 +400,7 @@ PuppetWidget::OnIMEFocusChange(bool aFocus)
     nsQueryContentEvent queryEvent(true, NS_QUERY_TEXT_CONTENT, this);
     InitEvent(queryEvent, nullptr);
     // Query entire content
-    queryEvent.InitForQueryTextContent(0, PR_UINT32_MAX);
+    queryEvent.InitForQueryTextContent(0, UINT32_MAX);
     DispatchEvent(&queryEvent, status);
 
     if (queryEvent.mSucceeded) {
@@ -438,7 +438,7 @@ PuppetWidget::OnIMETextChange(uint32_t aStart, uint32_t aEnd, uint32_t aNewEnd)
     nsEventStatus status;
     nsQueryContentEvent queryEvent(true, NS_QUERY_TEXT_CONTENT, this);
     InitEvent(queryEvent, nullptr);
-    queryEvent.InitForQueryTextContent(0, PR_UINT32_MAX);
+    queryEvent.InitForQueryTextContent(0, UINT32_MAX);
     DispatchEvent(&queryEvent, status);
 
     if (queryEvent.mSucceeded) {
@@ -510,14 +510,14 @@ PuppetWidget::Paint()
 #endif
 
     if (mozilla::layers::LAYERS_D3D10 == mLayerManager->GetBackendType()) {
-      mAttachedWidgetListener->PaintWindow(this, region, false, true);
+      mAttachedWidgetListener->PaintWindow(this, region, nsIWidgetListener::WILL_SEND_DID_PAINT);
     } else {
       nsRefPtr<gfxContext> ctx = new gfxContext(mSurface);
       ctx->Rectangle(gfxRect(0,0,0,0));
       ctx->Clip();
       AutoLayerManagerSetup setupLayerManager(this, ctx,
                                               BUFFER_NONE);
-      mAttachedWidgetListener->PaintWindow(this, region, false, true);
+      mAttachedWidgetListener->PaintWindow(this, region, nsIWidgetListener::WILL_SEND_DID_PAINT);
       mTabChild->NotifyPainted();
     }
   }

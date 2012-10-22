@@ -5,6 +5,7 @@
 # with the lineThreshold preference explicitly set to zero.  However,
 # newer tests should probably focus more on testing nonzero values of
 # that preference.
+test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) test-pref(font.size.inflation.maxRatio,200) == maxRatio-1.html maxRatio-1-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == text-1.html text-1-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == text-2.html text-2-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == text-3.html text-3-ref.html
@@ -49,8 +50,8 @@ test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineTh
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == select-combobox-2.html select-combobox-2-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) != select-combobox-2.html select-combobox-2.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == select-combobox-3.html select-combobox-3-ref.html
-asserts-if(gtk2Widget,0-2) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) != input-checkbox.html input-checkbox.html
-asserts-if(gtk2Widget,0-2) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) != input-radio.html input-radio.html
+asserts-if(gtk2Widget,0-4) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) != input-checkbox.html input-checkbox.html
+asserts-if(gtk2Widget,0-4) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) != input-radio.html input-radio.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == disable-fontinfl-on-mobile.html disable-fontinfl-on-mobile-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == disable-fontinfl-on-mobile-2.html disable-fontinfl-on-mobile-ref.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,0) == disable-fontinfl-on-mobile-3.html disable-fontinfl-on-mobile-ref.html

@@ -193,6 +193,10 @@
 #include "mozilla/Telemetry.h"
 #include "nsISecurityUITelemetry.h"
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#include "nsIPrivateBrowsingService.h"
+#endif
+
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
@@ -733,6 +737,7 @@ nsDocShell::nsDocShell():
     mPreviousTransIndex(-1),
     mLoadedTransIndex(-1),
     mSandboxFlags(0),
+    mFullscreenAllowed(CHECK_ATTRIBUTES),
     mCreated(false),
     mAllowSubframes(true),
     mAllowPlugins(true),
@@ -1385,16 +1390,6 @@ nsDocShell::LoadURI(nsIURI * aURI,
                 }
             } // parent
         } //parentDS
-        else {  
-            // This is the root docshell. If we got here while  
-            // executing an onLoad Handler,this load will not go 
-            // into session history.
-            bool inOnLoadHandler=false;
-            GetIsExecutingOnLoadHandler(&inOnLoadHandler);
-            if (inOnLoadHandler) {
-                loadType = LOAD_NORMAL_REPLACE;
-            }
-        } 
     } // !shEntry
 
     if (shEntry) {
@@ -2156,6 +2151,72 @@ NS_IMETHODIMP nsDocShell::SetAllowWindowControl(bool aAllowWindowControl)
 }
 
 NS_IMETHODIMP
+nsDocShell::GetFullscreenAllowed(bool* aFullscreenAllowed)
+{
+    NS_ENSURE_ARG_POINTER(aFullscreenAllowed);
+
+    // Content boundaries have their mFullscreenAllowed retrieved from their
+    // corresponding iframe in their parent upon creation.
+    if (mFullscreenAllowed != CHECK_ATTRIBUTES) {
+        *aFullscreenAllowed = (mFullscreenAllowed == PARENT_ALLOWS);
+        return NS_OK;
+    }
+
+    // Assume false until we determine otherwise...
+    *aFullscreenAllowed = false;
+
+    // For non-content boundaries, check that the enclosing iframe element
+    // has the mozallowfullscreen attribute set to true. If any ancestor
+    // iframe does not have mozallowfullscreen=true, then fullscreen is
+    // prohibited.
+    nsCOMPtr<nsPIDOMWindow> win = do_GetInterface(GetAsSupports(this));
+    if (!win) {
+        return NS_OK;
+    }
+    nsCOMPtr<nsIContent> frameElement = do_QueryInterface(win->GetFrameElementInternal());
+    if (frameElement &&
+        frameElement->IsHTML(nsGkAtoms::iframe) &&
+        !frameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::mozallowfullscreen)) {
+        return NS_OK;
+    }
+
+    // If we have no parent then we're the root docshell; no ancestor of the
+    // original docshell doesn't have a mozallowfullscreen attribute, so
+    // report fullscreen as allowed.
+    nsCOMPtr<nsIDocShellTreeItem> dsti = do_GetInterface(GetAsSupports(this));
+    NS_ENSURE_TRUE(dsti, NS_OK);
+
+    nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
+    dsti->GetParent(getter_AddRefs(parentTreeItem));
+    if (!parentTreeItem) {
+        *aFullscreenAllowed = true;
+        return NS_OK;
+    }
+    // Otherwise, we have a parent, continue the checking for
+    // mozFullscreenAllowed in the parent docshell's ancestors.
+    nsCOMPtr<nsIDocShell> parent = do_QueryInterface(parentTreeItem);
+    NS_ENSURE_TRUE(parent, NS_OK);
+    
+    return parent->GetFullscreenAllowed(aFullscreenAllowed);
+}
+
+NS_IMETHODIMP
+nsDocShell::SetFullscreenAllowed(bool aFullscreenAllowed)
+{
+    if (!nsIDocShell::GetIsContentBoundary()) {
+        // Only allow setting of fullscreenAllowed on content/process boundaries.
+        // At non-boundaries the fullscreenAllowed attribute is calculated based on
+        // whether all enclosing frames have the "mozFullscreenAllowed" attribute
+        // set to "true". fullscreenAllowed is set at the process boundaries to
+        // propagate the value of the parent's "mozFullscreenAllowed" attribute
+        // across process boundaries.
+        return NS_ERROR_UNEXPECTED;
+    }
+    mFullscreenAllowed = (aFullscreenAllowed ? PARENT_ALLOWS : PARENT_PROHIBITS);
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetDocShellEnumerator(int32_t aItemType, int32_t aDirection, nsISimpleEnumerator **outEnum)
 {
     NS_ENSURE_ARG_POINTER(outEnum);
@@ -2722,13 +2783,26 @@ nsDocShell::SetDocLoaderParent(nsDocLoader * aParent)
         }
         SetAllowDNSPrefetch(value);
     }
+
     nsCOMPtr<nsILoadContext> parentAsLoadContext(do_QueryInterface(parent));
     if (parentAsLoadContext &&
         NS_SUCCEEDED(parentAsLoadContext->GetUsePrivateBrowsing(&value)))
     {
         SetUsePrivateBrowsing(value);
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+        // Belt and suspenders - we want to catch any instances where the flag
+        // we're propagating doesn't match the global state.
+        nsCOMPtr<nsIPrivateBrowsingService> pbs =
+                do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+        if (pbs) {
+            bool inPrivateBrowsing = false;
+            pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
+            NS_ASSERTION(inPrivateBrowsing == mInPrivateBrowsing,
+                         "Privacy status of parent docshell doesn't match global state!");
+        }
+#endif
     }
-
+    
     nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
     if (parentURIListener)
         mContentListener->SetParentContentListener(parentURIListener);
@@ -4860,6 +4934,23 @@ nsDocShell::Destroy()
 }
 
 NS_IMETHODIMP
+nsDocShell::GetUnscaledDevicePixelsPerCSSPixel(double *aScale)
+{
+    if (mParentWidget) {
+        *aScale = mParentWidget->GetDefaultScale();
+        return NS_OK;
+    }
+
+    nsCOMPtr<nsIBaseWindow> ownerWindow(do_QueryInterface(mTreeOwner));
+    if (ownerWindow) {
+        return ownerWindow->GetUnscaledDevicePixelsPerCSSPixel(aScale);
+    }
+
+    *aScale = 1.0;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::SetPosition(int32_t x, int32_t y)
 {
     mBounds.x = x;
@@ -4916,6 +5007,13 @@ NS_IMETHODIMP
 nsDocShell::GetPositionAndSize(int32_t * x, int32_t * y, int32_t * cx,
                                int32_t * cy)
 {
+    if (mParentWidget) {
+        // ensure size is up-to-date if window has changed resolution
+        nsIntRect r;
+        mParentWidget->GetClientBounds(r);
+        SetPositionAndSize(mBounds.x, mBounds.y, r.width, r.height, false);
+    }
+
     // We should really consider just getting this information from
     // our window instead of duplicating the storage and code...
     if (cx || cy) {
@@ -6327,11 +6425,14 @@ nsDocShell::OnRedirectStateChange(nsIChannel* aOldChannel,
     nsCOMPtr<nsIApplicationCacheChannel> appCacheChannel =
         do_QueryInterface(aNewChannel);
     if (appCacheChannel) {
-        // Permission will be checked in the parent process.
-        if (GeckoProcessType_Default != XRE_GetProcessType())
+        if (GeckoProcessType_Default != XRE_GetProcessType()) {
+            // Permission will be checked in the parent process.
             appCacheChannel->SetChooseApplicationCache(true);
-        else
-            appCacheChannel->SetChooseApplicationCache(ShouldCheckAppCache(newURI));
+        } else {
+            appCacheChannel->SetChooseApplicationCache(
+                                NS_ShouldCheckAppCache(newURI,
+                                                       mInPrivateBrowsing));
+        }
     }
 
     if (!(aRedirectFlags & nsIChannelEventSink::REDIRECT_INTERNAL) && 
@@ -6403,7 +6504,7 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
     nsCOMPtr<nsIDocShell> kungFuDeathGrip(this);
 
     // Notify the ContentViewer that the Document has finished loading.  This
-    // will cause any OnLoad(...) and PopState(...) handlers to fire.
+    // will cause any OnLoad(...) handlers to fire.
     if (!mEODForCurrentDocument && mContentViewer) {
         mIsExecutingOnLoadHandler = true;
         mContentViewer->LoadComplete(aStatus);
@@ -6762,8 +6863,14 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
       nsContentUtils::FindInternalContentViewer("text/html");
 
   if (docFactory) {
+    nsCOMPtr<nsIPrincipal> principal;
+    if (mSandboxFlags & SANDBOXED_ORIGIN) {
+      principal = do_CreateInstance("@mozilla.org/nullprincipal;1");
+    } else {
+      principal = aPrincipal;
+    }
     // generate (about:blank) document to load
-    docFactory->CreateBlankDocument(mLoadGroup, aPrincipal,
+    docFactory->CreateBlankDocument(mLoadGroup, principal,
                                     getter_AddRefs(blankDoc));
     if (blankDoc) {
       // Hack: set the base URI manually, since this document never
@@ -9065,26 +9172,6 @@ nsDocShell::GetInheritedPrincipal(bool aConsiderCurrentDocument)
     return nullptr;
 }
 
-bool
-nsDocShell::ShouldCheckAppCache(nsIURI *aURI)
-{
-    if (mInPrivateBrowsing) {
-        return false;
-    }
-
-    nsCOMPtr<nsIOfflineCacheUpdateService> offlineService =
-        do_GetService(NS_OFFLINECACHEUPDATESERVICE_CONTRACTID);
-    if (!offlineService) {
-        return false;
-    }
-
-    bool allowed;
-    nsresult rv = offlineService->OfflineAppAllowedForURI(aURI,
-                                                          nullptr,
-                                                          &allowed);
-    return NS_SUCCEEDED(rv) && allowed;
-}
-
 nsresult
 nsDocShell::DoURILoad(nsIURI * aURI,
                       nsIURI * aReferrerURI,
@@ -9172,12 +9259,13 @@ nsDocShell::DoURILoad(nsIURI * aURI,
 
         // Loads with the correct permissions should check for a matching
         // application cache.
-        // Permission will be checked in the parent process
-        if (GeckoProcessType_Default != XRE_GetProcessType())
+        if (GeckoProcessType_Default != XRE_GetProcessType()) {
+            // Permission will be checked in the parent process
             appCacheChannel->SetChooseApplicationCache(true);
-        else
+        } else {
             appCacheChannel->SetChooseApplicationCache(
-                ShouldCheckAppCache(aURI));
+                NS_ShouldCheckAppCache(aURI, mInPrivateBrowsing));
+        }
     }
 
     // Make sure to give the caller a channel if we managed to create one
@@ -9372,7 +9460,7 @@ nsDocShell::AddHeadersToChannel(nsIInputStream *aHeadersData,
     nsAutoCString headersString;
     nsresult rv = aHeadersData->ReadSegments(AppendSegmentToString,
                                              &headersString,
-                                             PR_UINT32_MAX,
+                                             UINT32_MAX,
                                              &numRead);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -11030,8 +11118,8 @@ nsDocShell::AddURIVisit(nsIURI* aURI,
         // 408 is special cased, since may actually indicate a temporary
         // connection problem.
         else if (aResponseStatus != 408 &&
-                 (aResponseStatus >= 400 && aResponseStatus <= 501 ||
-                  aResponseStatus == 505)) {
+                 ((aResponseStatus >= 400 && aResponseStatus <= 501) ||
+                   aResponseStatus == 505)) {
             visitURIFlags |= IHistory::UNRECOVERABLE_ERROR;
         }
 
@@ -11274,26 +11362,14 @@ NS_IMETHODIMP nsDocShell::EnsureFind()
     NS_ENSURE_TRUE(scriptGO, NS_ERROR_UNEXPECTED);
 
     // default to our window
-    nsCOMPtr<nsIDOMWindow> windowToSearch(do_QueryInterface(mScriptGlobal));
-
-    nsCOMPtr<nsIDocShellTreeItem> root;
-    GetRootTreeItem(getter_AddRefs(root));
-
-    // if the active window is the same window that this docshell is in,
-    // use the currently focused frame
-    nsCOMPtr<nsIDOMWindow> rootWindow = do_GetInterface(root);
-    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-    if (fm) {
-      nsCOMPtr<nsIDOMWindow> activeWindow;
-      fm->GetActiveWindow(getter_AddRefs(activeWindow));
-      if (activeWindow == rootWindow)
-        fm->GetFocusedWindow(getter_AddRefs(windowToSearch));
-    }
+    nsCOMPtr<nsPIDOMWindow> ourWindow = do_QueryInterface(scriptGO);
+    nsCOMPtr<nsPIDOMWindow> windowToSearch;
+    nsFocusManager::GetFocusedDescendant(ourWindow, true, getter_AddRefs(windowToSearch));
 
     nsCOMPtr<nsIWebBrowserFindInFrames> findInFrames = do_QueryInterface(mFind);
     if (!findInFrames) return NS_ERROR_NO_INTERFACE;
     
-    rv = findInFrames->SetRootSearchFrame(rootWindow);
+    rv = findInFrames->SetRootSearchFrame(ourWindow);
     if (NS_FAILED(rv)) return rv;
     rv = findInFrames->SetCurrentSearchFrame(windowToSearch);
     if (NS_FAILED(rv)) return rv;

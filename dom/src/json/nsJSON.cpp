@@ -450,8 +450,8 @@ nsJSON::DecodeInternal(JSContext* cx,
     if (!available)
       break; // blocking input stream has none available when done
 
-    if (available > PR_UINT32_MAX)
-      available = PR_UINT32_MAX;
+    if (available > UINT32_MAX)
+      available = UINT32_MAX;
 
     rv = jsonListener->OnDataAvailable(jsonChannel, nullptr,
                                        aStream,
@@ -502,8 +502,9 @@ nsJSON::LegacyDecodeToJSVal(const nsAString &str, JSContext *cx, jsval *result)
 
   js::RootedValue reviver(cx, JS::NullValue()), value(cx);
 
-  if (!js::ParseJSONWithReviver(cx, static_cast<const jschar*>(PromiseFlatString(str).get()),
-                                str.Length(), reviver,
+  JS::StableCharPtr chars(static_cast<const jschar*>(PromiseFlatString(str).get()),
+                          str.Length());
+  if (!js::ParseJSONWithReviver(cx, chars, str.Length(), reviver,
                                 &value, LEGACY)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -572,9 +573,10 @@ nsJSONListener::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
 
   js::RootedValue reviver(mCx, JS::NullValue()), value(mCx);
 
-  const jschar* chars = reinterpret_cast<const jschar*>(mBufferedChars.Elements());
+  JS::StableCharPtr chars(reinterpret_cast<const jschar*>(mBufferedChars.Elements()),
+                          mBufferedChars.Length());
   JSBool ok = js::ParseJSONWithReviver(mCx, chars,
-                                       (uint32) mBufferedChars.Length(),
+                                       (uint32_t) mBufferedChars.Length(),
                                        reviver, &value,
                                        mDecodingMode);
 

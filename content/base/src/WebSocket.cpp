@@ -585,7 +585,7 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(WebSocket)
   bool isBlack = tmp->IsBlack();
   if (isBlack|| tmp->mKeepingAlive) {
     if (tmp->mListenerManager) {
-      tmp->mListenerManager->UnmarkGrayJSListeners();
+      tmp->mListenerManager->MarkForCC();
     }
     if (!isBlack && tmp->PreservingWrapper()) {
       xpc_UnmarkGrayObject(tmp->GetWrapperPreserveColor());
@@ -900,7 +900,7 @@ WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     JSAutoRequest ar(cx);
     if (isBinary) {
       if (mBinaryType == BinaryTypeValues::Blob) {
-        rv = CreateResponseBlob(aData, cx, jsData);
+        rv = nsContentUtils::CreateBlobBuffer(cx, aData, jsData);
         NS_ENSURE_SUCCESS(rv, rv);
       } else if (mBinaryType == BinaryTypeValues::Arraybuffer) {
         JSObject* arrayBuf;
@@ -941,26 +941,6 @@ WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
   NS_ENSURE_SUCCESS(rv, rv);
 
   return DispatchDOMEvent(nullptr, event, nullptr, nullptr);
-}
-
-// Initial implementation: only stores to RAM, not file
-// TODO: bug 704447: large file support
-nsresult
-WebSocket::CreateResponseBlob(const nsACString& aData,
-                              JSContext *aCx,
-                              jsval &jsData)
-{
-  uint32_t blobLen = aData.Length();
-  void* blobData = PR_Malloc(blobLen);
-  nsCOMPtr<nsIDOMBlob> blob;
-  if (blobData) {
-    memcpy(blobData, aData.BeginReading(), blobLen);
-    blob = new nsDOMMemoryFile(blobData, blobLen, EmptyString());
-  } else {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  JSObject* scope = JS_GetGlobalForScopeChain(aCx);
-  return nsContentUtils::WrapNative(aCx, scope, blob, &jsData, nullptr, true);
 }
 
 nsresult
@@ -1264,7 +1244,7 @@ WebSocket::Send(nsIDOMBlob* aData,
     return;
   }
 
-  if (msgLength > PR_UINT32_MAX) {
+  if (msgLength > UINT32_MAX) {
     aRv.Throw(NS_ERROR_FILE_TOO_BIG);
     return;
   }

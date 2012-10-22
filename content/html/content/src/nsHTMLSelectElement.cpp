@@ -35,8 +35,7 @@
 #include "nsEventDispatcher.h"
 #include "mozilla/dom/Element.h"
 #include "mozAutoDocUpdate.h"
-#include "dombindings.h"
-#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/HTMLOptionsCollectionBinding.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1219,7 +1218,12 @@ NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Multiple, multiple)
 NS_IMPL_STRING_ATTR(nsHTMLSelectElement, Name, name)
 NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Required, required)
 NS_IMPL_UINT_ATTR(nsHTMLSelectElement, Size, size)
-NS_IMPL_INT_ATTR(nsHTMLSelectElement, TabIndex, tabindex)
+
+int32_t
+nsHTMLSelectElement::TabIndexDefault()
+{
+  return 0;
+}
 
 bool
 nsHTMLSelectElement::IsHTMLFocusable(bool aWithMouse,
@@ -2009,8 +2013,7 @@ JSObject*
 nsHTMLOptionCollection::WrapObject(JSContext *cx, JSObject *scope,
                                    bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::HTMLOptionsCollection::create(cx, scope, this,
-                                                              triedToWrap);
+  return HTMLOptionsCollectionBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 NS_IMETHODIMP
@@ -2158,15 +2161,6 @@ GetNamedItemHelper(nsTArray<nsRefPtr<nsHTMLOptionElement> > &aElements,
   }
 
   return nullptr;
-}
-
-nsISupports*
-nsHTMLOptionCollection::GetNamedItem(const nsAString& aName,
-                                     nsWrapperCache **aCache)
-{
-  nsINode *item = GetNamedItemHelper(mElements, aName);
-  *aCache = item;
-  return item;
 }
 
 nsINode*

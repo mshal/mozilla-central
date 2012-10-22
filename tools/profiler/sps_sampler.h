@@ -83,7 +83,7 @@ extern bool stack_key_initialized;
 # define PLATFORM_LIKELY_MEMORY_CONSTRAINED
 #endif
 
-#ifndef PLATFORM_LIKELY_MEMORY_CONSTRAINED
+#if !defined(PLATFORM_LIKELY_MEMORY_CONSTRAINED) && !defined(ARCH_ARMV6)
 # define PROFILE_DEFAULT_ENTRY 1000000
 #else
 # define PROFILE_DEFAULT_ENTRY 100000
@@ -262,6 +262,7 @@ public:
     : mStackPointer(0)
     , mMarkerPointer(0)
     , mQueueClearMarker(false)
+    , mRuntime(NULL)
     , mStartJSSampling(false)
   { }
 

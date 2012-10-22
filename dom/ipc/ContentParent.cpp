@@ -227,8 +227,15 @@ ContentParent::MaybeTakePreallocatedAppProcess()
 {
     nsRefPtr<ContentParent> process = sPreallocatedAppProcess.get();
     sPreallocatedAppProcess = nullptr;
-    ScheduleDelayedPreallocateAppProcess();
     return process.forget();
+}
+
+/*static*/ void
+ContentParent::FirstIdle(void)
+{
+  // The parent has gone idle for the first time. This would be a good
+  // time to preallocate an app process.
+  ScheduleDelayedPreallocateAppProcess();
 }
 
 /*static*/ void
@@ -239,15 +246,18 @@ ContentParent::StartUp()
     }
 
     sKeepAppProcessPreallocated =
-        Preferences::GetBool("dom.ipc.processPrelauch.enabled", false);
+        Preferences::GetBool("dom.ipc.processPrelaunch.enabled", false);
     if (sKeepAppProcessPreallocated) {
         ClearOnShutdown(&sPreallocatedAppProcess);
 
         sPreallocateDelayMs = Preferences::GetUint(
-            "dom.ipc.processPrelauch.delayMs", 1000);
+            "dom.ipc.processPrelaunch.delayMs", 1000);
 
         MOZ_ASSERT(!sPreallocateAppProcessTask);
-        ScheduleDelayedPreallocateAppProcess();
+
+        // Let's not slow down the main process initialization. Wait until
+        // the main process goes idle before we preallocate a process
+        MessageLoop::current()->PostIdleTask(FROM_HERE, NewRunnableFunction(FirstIdle));
     }
 }
 
@@ -405,6 +415,10 @@ ContentParent::GetAll(nsTArray<ContentParent*>& aArray)
     if (gAppContentParents) {
         gAppContentParents->EnumerateRead(&AppendToTArray, &aArray);
     }
+
+    if (sPreallocatedAppProcess) {
+        aArray.AppendElement(sPreallocatedAppProcess);
+    }
 }
 
 void
@@ -458,14 +472,20 @@ ContentParent::SetManifestFromPreallocated(const nsAString& aAppManifestURL)
 void
 ContentParent::ShutDownProcess()
 {
-    if (mIsAlive) {
-        // Close() can only be called once.  It kicks off the
-        // destruction sequence.
-        Close();
+  if (mIsAlive) {
+    const InfallibleTArray<PIndexedDBParent*>& idbParents =
+      ManagedPIndexedDBParent();
+    for (uint32_t i = 0; i < idbParents.Length(); ++i) {
+      static_cast<IndexedDBParent*>(idbParents[i])->Disconnect();
     }
-    // NB: must MarkAsDead() here so that this isn't accidentally
-    // returned from Get*() while in the midst of shutdown.
-    MarkAsDead();
+
+    // Close() can only be called once.  It kicks off the
+    // destruction sequence.
+    Close();
+  }
+  // NB: must MarkAsDead() here so that this isn't accidentally
+  // returned from Get*() while in the midst of shutdown.
+  MarkAsDead();
 }
 
 void
@@ -573,6 +593,12 @@ struct DelayedDeleteContentParentTask : public nsRunnable
 void
 ContentParent::ActorDestroy(ActorDestroyReason why)
 {
+    nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
+    if (ppm) {
+      ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
+                          CHILD_PROCESS_SHUTDOWN_MESSAGE, false,
+                          nullptr, nullptr, nullptr);
+    }
     nsCOMPtr<nsIThreadObserver>
         kungFuDeathGrip(static_cast<nsIThreadObserver*>(this));
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
@@ -764,8 +790,12 @@ ContentParent::~ContentParent()
         MOZ_ASSERT(!gNonAppContentParents ||
                    !gNonAppContentParents->Contains(this));
     } else {
+        // In general, we expect gAppContentParents->Get(mAppManifestURL) to be
+        // NULL.  But it could be that we created another ContentParent for this
+        // app after we did this->ActorDestroy(), so the right check is that
+        // gAppContentParent->Get(mAppManifestURL) != this.
         MOZ_ASSERT(!gAppContentParents ||
-                   !gAppContentParents->Get(mAppManifestURL));
+                   gAppContentParents->Get(mAppManifestURL) != this);
     }
 }
 
@@ -983,6 +1013,17 @@ ContentParent::RecvGetShowPasswordSetting(bool* showPassword)
     return true;
 }
 
+bool
+ContentParent::RecvFirstIdle()
+{
+    // When the ContentChild goes idle, it sends us a FirstIdle message
+    // which we use as a good time to prelaunch another process. If we
+    // prelaunch any sooner than this, then we'll be competing with the
+    // child process and slowing it down.
+    ScheduleDelayedPreallocateAppProcess();
+    return true;
+}
+
 NS_IMPL_THREADSAFE_ISUPPORTS3(ContentParent,
                               nsIObserver,
                               nsIThreadObserver,
@@ -1197,9 +1238,11 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 
   BlobConstructorParams params;
 
-  if (blob->IsSizeUnknown()) {
-    // We don't want to call GetSize yet since that may stat a file on the main
-    // thread here. Instead we'll learn the size lazily from the other process.
+  if (blob->IsSizeUnknown() || /*blob->IsDateUnknown()*/ 0) {
+    // We don't want to call GetSize or GetLastModifiedDate
+    // yet since that may stat a file on the main thread
+    // here. Instead we'll learn the size lazily from the
+    // other process.
     params = MysteryBlobConstructorParams();
   }
   else {
@@ -1214,6 +1257,9 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
     nsCOMPtr<nsIDOMFile> file = do_QueryInterface(aBlob);
     if (file) {
       FileBlobConstructorParams fileParams;
+
+      rv = file->GetMozLastModifiedDate(&fileParams.modDate());
+      NS_ENSURE_SUCCESS(rv, nullptr);
 
       rv = file->GetName(fileParams.name());
       NS_ENSURE_SUCCESS(rv, nullptr);
@@ -1882,6 +1928,38 @@ ContentParent::RecvPrivateDocShellsExist(const bool& aExist)
   }
   return true;
 }
+
+bool
+ContentParent::DoSendAsyncMessage(const nsAString& aMessage,
+                                  const mozilla::dom::StructuredCloneData& aData)
+{
+  ClonedMessageData data;
+  SerializedStructuredCloneBuffer& buffer = data.data();
+  buffer.data = aData.mData;
+  buffer.dataLength = aData.mDataLength;
+  const nsTArray<nsCOMPtr<nsIDOMBlob> >& blobs = aData.mClosure.mBlobs;
+  if (!blobs.IsEmpty()) {
+    InfallibleTArray<PBlobParent*>& blobParents = data.blobsParent();
+    uint32_t length = blobs.Length();
+    blobParents.SetCapacity(length);
+    for (uint32_t i = 0; i < length; ++i) {
+      BlobParent* blobParent = GetOrCreateActorForBlob(blobs[i]);
+      if (!blobParent) {
+        return false;
+      }
+      blobParents.AppendElement(blobParent);
+    }
+  }
+
+  return SendAsyncMessage(nsString(aMessage), data);
+}
+
+bool
+ContentParent::CheckPermission(const nsAString& aPermission)
+{
+  return AssertAppProcessPermission(this, NS_ConvertUTF16toUTF8(aPermission).get());
+}
+
 
 } // namespace dom
 } // namespace mozilla

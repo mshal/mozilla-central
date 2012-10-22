@@ -118,7 +118,6 @@ public:
   NS_IMETHOD              MoveClient(int32_t aX, int32_t aY);
   NS_IMETHOD              ResizeClient(int32_t aWidth, int32_t aHeight, bool aRepaint);
   NS_IMETHOD              ResizeClient(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, bool aRepaint);
-  NS_IMETHOD              SetBounds(const nsIntRect &aRect);
   NS_IMETHOD              GetBounds(nsIntRect &aRect);
   NS_IMETHOD              GetClientBounds(nsIntRect &aRect);
   NS_IMETHOD              GetScreenBounds(nsIntRect &aRect);
@@ -229,13 +228,6 @@ public:
   };
   friend class AutoUseBasicLayerManager;
 
-  bool HasDestroyStarted() const 
-  {
-    return mOnDestroyCalled;
-  }
-
-  bool                    Destroyed() { return mOnDestroyCalled; }
-
   nsWindowType            GetWindowType() { return mWindowType; }
 
   virtual bool            UseOffMainThreadCompositing();
@@ -316,6 +308,8 @@ protected:
                       NS_MIN(mSizeConstraints.mMaxSize.height, *aHeight));
   }
 
+  virtual CompositorChild* GetRemoteRenderer() MOZ_OVERRIDE;
+
 protected:
   /**
    * Starts the OMTC compositor destruction sequence.
@@ -340,11 +334,11 @@ protected:
   nsCursor          mCursor;
   nsWindowType      mWindowType;
   nsBorderStyle     mBorderStyle;
-  bool              mOnDestroyCalled;
   bool              mUseAcceleratedRendering;
   bool              mForceLayersAcceleration;
   bool              mTemporarilyUseBasicLayerManager;
   bool              mUseAttachedEvents;
+  bool              mContextInitialized;
   nsIntRect         mBounds;
   nsIntRect*        mOriginalBounds;
   // When this pointer is null, the widget is not clipped

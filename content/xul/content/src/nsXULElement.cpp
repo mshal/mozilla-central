@@ -87,6 +87,7 @@
 #include "rdf.h"
 #include "nsIControllers.h"
 #include "nsAttrValueOrString.h"
+#include "nsAttrValueInlines.h"
 #include "mozilla/Attributes.h"
 
 // The XUL doc interface
@@ -1375,8 +1376,7 @@ nsXULElement::LoadSrc()
             NodeInfo()->Equals(nsGkAtoms::overlay, kNameSpaceID_XUL)) {
         return NS_OK;
     }
-    nsXULSlots* slots = static_cast<nsXULSlots*>(GetSlots());
-    NS_ENSURE_TRUE(slots, NS_ERROR_OUT_OF_MEMORY);
+    nsXULSlots* slots = static_cast<nsXULSlots*>(Slots());
     if (!slots->mFrameLoader) {
         // false as the last parameter so that xul:iframe/browser/editor
         // session history handling works like dynamic html:iframes.
@@ -1554,58 +1554,26 @@ nsXULElement::IsNodeOfType(uint32_t aFlags) const
     return !(aFlags & ~eCONTENT);
 }
 
-static void
-PopupListenerPropertyDtor(void* aObject, nsIAtom* aPropertyName,
-                          void* aPropertyValue, void* aData)
-{
-  nsIDOMEventListener* listener =
-    static_cast<nsIDOMEventListener*>(aPropertyValue);
-  if (!listener) {
-    return;
-  }
-  nsEventListenerManager* manager = static_cast<nsINode*>(aObject)->
-    GetListenerManager(false);
-  if (manager) {
-    manager->RemoveEventListenerByType(listener,
-                                       NS_LITERAL_STRING("mousedown"),
-                                       NS_EVENT_FLAG_BUBBLE |
-                                       NS_EVENT_FLAG_SYSTEM_EVENT);
-    manager->RemoveEventListenerByType(listener,
-                                       NS_LITERAL_STRING("contextmenu"),
-                                       NS_EVENT_FLAG_BUBBLE |
-                                       NS_EVENT_FLAG_SYSTEM_EVENT);
-  }
-  NS_RELEASE(listener);
-}
-
 nsresult
 nsXULElement::AddPopupListener(nsIAtom* aName)
 {
     // Add a popup listener to the element
     bool isContext = (aName == nsGkAtoms::context ||
                         aName == nsGkAtoms::contextmenu);
-    nsIAtom* listenerAtom = isContext ?
-                            nsGkAtoms::contextmenulistener :
-                            nsGkAtoms::popuplistener;
+    uint32_t listenerFlag = isContext ?
+                            XUL_ELEMENT_HAS_CONTENTMENU_LISTENER :
+                            XUL_ELEMENT_HAS_POPUP_LISTENER;
 
-    nsCOMPtr<nsIDOMEventListener> popupListener =
-        static_cast<nsIDOMEventListener*>(GetProperty(listenerAtom));
-    if (popupListener) {
-        // Popup listener is already installed.
+    if (HasFlag(listenerFlag)) {
         return NS_OK;
     }
 
-    popupListener = new nsXULPopupListener(this, isContext);
+    nsCOMPtr<nsIDOMEventListener> listener =
+      new nsXULPopupListener(this, isContext);
 
     // Add the popup as a listener on this element.
     nsEventListenerManager* manager = GetListenerManager(true);
-    NS_ENSURE_TRUE(manager, NS_ERROR_FAILURE);
-    nsresult rv = SetProperty(listenerAtom, popupListener,
-                              PopupListenerPropertyDtor, true);
-    NS_ENSURE_SUCCESS(rv, rv);
-    // Want the property to have a reference to the listener.
-    nsIDOMEventListener* listener = nullptr;
-    popupListener.swap(listener);
+    SetFlags(listenerFlag);
 
     if (isContext) {
       manager->AddEventListenerByType(listener,

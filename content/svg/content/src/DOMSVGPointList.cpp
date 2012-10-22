@@ -11,7 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nsSVGAttrTearoffTable.h"
 #include "nsContentUtils.h"
-#include "dombindings.h"
+#include "mozilla/dom/SVGPointListBinding.h"
 
 // See the comment in this file's header.
 
@@ -102,21 +102,7 @@ DOMSVGPointList::~DOMSVGPointList()
 JSObject*
 DOMSVGPointList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::SVGPointList::create(cx, scope, this,
-                                                     triedToWrap);
-}
-
-nsIDOMSVGPoint*
-DOMSVGPointList::GetItemAt(uint32_t aIndex)
-{
-  if (IsAnimValList()) {
-    Element()->FlushAnimations();
-  }
-  if (aIndex < LengthNoFlush()) {
-    EnsureItemAt(aIndex);
-    return mItems[aIndex];
-  }
-  return nullptr;
+  return mozilla::dom::SVGPointListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 void

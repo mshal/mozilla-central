@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include protocol PBlob;
 include protocol PBluetoothRequest;
 include protocol PContent;
 
@@ -97,6 +98,39 @@ struct DevicePropertiesRequest
   nsString[] addresses;
 };
 
+struct ConnectRequest
+{
+  nsString address;
+  nsString adapterPath;
+  uint16_t profileId;
+};
+
+struct DisconnectRequest
+{
+  uint16_t profileId;
+};
+
+struct SendFileRequest
+{
+  nsString devicePath;
+  PBlob blob;
+};
+
+struct StopSendingFileRequest
+{
+  nsString devicePath;
+};
+
+struct ConfirmReceivingFileRequest
+{
+  nsString devicePath;
+};
+
+struct DenyReceivingFileRequest
+{
+  nsString devicePath;
+};
+
 union Request
 {
   DefaultAdapterPathRequest;
@@ -113,6 +147,12 @@ union Request
   ConfirmAuthorizationRequest;
   DenyAuthorizationRequest;
   DevicePropertiesRequest;
+  ConnectRequest;
+  DisconnectRequest;
+  SendFileRequest;
+  StopSendingFileRequest;
+  ConfirmReceivingFileRequest;
+  DenyReceivingFileRequest;
 };
 
 protocol PBluetooth

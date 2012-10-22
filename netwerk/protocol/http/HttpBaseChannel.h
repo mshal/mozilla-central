@@ -62,7 +62,9 @@ public:
   HttpBaseChannel();
   virtual ~HttpBaseChannel();
 
-  virtual nsresult Init(nsIURI *aURI, uint8_t aCaps, nsProxyInfo *aProxyInfo);
+  virtual nsresult Init(nsIURI *aURI, uint8_t aCaps, nsProxyInfo *aProxyInfo,
+                        uint32_t aProxyResolveFlags,
+                        nsIURI *aProxyURI);
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName);
@@ -86,7 +88,9 @@ public:
   NS_IMETHOD GetContentCharset(nsACString& aContentCharset);
   NS_IMETHOD SetContentCharset(const nsACString& aContentCharset);
   NS_IMETHOD GetContentDisposition(uint32_t *aContentDisposition);
+  NS_IMETHOD SetContentDisposition(uint32_t aContentDisposition);
   NS_IMETHOD GetContentDispositionFilename(nsAString& aContentDispositionFilename);
+  NS_IMETHOD SetContentDispositionFilename(const nsAString& aContentDispositionFilename);
   NS_IMETHOD GetContentDispositionHeader(nsACString& aContentDispositionHeader);
   NS_IMETHOD GetContentLength(int32_t *aContentLength);
   NS_IMETHOD SetContentLength(int32_t aContentLength);
@@ -191,6 +195,9 @@ protected:
   void     DoNotifyListener();
   virtual void DoNotifyListenerCleanup() = 0;
 
+  // drop reference to listener, its callbacks, and the progress sink
+  void ReleaseListeners();
+
   nsresult ApplyContentConversions();
 
   void AddCookiesToRequest();
@@ -225,6 +232,7 @@ protected:
   nsCOMPtr<nsIInputStream>          mUploadStream;
   nsAutoPtr<nsHttpResponseHead>     mResponseHead;
   nsRefPtr<nsHttpConnectionInfo>    mConnectionInfo;
+  nsCOMPtr<nsIProxyInfo>            mProxyInfo;
 
   nsCString                         mSpec; // ASCII encoded URL spec
   nsCString                         mContentTypeHint;
@@ -269,6 +277,12 @@ protected:
   uint32_t                          mSuspendCount;
 
   nsAutoPtr<nsTArray<nsCString> >   mRedirectedCachekeys;
+
+  uint32_t                          mProxyResolveFlags;
+  nsCOMPtr<nsIURI>                  mProxyURI;
+
+  uint32_t                          mContentDispositionHint;
+  nsAutoPtr<nsString>               mContentDispositionFilename;
 };
 
 // Share some code while working around C++'s absurd inability to handle casting

@@ -226,6 +226,7 @@ nsDeviceContext::nsDeviceContext()
       mPixelScale(1.0f), mPrintingScale(1.0f),
       mFontCache(nullptr)
 {
+    MOZ_ASSERT(NS_IsMainThread(), "nsDeviceContext created off main thread");
 }
 
 // Note: we use a bare pointer for mFontCache so that nsFontCache
@@ -734,4 +735,6 @@ nsDeviceContext::UpdateScaledAppUnits()
 {
     mAppUnitsPerDevPixel =
         NS_MAX(1, NSToIntRound(float(mAppUnitsPerDevNotScaledPixel) / mPixelScale));
+    // adjust mPixelScale to reflect appunit rounding
+    mPixelScale = float(mAppUnitsPerDevNotScaledPixel) / mAppUnitsPerDevPixel;
 }

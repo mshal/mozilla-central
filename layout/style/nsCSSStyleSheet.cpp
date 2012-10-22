@@ -863,10 +863,18 @@ nsCSSStyleSheet::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
   const nsCSSStyleSheet* s = this;
   while (s) {
     n += aMallocSizeOf(s);
-    n += s->mInner->SizeOfIncludingThis(aMallocSizeOf);
 
-    // Measurement of the following members may be added later if DMD finds it is
-    // worthwhile:
+    // Each inner can be shared by multiple sheets.  So we only count the inner
+    // if this sheet is the first one in the list of those sharing it.  As a
+    // result, the first such sheet takes all the blame for the memory
+    // consumption of the inner, which isn't ideal but it's better than
+    // double-counting the inner.
+    if (s->mInner->mSheets[0] == s) {
+      n += s->mInner->SizeOfIncludingThis(aMallocSizeOf);
+    }
+
+    // Measurement of the following members may be added later if DMD finds it
+    // is worthwhile:
     // - s->mTitle
     // - s->mMedia
     // - s->mRuleCollection
@@ -1075,14 +1083,8 @@ nsCSSStyleSheet::~nsCSSStyleSheet()
       child->mDocument = nullptr;
     }
   }
-  if (nullptr != mRuleCollection) {
-    mRuleCollection->DropReference();
-    NS_RELEASE(mRuleCollection);
-  }
-  if (mMedia) {
-    mMedia->SetStyleSheet(nullptr);
-    mMedia = nullptr;
-  }
+  DropRuleCollection();
+  DropMedia();
   mInner->RemoveSheet(this);
   // XXX The document reference is not reference counted and should
   // not be released. The document will let us know when it is going
@@ -1093,11 +1095,85 @@ nsCSSStyleSheet::~nsCSSStyleSheet()
   }
 }
 
+void
+nsCSSStyleSheet::DropRuleCollection()
+{
+  if (mRuleCollection) {
+    mRuleCollection->DropReference();
+    NS_RELEASE(mRuleCollection);
+  }
+}
+
+void
+nsCSSStyleSheet::DropMedia()
+{
+  if (mMedia) {
+    mMedia->SetStyleSheet(nullptr);
+    mMedia = nullptr;
+  }
+}
+
+void
+nsCSSStyleSheet::UnlinkInner()
+{
+  // We can only have a cycle through our inner if we have a unique inner,
+  // because otherwise there are no JS wrappers for anything in the inner.
+  if (mInner->mSheets.Length() != 1) {
+    return;
+  }
+
+  mInner->mOrderedRules.EnumerateForwards(SetStyleSheetReference, nullptr);
+  mInner->mOrderedRules.Clear();
+
+  // Have to be a bit careful with child sheets, because we want to
+  // drop their mNext pointers and null out their mParent and
+  // mDocument, but don't want to work with deleted objects.  And we
+  // don't want to do any addrefing in the process, just to make sure
+  // we don't confuse the cycle collector (though on the face of it,
+  // addref/release pairs during unlink should probably be ok).
+  nsRefPtr<nsCSSStyleSheet> child;
+  child.swap(mInner->mFirstChild);
+  while (child) {
+    MOZ_ASSERT(child->mParent == this, "We have a unique inner!");
+    child->mParent = nullptr;
+    child->mDocument = nullptr;
+    nsRefPtr<nsCSSStyleSheet> next;
+    // Null out child->mNext, but don't let it die yet
+    next.swap(child->mNext);
+    // Switch to looking at the old value of child->mNext next iteration
+    child.swap(next);
+    // "next" is now our previous value of child; it'll get released
+    // as we loop around.
+  }
+}
+
+void
+nsCSSStyleSheet::TraverseInner(nsCycleCollectionTraversalCallback &cb)
+{
+  // We can only have a cycle through our inner if we have a unique inner,
+  // because otherwise there are no JS wrappers for anything in the inner.
+  if (mInner->mSheets.Length() != 1) {
+    return;
+  }
+
+  nsRefPtr<nsCSSStyleSheet>* childSheetSlot = &mInner->mFirstChild;
+  while (*childSheetSlot) {
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "child sheet");
+    cb.NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIStyleSheet*, childSheetSlot->get()));
+    childSheetSlot = &(*childSheetSlot)->mNext;
+  }
+
+  const nsCOMArray<css::Rule>& rules = mInner->mOrderedRules;
+  for (int32_t i = 0, count = rules.Count(); i < count; ++i) {
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mOrderedRules[i]");
+    cb.NoteXPCOMChild(rules[i]->GetExistingDOMRule());
+  }
+}
 
 DOMCI_DATA(CSSStyleSheet, nsCSSStyleSheet)
 
 // QueryInterface implementation for nsCSSStyleSheet
-NS_INTERFACE_MAP_BEGIN(nsCSSStyleSheet)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsCSSStyleSheet)
   NS_INTERFACE_MAP_ENTRY(nsIStyleSheet)
   NS_INTERFACE_MAP_ENTRY(nsIDOMStyleSheet)
   NS_INTERFACE_MAP_ENTRY(nsIDOMCSSStyleSheet)
@@ -1110,8 +1186,26 @@ NS_INTERFACE_MAP_BEGIN(nsCSSStyleSheet)
 NS_INTERFACE_MAP_END
 
 
-NS_IMPL_ADDREF(nsCSSStyleSheet)
-NS_IMPL_RELEASE(nsCSSStyleSheet)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsCSSStyleSheet)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(nsCSSStyleSheet)
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsCSSStyleSheet)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsCSSStyleSheet)
+  tmp->DropMedia();
+  // We do not unlink mNext; our parent will handle that.  If we
+  // unlinked it here, our parent would not be able to walk its list
+  // of child sheets and null out the back-references to it, if we got
+  // unlinked before it does.
+  tmp->DropRuleCollection();
+  tmp->UnlinkInner();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsCSSStyleSheet)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mMedia)
+  // We do not traverse mNext; our parent will handle that.  See
+  // comments in Unlink for why.
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_RAWPTR(mRuleCollection)
+  tmp->TraverseInner(cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
 nsresult
@@ -1822,7 +1916,7 @@ nsCSSStyleSheet::InsertRuleInternal(const nsAString& aRule,
   if (aIndex > uint32_t(mInner->mOrderedRules.Count()))
     return NS_ERROR_DOM_INDEX_SIZE_ERR;
   
-  NS_ASSERTION(uint32_t(mInner->mOrderedRules.Count()) <= PR_INT32_MAX,
+  NS_ASSERTION(uint32_t(mInner->mOrderedRules.Count()) <= INT32_MAX,
                "Too many style rules!");
 
   // Hold strong ref to the CSSLoader in case the document update
@@ -1956,7 +2050,7 @@ nsCSSStyleSheet::DeleteRule(uint32_t aIndex)
     if (aIndex >= uint32_t(mInner->mOrderedRules.Count()))
       return NS_ERROR_DOM_INDEX_SIZE_ERR;
 
-    NS_ASSERTION(uint32_t(mInner->mOrderedRules.Count()) <= PR_INT32_MAX,
+    NS_ASSERTION(uint32_t(mInner->mOrderedRules.Count()) <= INT32_MAX,
                  "Too many style rules!");
 
     // Hold a strong ref to the rule so it doesn't die when we RemoveObjectAt

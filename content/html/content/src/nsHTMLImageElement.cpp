@@ -29,7 +29,7 @@
 #include "imgIContainer.h"
 #include "imgILoader.h"
 #include "imgIRequest.h"
-#include "imgIDecoderObserver.h"
+#include "imgINotificationObserver.h"
 
 #include "nsILoadGroup.h"
 
@@ -89,13 +89,12 @@ DOMCI_NODE_DATA(HTMLImageElement, nsHTMLImageElement)
 
 // QueryInterface implementation for nsHTMLImageElement
 NS_INTERFACE_TABLE_HEAD(nsHTMLImageElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE6(nsHTMLImageElement,
+  NS_HTML_CONTENT_INTERFACE_TABLE5(nsHTMLImageElement,
                                    nsIDOMHTMLImageElement,
                                    nsIJSNativeInitializer,
-                                   imgIDecoderObserver,
                                    nsIImageLoadingContent,
-                                   imgIContainerObserver,
-                                   imgIOnloadBlocker)
+                                   imgIOnloadBlocker,
+                                   imgINotificationObserver)
   NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(nsHTMLImageElement,
                                                nsGenericHTMLElement)
 NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLImageElement)
@@ -132,13 +131,12 @@ nsHTMLImageElement::SetItemValueText(const nsAString& aValue)
 // just a string attr purposes of the DOM crossOrigin property.
 NS_IMPL_STRING_ATTR(nsHTMLImageElement, CrossOrigin, crossorigin)
 
-NS_IMETHODIMP
-nsHTMLImageElement::GetDraggable(bool* aDraggable)
+bool
+nsHTMLImageElement::Draggable() const
 {
   // images may be dragged unless the draggable attribute is false
-  *aDraggable = !AttrValueIs(kNameSpaceID_None, nsGkAtoms::draggable,
-                             nsGkAtoms::_false, eIgnoreCase);
-  return NS_OK;
+  return !AttrValueIs(kNameSpaceID_None, nsGkAtoms::draggable,
+                      nsGkAtoms::_false, eIgnoreCase);
 }
 
 NS_IMETHODIMP
@@ -316,8 +314,7 @@ bool
 nsHTMLImageElement::IsHTMLFocusable(bool aWithMouse,
                                     bool *aIsFocusable, int32_t *aTabIndex)
 {
-  int32_t tabIndex;
-  GetTabIndex(&tabIndex);
+  int32_t tabIndex = TabIndex();
 
   if (IsInDoc()) {
     nsAutoString usemap;

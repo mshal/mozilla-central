@@ -44,6 +44,12 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserNewTabPreloader",
 XPCOMUtils.defineLazyModuleGetter(this, "PdfJs",
                                   "resource://pdf.js/PdfJs.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "webrtcUI",
+                                  "resource:///modules/webrtcUI.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+                                  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+
 const PREF_PLUGINS_NOTIFYUSER = "plugins.update.notifyUser";
 const PREF_PLUGINS_UPDATEURL  = "plugins.update.url";
 
@@ -320,6 +326,7 @@ BrowserGlue.prototype = {
     UserAgentOverrides.uninit();
     webappsUI.uninit();
     SignInToWebsiteUX.uninit();
+    webrtcUI.uninit();
   },
 
   _onAppDefaults: function BG__onAppDefaults() {
@@ -344,15 +351,33 @@ BrowserGlue.prototype = {
     // handle any UI migration
     this._migrateUI();
 
-    UserAgentOverrides.init();
+    this._setUpUserAgentOverrides();
+
     webappsUI.init();
     PageThumbs.init();
     NewTabUtils.init();
     BrowserNewTabPreloader.init();
     SignInToWebsiteUX.init();
     PdfJs.init();
+    webrtcUI.init();
 
     Services.obs.notifyObservers(null, "browser-ui-startup-complete", "");
+  },
+
+  _setUpUserAgentOverrides: function BG__setUpUserAgentOverrides() {
+    UserAgentOverrides.init();
+
+    if (Services.prefs.getBoolPref("general.useragent.complexOverride.moodle")) {
+      UserAgentOverrides.addComplexOverride(function (aHttpChannel, aOriginalUA) {
+        let cookies;
+        try {
+          cookies = aHttpChannel.getRequestHeader("Cookie");
+        } catch (e) { /* no cookie sent */ }
+        if (cookies && cookies.indexOf("MoodleSession") > -1)
+          return aOriginalUA.replace(/Gecko\/[^ ]*/, "Gecko/20100101");
+        return null;
+      });
+    }
   },
 
   // the first browser window has finished initializing
@@ -516,7 +541,7 @@ BrowserGlue.prototype = {
       windowcount++;
 
       var browser = browserEnum.getNext();
-      if (("gPrivateBrowsingUI" in browser) && !browser.gPrivateBrowsingUI.privateWindow)
+      if (!PrivateBrowsingUtils.isWindowPrivate(browser))
         allWindowsPrivate = false;
       var tabbrowser = browser.document.getElementById("content");
       if (tabbrowser)
@@ -1207,7 +1232,7 @@ BrowserGlue.prototype = {
   },
 
   _migrateUI: function BG__migrateUI() {
-    const UI_VERSION = 7;
+    const UI_VERSION = 8;
     const BROWSER_DOCURL = "chrome://browser/content/browser.xul#";
     let currentUIVersion = 0;
     try {
@@ -1339,6 +1364,15 @@ BrowserGlue.prototype = {
                                           "$1downloads-button,window-controls$2")
         }
         this._setPersist(toolbarResource, currentsetResource, currentset);
+      }
+    }
+
+    if (currentUIVersion < 8) {
+      // Reset homepage pref for users who have it set to google.com/firefox
+      let uri = Services.prefs.getComplexValue("browser.startup.homepage",
+                                               Ci.nsIPrefLocalizedString).data;
+      if (uri && /^https?:\/\/(www\.)?google(\.\w{2,3}){1,2}\/firefox\/?$/.test(uri)) {
+        Services.prefs.clearUserPref("browser.startup.homepage");
       }
     }
 
@@ -1686,7 +1720,7 @@ ContentPermissionPrompt.prototype = {
                                                    [requestingURI.host], 1);
 
       // Don't offer to "always/never share" in PB mode
-      if (("gPrivateBrowsingUI" in chromeWin) && !chromeWin.gPrivateBrowsingUI.privateWindow) {
+      if (!PrivateBrowsingUtils.isWindowPrivate(chromeWin)) {
         secondaryActions.push({
           label: browserBundle.GetStringFromName("geolocation.alwaysShareLocation"),
           accessKey: browserBundle.GetStringFromName("geolocation.alwaysShareLocation.accesskey"),

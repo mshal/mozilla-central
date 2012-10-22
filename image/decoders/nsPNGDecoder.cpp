@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsPNGDecoder.h"
 #include "ImageLogging.h"
+#include "nsPNGDecoder.h"
 
 #include "nsMemory.h"
 #include "nsRect.h"
@@ -583,6 +583,8 @@ nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr)
   /* copy PNG info into imagelib structs (formerly png_set_dims()) */
   /*---------------------------------------------------------------*/
 
+  // This code is currently unused, but it will be needed for bug 517713.
+#if 0
   int32_t alpha_bits = 1;
 
   if (channels == 2 || channels == 4) {
@@ -601,6 +603,7 @@ nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr)
       alpha_bits = 8;
     }
   }
+#endif
 
   if (channels == 1 || channels == 3)
     decoder->format = gfxASurface::ImageFormatRGB24;
@@ -631,7 +634,7 @@ nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr)
   }
 
   if (interlace_type == PNG_INTERLACE_ADAM7) {
-    if (height < PR_INT32_MAX / (width * channels))
+    if (height < INT32_MAX / (width * channels))
       decoder->interlacebuf = (uint8_t *)moz_malloc(channels * width * height);
     if (!decoder->interlacebuf) {
       longjmp(png_jmpbuf(decoder->mPNG), 5); // NS_ERROR_OUT_OF_MEMORY

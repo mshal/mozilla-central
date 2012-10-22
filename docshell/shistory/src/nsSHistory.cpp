@@ -60,7 +60,7 @@ int32_t nsSHistory::sHistoryMaxTotalViewers = -1;
 // entries were touched, so that we can evict older entries first.
 static uint32_t gTouchCounter = 0;
 
-static PRLogModuleInfo* gLogModule = PR_LOG_DEFINE("nsSHistory");
+static PRLogModuleInfo* gLogModule = PR_NewLogModule("nsSHistory");
 #define LOG(format) PR_LOG(gLogModule, PR_LOG_DEBUG, format)
 
 // This macro makes it easier to print a log message which includes a URI's
@@ -284,14 +284,14 @@ nsSHistory::CalcMaxTotalViewers()
   // 4096 Mb       8
   uint64_t bytes = PR_GetPhysicalMemorySize();
 
-  if (LL_IS_ZERO(bytes))
+  if (bytes == 0)
     return 0;
 
-  // Conversion from unsigned int64 to double doesn't work on all platforms.
-  // We need to truncate the value at LL_MAXINT to make sure we don't
+  // Conversion from unsigned int64_t to double doesn't work on all platforms.
+  // We need to truncate the value at INT64_MAX to make sure we don't
   // overflow.
-  if (LL_CMP(bytes, >, LL_MAXINT))
-    bytes = LL_MAXINT;
+  if (bytes > INT64_MAX)
+    bytes = INT64_MAX;
 
   uint64_t kbytes;
   LL_SHR(kbytes, bytes, 10);

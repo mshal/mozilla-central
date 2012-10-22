@@ -402,6 +402,9 @@ static nsDefaultMimeTypeEntry defaultMimeEntries [] =
   { VIDEO_WEBM, "webm" },
   { AUDIO_WEBM, "webm" },
 #endif
+#ifdef MOZ_DASH
+  { APPLICATION_DASH, "mpd" },
+#endif
 #ifdef MOZ_GSTREAMER
   { VIDEO_MP4, "mp4" },
 #endif
@@ -476,12 +479,16 @@ static nsExtraMimeTypeEntry extraMimeEntries [] =
   { AUDIO_OGG, "opus", "Opus Audio" },
   { VIDEO_WEBM, "webm", "Web Media Video" },
   { AUDIO_WEBM, "webm", "Web Media Audio" },
+#ifdef MOZ_DASH
+  { APPLICATION_DASH, "mpd", "DASH Media Presentation Description" },
+#endif
 #ifdef MOZ_MEDIA_PLUGINS
   { AUDIO_MP3, "mp3", "MPEG Audio" },
 #endif
   { VIDEO_MP4, "mp4", "MPEG-4 Video" },
   { VIDEO_RAW, "yuv", "Raw YUV Video" },
-  { AUDIO_WAV, "wav", "Waveform Audio" }
+  { AUDIO_WAV, "wav", "Waveform Audio" },
+  { VIDEO_3GPP, "3gpp,3gp", "3GPP Video" }
 };
 
 #undef MAC_TYPE
@@ -1238,6 +1245,8 @@ void nsExternalAppHandler::RetargetLoadNotifications(nsIRequest *request)
   if (origContextLoader)
     origContextLoader->GetDocumentChannel(getter_AddRefs(mOriginalChannel));
 
+  bool isPrivate = NS_UsePrivateBrowsing(aChannel);
+
   nsCOMPtr<nsILoadGroup> oldLoadGroup;
   aChannel->GetLoadGroup(getter_AddRefs(oldLoadGroup));
 
@@ -1246,6 +1255,11 @@ void nsExternalAppHandler::RetargetLoadNotifications(nsIRequest *request)
       
   aChannel->SetLoadGroup(nullptr);
   aChannel->SetNotificationCallbacks(nullptr);
+
+  nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(aChannel);
+  if (pbChannel) {
+    pbChannel->SetPrivate(isPrivate);
+  }
 }
 
 /**
@@ -1933,9 +1947,12 @@ nsresult nsExternalAppHandler::InitializeDownload(nsITransfer* aTransfer)
   nsCOMPtr<nsIURI> target;
   rv = NS_NewFileURI(getter_AddRefs(target), mFinalFileDestination);
   if (NS_FAILED(rv)) return rv;
-  
+
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(mRequest);
+
   rv = aTransfer->Init(mSourceUrl, target, EmptyString(),
-                       mMimeInfo, mTimeDownloadStarted, mTempFile, this);
+                       mMimeInfo, mTimeDownloadStarted, mTempFile, this,
+                       channel && NS_UsePrivateBrowsing(channel));
   if (NS_FAILED(rv)) return rv;
 
   // Now let's add the download to history

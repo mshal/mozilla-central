@@ -23,8 +23,13 @@
 #include "BasicLayersImpl.h"
 #include "BasicThebesLayer.h"
 #include "BasicContainerLayer.h"
+#include "CompositorChild.h"
 #include "mozilla/Preferences.h"
 #include "nsIWidget.h"
+
+#ifdef MOZ_WIDGET_ANDROID
+#include "AndroidBridge.h"
+#endif
 
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
@@ -210,9 +215,7 @@ public:
 };
 
 BasicLayerManager::BasicLayerManager(nsIWidget* aWidget) :
-#ifdef DEBUG
   mPhase(PHASE_NONE),
-#endif
   mWidget(aWidget)
   , mDoubleBuffering(BUFFER_NONE), mUsingDefaultTarget(false)
   , mCachedSurfaceInUse(false)
@@ -224,9 +227,7 @@ BasicLayerManager::BasicLayerManager(nsIWidget* aWidget) :
 }
 
 BasicLayerManager::BasicLayerManager() :
-#ifdef DEBUG
   mPhase(PHASE_NONE),
-#endif
   mWidget(nullptr)
   , mDoubleBuffering(BUFFER_NONE), mUsingDefaultTarget(false)
   , mCachedSurfaceInUse(false)
@@ -324,9 +325,7 @@ BasicLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 #endif
 
   NS_ASSERTION(!InTransaction(), "Nested transactions not allowed");
-#ifdef DEBUG
   mPhase = PHASE_CONSTRUCTION;
-#endif
   mTarget = aTarget;
 }
 
@@ -513,9 +512,7 @@ void
 BasicLayerManager::AbortTransaction()
 {
   NS_ASSERTION(InConstruction(), "Should be in construction phase");
-#ifdef DEBUG
   mPhase = PHASE_NONE;
-#endif
   mUsingDefaultTarget = false;
   mInTransaction = false;
 }
@@ -532,9 +529,7 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
 #endif
 
   NS_ASSERTION(InConstruction(), "Should be in construction phase");
-#ifdef DEBUG
   mPhase = PHASE_DRAWING;
-#endif
 
   Layer* aLayer = GetRoot();
   RenderTraceLayers(aLayer, "FF00");
@@ -560,6 +555,12 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
       gfxContextMatrixAutoSaveRestore save(mTarget);
       mTarget->SetMatrix(gfxMatrix());
       clipRect = ToOutsideIntRect(mTarget->GetClipExtents());
+    }
+
+    if (aFlags & END_NO_COMPOSITE) {
+      // Apply pending tree updates before recomputing effective
+      // properties.
+      aLayer->ApplyPendingUpdatesToSubtree();
     }
 
     // Need to do this before we call ApplyDoubleBuffering,
@@ -589,6 +590,7 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
       if (mWidget) {
         FlashWidgetUpdateArea(mTarget);
       }
+      LayerManager::PostPresent();
     }
 
     if (!mTransactionIncomplete) {
@@ -602,11 +604,9 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
   MOZ_LAYERS_LOG(("]----- EndTransaction"));
 #endif
 
-#ifdef DEBUG
   // Go back to the construction phase if the transaction isn't complete.
   // Layout will update the layer tree and call EndTransaction().
   mPhase = mTransactionIncomplete ? PHASE_CONSTRUCTION : PHASE_NONE;
-#endif
 
   if (!mTransactionIncomplete) {
     // This is still valid if the transaction was incomplete.
@@ -1039,7 +1039,7 @@ BasicShadowLayerManager::GetMaxTextureSize() const
     return ShadowLayerForwarder::GetMaxTextureSize();
   }
 
-  return PR_INT32_MAX;
+  return INT32_MAX;
 }
 
 void
@@ -1109,13 +1109,14 @@ BasicShadowLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
     if (aTarget && (aTarget != mDefaultTarget) &&
         XRE_GetProcessType() == GeckoProcessType_Default) {
       mShadowTarget = aTarget;
-
-      // Create a temporary target for ourselves, so that mShadowTarget is only
-      // drawn to by our shadow manager.
-      nsRefPtr<gfxASurface> targetSurface = gfxPlatform::GetPlatform()->
-        CreateOffscreenSurface(aTarget->OriginalSurface()->GetSize(),
-                               aTarget->OriginalSurface()->GetContentType());
-      targetContext = new gfxContext(targetSurface);
+      // Create a temporary target for ourselves, so that
+      // mShadowTarget is only drawn to for the window snapshot.
+      nsRefPtr<gfxASurface> dummy =
+        gfxPlatform::GetPlatform()->CreateOffscreenSurface(
+          gfxIntSize(1, 1),
+          aTarget->OriginalSurface()->GetContentType());
+      mDummyTarget = new gfxContext(dummy);
+      aTarget = mDummyTarget;
     }
   }
   BasicLayerManager::BeginTransactionWithTarget(aTarget);
@@ -1134,9 +1135,30 @@ BasicShadowLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
     BasicLayerManager::BeginTransaction();
     BasicShadowLayerManager::EndTransaction(aCallback, aCallbackData, aFlags);
   } else if (mShadowTarget) {
-    // Draw to shadow target at the recursion tail of the repeat transactions
-    ShadowLayerForwarder::ShadowDrawToTarget(mShadowTarget);
+    if (mWidget) {
+      if (CompositorChild* remoteRenderer = mWidget->GetRemoteRenderer()) {
+        nsRefPtr<gfxASurface> target = mShadowTarget->OriginalSurface();
+        SurfaceDescriptor inSnapshot, snapshot;
+        if (AllocBuffer(target->GetSize(), target->GetContentType(),
+                        &inSnapshot) &&
+            // The compositor will usually reuse |snapshot| and return
+            // it through |outSnapshot|, but if it doesn't, it's
+            // responsible for freeing |snapshot|.
+            remoteRenderer->SendMakeSnapshot(inSnapshot, &snapshot)) {
+          AutoOpenSurface opener(OPEN_READ_ONLY, snapshot);
+          gfxASurface* source = opener.Get();
+
+          gfxContextAutoSaveRestore restore(mShadowTarget);
+          mShadowTarget->SetOperator(gfxContext::OPERATOR_OVER);
+          mShadowTarget->DrawSurface(source, source->GetSize());
+        }
+        if (IsSurfaceDescriptorValid(snapshot)) {
+          ShadowLayerForwarder::DestroySharedSurface(&snapshot);
+        }
+      }
+    }
     mShadowTarget = nullptr;
+    mDummyTarget = nullptr;
   }
 }
 
@@ -1157,9 +1179,7 @@ void
 BasicShadowLayerManager::ForwardTransaction()
 {
   RenderTraceScope rendertrace("Foward Transaction", "000090");
-#ifdef DEBUG
   mPhase = PHASE_FORWARD;
-#endif
 
   // forward this transaction's changeset to our ShadowLayerManager
   AutoInfallibleTArray<EditReply, 10> replies;
@@ -1223,9 +1243,7 @@ BasicShadowLayerManager::ForwardTransaction()
     NS_WARNING("failed to forward Layers transaction");
   }
 
-#ifdef DEBUG
   mPhase = PHASE_NONE;
-#endif
 
   // this may result in Layers being deleted, which results in
   // PLayer::Send__delete__() and DeallocShmem()
@@ -1257,6 +1275,36 @@ void
 BasicShadowLayerManager::SetIsFirstPaint()
 {
   ShadowLayerForwarder::SetIsFirstPaint();
+}
+
+bool
+BasicShadowLayerManager::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
+                                                   gfx::Rect& aViewport,
+                                                   float& aScaleX,
+                                                   float& aScaleY)
+{
+#ifdef MOZ_WIDGET_ANDROID
+  Layer* primaryScrollable = GetPrimaryScrollableLayer();
+  if (primaryScrollable) {
+    const FrameMetrics& metrics = primaryScrollable->AsContainerLayer()->GetFrameMetrics();
+
+    // This is derived from the code in
+    // gfx/layers/ipc/CompositorParent.cpp::TransformShadowTree.
+    const gfx3DMatrix& rootTransform = GetRoot()->GetTransform();
+    float devPixelRatioX = 1 / rootTransform.GetXScale();
+    float devPixelRatioY = 1 / rootTransform.GetYScale();
+    gfx::Rect displayPort((metrics.mDisplayPort.x + metrics.mScrollOffset.x) * devPixelRatioX,
+                          (metrics.mDisplayPort.y + metrics.mScrollOffset.y) * devPixelRatioY,
+                          metrics.mDisplayPort.width * devPixelRatioX,
+                          metrics.mDisplayPort.height * devPixelRatioY);
+
+    return AndroidBridge::Bridge()->ProgressiveUpdateCallback(
+      aHasPendingNewThebesContent, displayPort, devPixelRatioX,
+      aViewport, aScaleX, aScaleY);
+  }
+#endif
+
+  return false;
 }
 
 already_AddRefed<ThebesLayer>

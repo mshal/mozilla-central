@@ -284,6 +284,7 @@ NS_IMETHODIMP
 nsEditorEventListener::HandleEvent(nsIDOMEvent* aEvent)
 {
   NS_ENSURE_TRUE(mEditor, NS_ERROR_NOT_AVAILABLE);
+  nsCOMPtr<nsIEditor> kungFuDeathGrip = mEditor;
 
   nsAutoString eventType;
   aEvent->GetType(eventType);
@@ -978,8 +979,8 @@ bool
 nsEditorEventListener::IsFileControlTextBox()
 {
   dom::Element* root = mEditor->GetRoot();
-  if (root && root->IsInNativeAnonymousSubtree()) {
-    nsIContent* parent = root->FindFirstNonNativeAnonymous();
+  if (root && root->ChromeOnlyAccess()) {
+    nsIContent* parent = root->FindFirstNonChromeOnlyAccessContent();
     if (parent && parent->IsHTML(nsGkAtoms::input)) {
       nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(parent);
       MOZ_ASSERT(formControl);

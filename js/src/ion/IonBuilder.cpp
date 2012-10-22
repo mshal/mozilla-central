@@ -27,7 +27,7 @@ IonBuilder::IonBuilder(JSContext *cx, TempAllocator *temp, MIRGraph *graph,
                        TypeOracle *oracle, CompileInfo *info, size_t inliningDepth, uint32 loopDepth)
   : MIRGenerator(cx->compartment, temp, graph, info),
     recompileInfo(cx->compartment->types.compiledInfo),
-    lir(NULL),
+    backgroundCompiledLir(NULL),
     cx(cx),
     loopDepth_(loopDepth),
     callerResumePoint_(NULL),
@@ -146,11 +146,13 @@ IonBuilder::CFGState::LookupSwitch(jsbytecode *exitpc)
 JSFunction *
 IonBuilder::getSingleCallTarget(uint32 argc, jsbytecode *pc)
 {
+    AutoAssertNoGC nogc;
+
     types::StackTypeSet *calleeTypes = oracle->getCallTarget(script(), argc, pc);
     if (!calleeTypes)
         return NULL;
 
-    JSObject *obj = calleeTypes->getSingleton();
+    RawObject obj = calleeTypes->getSingleton();
     if (!obj || !obj->isFunction())
         return NULL;
 
@@ -186,6 +188,8 @@ IonBuilder::getPolyCallTargets(uint32 argc, jsbytecode *pc,
 bool
 IonBuilder::canInlineTarget(JSFunction *target)
 {
+    AssertCanGC();
+
     if (!target->isInterpreted()) {
         IonSpew(IonSpew_Inlining, "Cannot inline due to non-interpreted");
         return false;
@@ -196,7 +200,7 @@ IonBuilder::canInlineTarget(JSFunction *target)
         return false;
     }
 
-    JSScript *inlineScript = target->script();
+    RootedScript inlineScript(cx, target->script());
 
     if (!inlineScript->canIonCompile()) {
         IonSpew(IonSpew_Inlining, "Cannot inline due to disable Ion compilation");
@@ -745,7 +749,7 @@ IonBuilder::markPhiBytecodeUses(jsbytecode *pc)
 {
     unsigned nuses = analyze::GetUseCount(script_, pc - script_->code);
     for (unsigned i = 0; i < nuses; i++) {
-        MDefinition *def = current->peek(-(i + 1));
+        MDefinition *def = current->peek(-int32_t(i + 1));
         if (def->isPassArg())
             def = def->toPassArg()->getArgument();
         if (def->isPhi())
@@ -756,6 +760,8 @@ IonBuilder::markPhiBytecodeUses(jsbytecode *pc)
 bool
 IonBuilder::inspectOpcode(JSOp op)
 {
+    AssertCanGC();
+
     // Don't compile fat opcodes, run the decomposed version instead.
     if (js_CodeSpec[op].format & JOF_DECOMPOSE)
         return true;
@@ -1061,6 +1067,9 @@ IonBuilder::inspectOpcode(JSOp op)
 
       case JSOP_ENDITER:
         return jsop_iterend();
+
+      case JSOP_IN:
+        return jsop_in();
 
       case JSOP_INSTANCEOF:
         return jsop_instanceof();
@@ -2797,6 +2806,8 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32 argc, bool constructi
                              MConstant *constFun, MBasicBlock *bottom,
                              Vector<MDefinition *, 8, IonAllocPolicy> &retvalDefns)
 {
+    AssertCanGC();
+
     // Rewrite the stack position containing the function with the constant
     // function definition, before we take the inlineResumePoint
     current->rewriteAtDepth(-((int) argc + 2), constFun);
@@ -2822,7 +2833,8 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32 argc, bool constructi
 
     // Compilation information is allocated for the duration of the current tempLifoAlloc
     // lifetime.
-    CompileInfo *info = cx->tempLifoAlloc().new_<CompileInfo>(callee->script(), callee,
+    RootedScript calleeScript(cx, callee->script());
+    CompileInfo *info = cx->tempLifoAlloc().new_<CompileInfo>(calleeScript.get(), callee,
                                                               (jsbytecode *)NULL, constructing);
     if (!info)
         return false;
@@ -2831,7 +2843,7 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32 argc, bool constructi
     AutoAccumulateExits aae(graph(), saveExits);
 
     TypeInferenceOracle oracle;
-    if (!oracle.init(cx, callee->script()))
+    if (!oracle.init(cx, calleeScript))
         return false;
 
     IonBuilder inlineBuilder(cx, &temp(), &graph(), &oracle,
@@ -2885,8 +2897,10 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32 argc, bool constructi
 }
 
 bool
-IonBuilder::makeInliningDecision(AutoObjectVector &targets)
+IonBuilder::makeInliningDecision(AutoObjectVector &targets, uint32 argc)
 {
+    AssertCanGC();
+
     if (inliningDepth >= js_IonOptions.maxInlineDepth)
         return false;
 
@@ -2898,22 +2912,40 @@ IonBuilder::makeInliningDecision(AutoObjectVector &targets)
     //  2. The cost of inlining (in terms of size expansion of the SSA graph),
     //     and size expansion of the ultimately generated code, will be
     //     less significant.
+    //  3. Do not inline functions which are not called as frequently as their
+    //     callers.
+
+    uint32_t callerUses = script_->getUseCount();
 
     uint32_t totalSize = 0;
     uint32_t checkUses = js_IonOptions.usesBeforeInlining;
     bool allFunctionsAreSmall = true;
+    RootedFunction target(cx);
+    RootedScript script(cx);
     for (size_t i = 0; i < targets.length(); i++) {
-        JSFunction *target = targets[i]->toFunction();
+        target = targets[i]->toFunction();
         if (!target->isInterpreted())
             return false;
 
-        JSScript *script = target->script();
+        script = target->script();
+        uint32_t calleeUses = script->getUseCount();
+
+        if (target->nargs < argc) {
+            IonSpew(IonSpew_Inlining, "Not inlining, overflow of arguments.");
+            return false;
+        }
+
         totalSize += script->length;
         if (totalSize > js_IonOptions.inlineMaxTotalBytecodeLength)
             return false;
 
         if (script->length > js_IonOptions.smallFunctionMaxBytecodeLength)
             allFunctionsAreSmall = false;
+
+        if (calleeUses * js_IonOptions.inlineUseCountRatio < callerUses) {
+            IonSpew(IonSpew_Inlining, "Not inlining, callee is not hot");
+            return false;
+        }
     }
     if (allFunctionsAreSmall)
         checkUses = js_IonOptions.smallFunctionUsesBeforeInlining;
@@ -3514,7 +3546,7 @@ IonBuilder::createThisScriptedSingleton(HandleFunction target, HandleObject prot
     types::TypeObject *type = proto->getNewType(cx, target);
     if (!type)
         return NULL;
-    if (!types::TypeScript::ThisTypes(target->script())->hasType(types::Type::ObjectType(type)))
+    if (!types::TypeScript::ThisTypes(target->script().unsafeGet())->hasType(types::Type::ObjectType(type)))
         return NULL;
 
     RootedObject templateObject(cx, js_CreateThisForFunctionWithProto(cx, target, proto));
@@ -3676,44 +3708,11 @@ IonBuilder::jsop_funapply(uint32 argc)
     return pushTypeBarrier(apply, types, barrier);
 }
 
-// Get the builtin RegExp.prototype.test function.
-static bool
-GetBuiltinRegExpTest(JSContext *cx, JSScript *script, JSFunction **result)
-{
-    JS_ASSERT(*result == NULL);
-
-    // Get the builtin RegExp.prototype object.
-    RootedObject proto(cx, script->global().getOrCreateRegExpPrototype(cx));
-    if (!proto)
-        return false;
-
-    // Get the |test| property. Note that we use lookupProperty, not getProperty,
-    // to avoid calling a getter.
-    RootedShape shape(cx);
-    RootedObject holder(cx);
-    if (!JSObject::lookupProperty(cx, proto, cx->names().test, &holder, &shape))
-        return false;
-
-    if (proto != holder || !shape || !shape->hasDefaultGetter() || !shape->hasSlot())
-        return true;
-
-    // The RegExp.prototype.test property is writable, so we have to ensure
-    // we got the builtin function.
-    Value val = holder->getSlot(shape->slot());
-    if (!val.isObject())
-        return true;
-
-    JSObject *obj = &val.toObject();
-    if (!obj->isFunction() || obj->toFunction()->maybeNative() != regexp_test)
-        return true;
-
-    *result = obj->toFunction();
-    return true;
-}
-
 bool
 IonBuilder::jsop_call(uint32 argc, bool constructing)
 {
+    AssertCanGC();
+
     // Acquire known call target if existent.
     AutoObjectVector targets(cx);
     uint32_t numTargets = getPolyCallTargets(argc, pc, targets, 4);
@@ -3735,24 +3734,13 @@ IonBuilder::jsop_call(uint32 argc, bool constructing)
             }
         }
 
-        if (numTargets > 0 && makeInliningDecision(targets))
+        if (numTargets > 0 && makeInliningDecision(targets, argc))
             return inlineScriptedCall(targets, argc, constructing, types, barrier);
     }
 
     RootedFunction target(cx, NULL);
-    if (numTargets == 1) {
+    if (numTargets == 1)
         target = targets[0]->toFunction();
-
-        // Call RegExp.test instead of RegExp.exec if the result will not be used
-        // or will only be used to test for existence.
-        if (target->maybeNative() == regexp_exec && !CallResultEscapes(pc)) {
-            JSFunction *newTarget = NULL;
-            if (!GetBuiltinRegExpTest(cx, script_, &newTarget))
-                return false;
-            if (newTarget)
-                target = newTarget;
-        }
-    }
 
     return makeCallBarrier(target, argc, constructing, types, barrier);
 }
@@ -4430,7 +4418,8 @@ TestSingletonProperty(JSContext *cx, HandleObject obj, HandleId id, bool *isKnow
 static inline bool
 TestSingletonPropertyTypes(JSContext *cx, types::StackTypeSet *types,
                            HandleObject globalObj, HandleId id,
-                           bool *isKnownConstant, bool *testObject)
+                           bool *isKnownConstant, bool *testObject,
+                           bool *testString)
 {
     // As for TestSingletonProperty, but the input is any value in a type set
     // rather than a specific object. If testObject is set then the constant
@@ -4438,6 +4427,7 @@ TestSingletonPropertyTypes(JSContext *cx, types::StackTypeSet *types,
 
     *isKnownConstant = false;
     *testObject = false;
+    *testString = false;
 
     if (!types || types->unknownObject())
         return true;
@@ -4467,6 +4457,15 @@ TestSingletonPropertyTypes(JSContext *cx, types::StackTypeSet *types,
 
       case JSVAL_TYPE_OBJECT:
       case JSVAL_TYPE_UNKNOWN: {
+        if (types->hasType(types::Type::StringType())) {
+            // Do not optimize if the object is either a String or an Object.
+            if (types->maybeObject())
+                return true;
+            key = JSProto_String;
+            *testString = true;
+            break;
+        }
+
         // For property accesses which may be on many objects, we just need to
         // find a prototype common to all the objects; if that prototype
         // has the singleton property, the access will not be on a missing property.
@@ -4614,8 +4613,12 @@ IonBuilder::pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual,
 // Test the type of values returned by a VM call. This is an optimized version
 // of calling TypeScript::Monitor inside such stubs.
 void
-IonBuilder::monitorResult(MInstruction *ins, types::TypeSet *types)
+IonBuilder::monitorResult(MInstruction *ins, types::TypeSet *barrier, types::TypeSet *types)
 {
+    // MonitorTypes is redundant if we will also add a type barrier.
+    if (barrier)
+        return;
+
     if (!types || types->unknown())
         return;
 
@@ -4801,7 +4804,7 @@ IonBuilder::jsop_getname(HandlePropertyName name)
     types::StackTypeSet *barrier = oracle->propertyReadBarrier(script_, pc);
     types::StackTypeSet *types = oracle->propertyRead(script_, pc);
 
-    monitorResult(ins, types);
+    monitorResult(ins, barrier, types);
     return pushTypeBarrier(ins, types, barrier);
 }
 
@@ -4867,7 +4870,7 @@ IonBuilder::jsop_getelem()
     types::StackTypeSet *types = oracle->propertyRead(script_, pc);
 
     if (mustMonitorResult)
-        monitorResult(ins, types);
+        monitorResult(ins, barrier, types);
     return pushTypeBarrier(ins, types, barrier);
 }
 
@@ -5062,6 +5065,9 @@ IonBuilder::jsop_getelem_string()
     MStringLength *length = MStringLength::New(str);
     current->add(length);
 
+    // This will cause an invalidation of this script once the 'undefined' type
+    // is monitored by the interpreter.
+    JS_ASSERT(oracle->propertyRead(script_, pc)->getKnownTypeTag() == JSVAL_TYPE_STRING);
     id = addBoundsCheck(id, length);
 
     MCharCodeAt *charCode = MCharCodeAt::New(str, id);
@@ -5816,162 +5822,286 @@ IonBuilder::storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool n
 bool
 IonBuilder::jsop_getprop(HandlePropertyName name)
 {
-    LazyArgumentsType isArguments = oracle->propertyReadMagicArguments(script_, pc);
-    if (isArguments == MaybeArguments)
-        return abort("Type is not definitely lazy arguments.");
-    if (isArguments == DefinitelyArguments) {
-        if (JSOp(*pc) == JSOP_LENGTH)
-            return jsop_arguments_length();
-        // Can also be a callee.
-    }
-
-    MDefinition *obj = current->pop();
-    MInstruction *ins;
+    RootedId id(cx, NameToId(name));
 
     types::StackTypeSet *barrier = oracle->propertyReadBarrier(script_, pc);
     types::StackTypeSet *types = oracle->propertyRead(script_, pc);
-
     TypeOracle::Unary unary = oracle->unaryOp(script_, pc);
-    TypeOracle::UnaryTypes unaryTypes = oracle->unaryTypes(script_, pc);
+    TypeOracle::UnaryTypes uTypes = oracle->unaryTypes(script_, pc);
 
-    RootedId id(cx, NameToId(name));
+    bool emitted = false;
 
-    JSObject *singleton = types ? types->getSingleton() : NULL;
-    if (singleton && !barrier) {
-        bool isKnownConstant, testObject;
-        RootedObject global(cx, &script_->global());
-        if (!TestSingletonPropertyTypes(cx, unaryTypes.inTypes,
-                                        global, id,
-                                        &isKnownConstant, &testObject))
-        {
-            return false;
-        }
+    // Try to optimize arguments.length.
+    if (!getPropTryArgumentsLength(&emitted) || emitted)
+        return emitted;
 
-        if (isKnownConstant) {
-            if (testObject) {
-                MGuardObject *guard = MGuardObject::New(obj);
-                current->add(guard);
-            }
-            MConstant *known = MConstant::New(ObjectValue(*singleton));
-            current->add(known);
-            current->push(known);
-            if (singleton->isFunction()) {
-                RootedFunction singletonFunc(cx, singleton->toFunction());
-                if (TestAreKnownDOMTypes(cx, unaryTypes.inTypes) &&
-                    TestShouldDOMCall(cx, unaryTypes.inTypes, singletonFunc))
-                {
-                    FreezeDOMTypes(cx, unaryTypes.inTypes);
-                    known->setDOMFunction();
-                }
-            }
-            return true;
-        }
-    }
+    // Try to hardcode known constants.
+    if (!getPropTryConstant(&emitted, id, barrier, types, uTypes) || emitted)
+        return emitted;
 
-    if (types::TypeSet *propTypes = GetDefiniteSlot(cx, unaryTypes.inTypes, name)) {
-        MDefinition *useObj = obj;
-        if (unaryTypes.inTypes && unaryTypes.inTypes->baseFlags()) {
-            MGuardObject *guard = MGuardObject::New(obj);
-            current->add(guard);
-            useObj = guard;
-        }
-        MLoadFixedSlot *fixed = MLoadFixedSlot::New(useObj, propTypes->definiteSlot());
-        if (!barrier)
-            fixed->setResultType(unary.rval);
+    // Try to emit loads from definite slots.
+    if (!getPropTryDefiniteSlot(&emitted, name, barrier, types, unary, uTypes) || emitted)
+        return emitted;
 
-        current->add(fixed);
-        current->push(fixed);
+    // Try to inline a common property getter, or make a call.
+    if (!getPropTryCommonGetter(&emitted, id, barrier, types, uTypes) || emitted)
+        return emitted;
 
-        return pushTypeBarrier(fixed, types, barrier);
-    }
+    // Try to emit a monomorphic cache based on data in JM caches.
+    if (!getPropTryMonomorphic(&emitted, id, barrier, unary, uTypes) || emitted)
+        return emitted;
 
-    // Attempt to inline common property getter. At least patch to call instead.
-    JSFunction *commonGetter;
-    bool isDOM;
-    if (!TestCommonPropFunc(cx, unaryTypes.inTypes, id, &commonGetter, true, &isDOM))
-         return false;
-     if (commonGetter) {
-        RootedFunction getter(cx, commonGetter);
-        if (isDOM && TestShouldDOMCall(cx, unaryTypes.inTypes, getter)) {
-            const JSJitInfo *jitinfo = getter->jitInfo();
-            MGetDOMProperty *get = MGetDOMProperty::New(jitinfo->op, obj, jitinfo->isInfallible);
+    // Try to emit a polymorphic cache.
+    if (!getPropTryPolymorphic(&emitted, name, id, barrier, types, unary, uTypes) || emitted)
+        return emitted;
 
-            current->add(get);
-            current->push(get);
-
-            if (!resumeAfter(get))
-                return false;
-
-            return pushTypeBarrier(get, types, barrier);
-        }
-        // Spoof stack to expected state for call.
-        pushConstant(ObjectValue(*commonGetter));
-
-        MPassArg *wrapper = MPassArg::New(obj);
-        current->push(wrapper);
-        current->add(wrapper);
-
-        return makeCallBarrier(getter, 0, false, types, barrier);
-    }
-
-    if (unary.ival == MIRType_Object) {
-        MIRType rvalType = MIRType_Value;
-        if (!barrier && !IsNullOrUndefined(unary.rval))
-            rvalType = unary.rval;
-
-        Shape *objShape;
-        if ((objShape = mjit::GetPICSingleShape(cx, script_, pc, info().constructing())) &&
-            !objShape->inDictionary())
-        {
-            // The JM IC was monomorphic, so we inline the property access as
-            // long as the shape is not in dictionary mode. We cannot be sure
-            // that the shape is still a lastProperty, and calling
-            // Shape::search() on dictionary mode shapes that aren't
-            // lastProperty is invalid.
-            MGuardShape *guard = MGuardShape::New(obj, objShape, Bailout_CachedShapeGuard);
-            current->add(guard);
-
-            spew("Inlining monomorphic GETPROP");
-
-            Shape *shape = objShape->search(cx, NameToId(name));
-            JS_ASSERT(shape);
-
-            return loadSlot(obj, shape, rvalType);
-        }
-
-        spew("GETPROP not monomorphic");
-
-        MGetPropertyCache *load = MGetPropertyCache::New(obj, name);
-        load->setResultType(rvalType);
-
-        // Try to mark the cache as idempotent. We only do this if JM is enabled
-        // (its ICs are used to mark property reads as likely non-idempotent) or
-        // if we are compiling eagerly (to improve test coverage).
-        if ((cx->methodJitEnabled || js_IonOptions.eagerCompilation) &&
-            !invalidatedIdempotentCache())
-        {
-            if (oracle->propertyReadIdempotent(script_, pc, id))
-                load->setIdempotent();
-        }
-
-        ins = load;
-        if (JSOp(*pc) == JSOP_CALLPROP) {
-            if (!annotateGetPropertyCache(cx, obj, load, unaryTypes.inTypes, types))
-                return false;
-        }
-    } else {
-        ins = MCallGetProperty::New(obj, name);
-    }
-
-    current->add(ins);
-    current->push(ins);
-
-    if (ins->isEffectful() && !resumeAfter(ins))
+    // Emit a call.
+    MDefinition *obj = current->pop();
+    MCallGetProperty *call = MCallGetProperty::New(obj, name);
+    current->add(call);
+    current->push(call);
+    if (!resumeAfter(call))
         return false;
 
-    if (ins->isCallGetProperty())
-        monitorResult(ins, types);
-    return pushTypeBarrier(ins, types, barrier);
+    monitorResult(call, barrier, types);
+    return pushTypeBarrier(call, types, barrier);
+}
+
+bool
+IonBuilder::getPropTryArgumentsLength(bool *emitted)
+{
+    JS_ASSERT(*emitted == false);
+    LazyArgumentsType isArguments = oracle->propertyReadMagicArguments(script_, pc);
+
+    if (isArguments == MaybeArguments)
+        return abort("Type is not definitely lazy arguments.");
+    if (isArguments != DefinitelyArguments)
+        return true;
+    if (JSOp(*pc) != JSOP_LENGTH)
+        return true;
+
+    *emitted = true;
+    return jsop_arguments_length();
+}
+
+bool
+IonBuilder::getPropTryConstant(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                               types::StackTypeSet *types, TypeOracle::UnaryTypes unaryTypes)
+{
+    JS_ASSERT(*emitted == false);
+    JSObject *singleton = types ? types->getSingleton() : NULL;
+    if (!singleton || barrier)
+        return true;
+
+    RootedObject global(cx, &script_->global());
+
+    bool isConstant, testObject, testString;
+    if (!TestSingletonPropertyTypes(cx, unaryTypes.inTypes, global, id,
+                                    &isConstant, &testObject, &testString))
+        return false;
+
+    if (!isConstant)
+        return true;
+
+    MDefinition *obj = current->pop();
+
+    // Property access is a known constant -- safe to emit.
+	JS_ASSERT(!testString || !testObject);
+    if (testObject)
+        current->add(MGuardObject::New(obj));
+	else if (testString)
+        current->add(MGuardString::New(obj));
+
+    MConstant *known = MConstant::New(ObjectValue(*singleton));
+    if (singleton->isFunction()) {
+        RootedFunction singletonFunc(cx, singleton->toFunction());
+        if (TestAreKnownDOMTypes(cx, unaryTypes.inTypes) &&
+            TestShouldDOMCall(cx, unaryTypes.inTypes, singletonFunc))
+        {
+            FreezeDOMTypes(cx, unaryTypes.inTypes);
+            known->setDOMFunction();
+        }
+    }
+
+    current->add(known);
+    current->push(known);
+
+    *emitted = true;
+    return true;
+}
+
+bool
+IonBuilder::getPropTryDefiniteSlot(bool *emitted, HandlePropertyName name,
+                                   types::StackTypeSet *barrier, types::StackTypeSet *types,
+                                   TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes)
+{
+    JS_ASSERT(*emitted == false);
+    types::TypeSet *propTypes = GetDefiniteSlot(cx, unaryTypes.inTypes, name);
+    if (!propTypes)
+        return true;
+
+    MDefinition *obj = current->pop();
+    MDefinition *useObj = obj;
+    if (unaryTypes.inTypes && unaryTypes.inTypes->baseFlags()) {
+        MGuardObject *guard = MGuardObject::New(obj);
+        current->add(guard);
+        useObj = guard;
+    }
+
+    MLoadFixedSlot *fixed = MLoadFixedSlot::New(useObj, propTypes->definiteSlot());
+    if (!barrier)
+        fixed->setResultType(unary.rval);
+
+    current->add(fixed);
+    current->push(fixed);
+
+    if (!pushTypeBarrier(fixed, types, barrier))
+        return false;
+
+    *emitted = true;
+    return true;
+}
+
+bool
+IonBuilder::getPropTryCommonGetter(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                                   types::StackTypeSet *types, TypeOracle::UnaryTypes unaryTypes)
+{
+    JS_ASSERT(*emitted == false);
+    JSFunction *commonGetter;
+    bool isDOM;
+
+    if (!TestCommonPropFunc(cx, unaryTypes.inTypes, id, &commonGetter, true, &isDOM))
+        return false;
+    if (!commonGetter)
+        return true;
+
+    MDefinition *obj = current->pop();
+    RootedFunction getter(cx, commonGetter);
+
+    if (isDOM && TestShouldDOMCall(cx, unaryTypes.inTypes, getter)) {
+        const JSJitInfo *jitinfo = getter->jitInfo();
+        MGetDOMProperty *get = MGetDOMProperty::New(jitinfo->op, obj, jitinfo->isInfallible);
+        current->add(get);
+        current->push(get);
+
+        if (!resumeAfter(get))
+            return false;
+        if (!pushTypeBarrier(get, types, barrier))
+            return false;
+
+        *emitted = true;
+        return true;
+    }
+
+    // Spoof stack to expected state for call.
+    pushConstant(ObjectValue(*commonGetter));
+
+    MPassArg *wrapper = MPassArg::New(obj);
+    current->add(wrapper);
+    current->push(wrapper);
+
+    if (!makeCallBarrier(getter, 0, false, types, barrier))
+        return false;
+
+    *emitted = true;
+    return true;
+}
+
+bool
+IonBuilder::getPropTryMonomorphic(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                                  TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes)
+{
+    JS_ASSERT(*emitted == false);
+    bool accessGetter = oracle->propertyReadAccessGetter(script_, pc);
+
+    if (unary.ival != MIRType_Object)
+        return true;
+
+    Shape *objShape = mjit::GetPICSingleShape(cx, script_, pc, info().constructing());
+    if (!objShape || objShape->inDictionary()) {
+        spew("GETPROP not monomorphic");
+        return true;
+    }
+
+    MDefinition *obj = current->pop();
+
+    // The JM IC was monomorphic, so we inline the property access as long as
+    // the shape is not in dictionary made. We cannot be sure that the shape is
+    // still a lastProperty, and calling Shape::search() on dictionary mode
+    // shapes that aren't lastProperty is invalid.
+    MGuardShape *guard = MGuardShape::New(obj, objShape, Bailout_CachedShapeGuard);
+    current->add(guard);
+
+    spew("Inlining monomorphic GETPROP");
+    Shape *shape = objShape->search(cx, id);
+    JS_ASSERT(shape);
+
+    MIRType rvalType = unary.rval;
+    if (barrier || IsNullOrUndefined(unary.rval) || accessGetter)
+        rvalType = MIRType_Value;
+
+    if (!loadSlot(obj, shape, rvalType))
+        return false;
+
+    *emitted = true;
+    return true;
+}
+
+bool
+IonBuilder::getPropTryPolymorphic(bool *emitted, HandlePropertyName name, HandleId id,
+                                  types::StackTypeSet *barrier, types::StackTypeSet *types,
+                                  TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes)
+{
+    JS_ASSERT(*emitted == false);
+    bool accessGetter = oracle->propertyReadAccessGetter(script_, pc);
+
+    // The input value must either be an object, or we should have strong suspicions
+    // that it can be safely unboxed to an object.
+    if (unary.ival != MIRType_Object && !unaryTypes.inTypes->objectOrSentinel())
+        return true;
+
+    MIRType rvalType = unary.rval;
+    if (barrier || IsNullOrUndefined(unary.rval) || accessGetter)
+        rvalType = MIRType_Value;
+
+    MDefinition *obj = current->pop();
+    MGetPropertyCache *load = MGetPropertyCache::New(obj, name);
+    load->setResultType(rvalType);
+
+    // Try to mark the cache as idempotent. We only do this if JM is enabled
+    // (its ICs are used to mark property reads as likely non-idempotent) or
+    // if we are compiling eagerly (to improve test coverage).
+    if (unary.ival == MIRType_Object &&
+        (cx->methodJitEnabled || js_IonOptions.eagerCompilation) &&
+        !invalidatedIdempotentCache())
+    {
+        if (oracle->propertyReadIdempotent(script_, pc, id))
+            load->setIdempotent();
+    }
+
+    if (JSOp(*pc) == JSOP_CALLPROP) {
+        if (!annotateGetPropertyCache(cx, obj, load, unaryTypes.inTypes, types))
+            return false;
+    }
+
+    // If the cache is known to access getters, then enable generation of getter stubs.
+    if (accessGetter)
+        load->setAllowGetters();
+
+    current->add(load);
+    current->push(load);
+
+    if (load->isEffectful() && !resumeAfter(load))
+        return false;
+
+    if (accessGetter)
+        monitorResult(load, barrier, types);
+
+    if (!pushTypeBarrier(load, types, barrier))
+        return false;
+
+    *emitted = true;
+    return true;
 }
 
 bool
@@ -6341,6 +6471,18 @@ IonBuilder::jsop_setaliasedvar(ScopeCoordinate sc)
     return resumeAfter(store);
 }
 
+bool
+IonBuilder::jsop_in()
+{
+    MDefinition *obj = current->pop();
+    MDefinition *id = current->pop();
+    MIn *ins = new MIn(id, obj);
+
+    current->add(ins);
+    current->push(ins);
+
+    return resumeAfter(ins);
+}
 
 bool
 IonBuilder::jsop_instanceof()

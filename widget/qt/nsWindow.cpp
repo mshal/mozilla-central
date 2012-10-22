@@ -929,7 +929,7 @@ check_for_rollup(double aMouseX, double aMouseY,
             // if we're dealing with menus, we probably have submenus and
             // we don't want to rollup if the clickis in a parent menu of
             // the current submenu
-            uint32_t popupsToRollup = PR_UINT32_MAX;
+            uint32_t popupsToRollup = UINT32_MAX;
             if (gRollupListener) {
                 nsAutoTArray<nsIWidget*, 5> widgetChain;
                 uint32_t sameTypeCount = gRollupListener->GetSubmenuWidgetChain(&widgetChain);
@@ -1047,7 +1047,7 @@ nsWindow::DoPaint(QPainter* aPainter, const QStyleOptionGraphicsItem* aOption, Q
 #endif //MOZ_ENABLE_QTMOBILITY
 
         if (mWidgetListener)
-          painted = mWidgetListener->PaintWindow(this, region, true, true);
+          painted = mWidgetListener->PaintWindow(this, region, nsIWidgetListener::SENT_WILL_PAINT | nsIWidgetListener::WILL_SEND_DID_PAINT);
         aPainter->endNativePainting();
         if (mWidgetListener)
           mWidgetListener->DidPaintWindow();
@@ -1105,7 +1105,7 @@ nsWindow::DoPaint(QPainter* aPainter, const QStyleOptionGraphicsItem* aOption, Q
             setupLayerManager(this, ctx, mozilla::layers::BUFFER_NONE);
         if (mWidgetListener) {
           nsIntRegion region(rect);
-          painted = mWidgetListener->PaintWindow(this, region, true, true);
+          painted = mWidgetListener->PaintWindow(this, region, nsIWidgetListener::SENT_WILL_PAINT | nsIWidgetListener::WILL_SEND_DID_PAINT);
         }
     }
 

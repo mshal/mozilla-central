@@ -9,6 +9,8 @@
  * responsible for converting the rules' information into computed style
  */
 
+#include <algorithm>
+
 #include "nsRuleNode.h"
 #include "nscore.h"
 #include "nsIServiceManager.h"
@@ -53,6 +55,8 @@
 #include <alloca.h>
 #endif
 
+using std::max;
+using std::min;
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -264,6 +268,24 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
     aFontSize = styleFont->mFont.size;
   }
   switch (aValue.GetUnit()) {
+    case eCSSUnit_ViewportWidth: {
+      aPresContext->SetUsesViewportUnits(true);
+      return ScaleCoord(aValue, 0.01f * aPresContext->GetVisibleArea().width);
+    }
+    case eCSSUnit_ViewportHeight: {
+      aPresContext->SetUsesViewportUnits(true);
+      return ScaleCoord(aValue, 0.01f * aPresContext->GetVisibleArea().height);
+    }
+    case eCSSUnit_ViewportMin: {
+      aPresContext->SetUsesViewportUnits(true);
+      nsSize viewportSize = aPresContext->GetVisibleArea().Size();
+      return ScaleCoord(aValue, 0.01f * min(viewportSize.width, viewportSize.height));
+    }
+    case eCSSUnit_ViewportMax: {
+      aPresContext->SetUsesViewportUnits(true);
+      nsSize viewportSize = aPresContext->GetVisibleArea().Size();
+      return ScaleCoord(aValue, 0.01f * max(viewportSize.width, viewportSize.height));
+    }
     case eCSSUnit_RootEM: {
       nscoord rootFontSize;
 
@@ -913,7 +935,7 @@ static void SetGradient(const nsCSSValue& aValue, nsPresContext* aPresContext,
     const nsCSSValueGradientStop &valueStop = gradient->mStops[i];
 
     if (!SetCoord(valueStop.mLocation, stop.mLocation,
-                  nsStyleCoord(), SETCOORD_LPO,
+                  nsStyleCoord(), SETCOORD_LPO | SETCOORD_STORE_CALC,
                   aContext, aPresContext, aCanStoreInRuleTree)) {
       NS_NOTREACHED("unexpected unit for gradient stop location");
     }
@@ -2981,7 +3003,9 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
     gfxFontStyle fontStyle;
     LookAndFeel::FontID fontID =
       (LookAndFeel::FontID)systemFontValue->GetIntValue();
-    if (LookAndFeel::GetFont(fontID, systemFont.name, fontStyle)) {
+    float devPerCSS = (float)nsPresContext::AppUnitsPerCSSPixel() /
+                      aPresContext->AppUnitsPerDevPixel();
+    if (LookAndFeel::GetFont(fontID, systemFont.name, fontStyle, devPerCSS)) {
       systemFont.style = fontStyle.style;
       systemFont.systemFont = fontStyle.systemFont;
       systemFont.variant = NS_FONT_VARIANT_NORMAL;

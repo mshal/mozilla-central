@@ -42,6 +42,7 @@
 #include "nsStyleUtil.h"
 #include "nsQuickSort.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsAttrName.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
@@ -2029,8 +2030,8 @@ static bool SelectorMatches(Element* aElement,
           //    aElement->StyleState().HasState(NS_EVENT_STATE_RTL)
           //
           // However, in markup languages where there is no direction attribute
-          // we have to consider the possibility that neither dir(rtl) nor
-          // dir(ltr) matches.
+          // we have to consider the possibility that neither -moz-dir(rtl) nor
+          // -moz-dir(ltr) matches.
           nsEventStates state = aElement->StyleState();
           bool elementIsRTL = state.HasState(NS_EVENT_STATE_RTL);
           bool elementIsLTR = state.HasState(NS_EVENT_STATE_LTR);
@@ -3248,14 +3249,14 @@ AncestorFilter::Init(Element *aElement)
   if (NS_LIKELY(aElement)) {
     MOZ_ASSERT(aElement->IsInDoc(),
                "aElement must be in the document for the assumption that "
-               "GetNodeParent() is non-null on all element ancestors of "
+               "GetParentNode() is non-null on all element ancestors of "
                "aElement to be true");
     // Collect up the ancestors
     nsAutoTArray<Element*, 50> ancestors;
     Element* cur = aElement;
     do {
       ancestors.AppendElement(cur);
-      nsINode* parent = cur->GetNodeParent();
+      nsINode* parent = cur->GetParentNode();
       if (!parent->IsElement()) {
         break;
       }
@@ -3324,10 +3325,10 @@ AncestorFilter::PopAncestor()
 void
 AncestorFilter::AssertHasAllAncestors(Element *aElement) const
 {
-  nsINode* cur = aElement->GetNodeParent();
+  nsINode* cur = aElement->GetParentNode();
   while (cur && cur->IsElement()) {
     MOZ_ASSERT(mElements.Contains(cur));
-    cur = cur->GetNodeParent();
+    cur = cur->GetParentNode();
   }
 }
 #endif

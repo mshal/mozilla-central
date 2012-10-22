@@ -87,6 +87,12 @@ public:
                        BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
   virtual nsresult
+  GetScoSocket(const nsAString& aObjectPath,
+               bool aAuth,
+               bool aEncrypt,
+               mozilla::ipc::UnixSocketConsumer* aConsumer) MOZ_OVERRIDE;
+
+  virtual nsresult
   GetSocketViaService(const nsAString& aObjectPath,
                       const nsAString& aService,
                       BluetoothSocketType aType,
@@ -94,6 +100,13 @@ public:
                       bool aEncrypt,
                       mozilla::ipc::UnixSocketConsumer* aConsumer,
                       BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
+
+  virtual nsresult
+  ListenSocketViaService(int aChannel,
+                         BluetoothSocketType aType,
+                         bool aAuth,
+                         bool aEncrypt,
+                         mozilla::ipc::UnixSocketConsumer* aConsumer) MOZ_OVERRIDE;
 
   virtual bool
   SetPinCodeInternal(const nsAString& aDeviceAddress,
@@ -116,6 +129,30 @@ public:
                            bool aAllow,
                            BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 
+  virtual bool
+  Connect(const nsAString& aDeviceAddress,
+          const nsAString& aAdapterPath,
+          const uint16_t aProfileId,
+          BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
+
+  virtual void
+  Disconnect(const uint16_t aProfileId,
+             BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
+
+  virtual bool
+  SendFile(const nsAString& aDeviceAddress,
+           BlobParent* aBlobParent,
+           BlobChild* aBlobChild,
+           BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
+
+  virtual bool
+  StopSendingFile(const nsAString& aDeviceAddress,
+                  BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
+
+  virtual void
+  ConfirmReceivingFile(const nsAString& aDeviceAddress,
+                       bool aConfirm,
+                       BluetoothReplyRunnable* aRunnable) MOZ_OVERRIDE;
 protected:
   BluetoothServiceChildProcess();
   virtual ~BluetoothServiceChildProcess();

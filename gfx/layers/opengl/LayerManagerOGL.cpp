@@ -37,6 +37,9 @@
 #ifdef MOZ_WIDGET_ANDROID
 #include <android/log.h>
 #endif
+#ifdef XP_MACOSX
+#include "gfxPlatformMac.h"
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -84,7 +87,7 @@ private:
       const TimeStamp& frame = mFrames[i];
       if (!frame.IsNull() && frame > beginningOfWindow) {
         ++numFramesDrawnInWindow;
-        earliestFrameInWindow = PR_MIN(earliestFrameInWindow, frame);
+        earliestFrameInWindow = NS_MIN(earliestFrameInWindow, frame);
       }
     }
     double realWindowSecs = (aNow - earliestFrameInWindow).ToSeconds();
@@ -641,6 +644,12 @@ LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
   }
 
   if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
+    if (aFlags & END_NO_COMPOSITE) {
+      // Apply pending tree updates before recomputing effective
+      // properties.
+      mRoot->ApplyPendingUpdatesToSubtree();
+    }
+
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
     mRoot->ComputeEffectiveTransforms(gfx3DMatrix());
@@ -865,6 +874,9 @@ LayerManagerOGL::Render()
   if (mIsRenderingToEGLSurface) {
     rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
   } else {
+    // FIXME/bug XXXXXX this races with rotation changes on the main
+    // thread, and undoes all the care we take with layers txns being
+    // sent atomically with rotation changes
     mWidget->GetClientBounds(rect);
   }
   WorldTransformRect(rect);
@@ -921,10 +933,10 @@ LayerManagerOGL::Render()
 
   mGLContext->fEnable(LOCAL_GL_SCISSOR_TEST);
 
-  // If the Java compositor is being used, this clear will be done in
+  // If the Android compositor is being used, this clear will be done in
   // DrawWindowUnderlay. Make sure the bits used here match up with those used
   // in mobile/android/base/gfx/LayerRenderer.java
-#ifndef MOZ_JAVA_COMPOSITOR
+#ifndef MOZ_ANDROID_OMTC
   mGLContext->fClearColor(0.0, 0.0, 0.0, 0.0);
   mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
 #endif
@@ -945,7 +957,7 @@ LayerManagerOGL::Render()
     if (mIsRenderingToEGLSurface) {
       rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
     } else {
-      mWidget->GetBounds(rect);
+      mWidget->GetClientBounds(rect);
     }
     nsRefPtr<gfxASurface> surf = gfxPlatform::GetPlatform()->CreateOffscreenSurface(rect.Size(), gfxASurface::CONTENT_COLOR_ALPHA);
     nsRefPtr<gfxContext> ctx = new gfxContext(surf);
@@ -1180,12 +1192,12 @@ LayerManagerOGL::CopyToTarget(gfxContext *aTarget)
   if (mIsRenderingToEGLSurface) {
     rect = nsIntRect(0, 0, mSurfaceSize.width, mSurfaceSize.height);
   } else {
-    mWidget->GetBounds(rect);
+    rect = nsIntRect(0, 0, mWidgetSize.width, mWidgetSize.height);
   }
   GLint width = rect.width;
   GLint height = rect.height;
 
-  if ((int64_t(width) * int64_t(height) * int64_t(4)) > PR_INT32_MAX) {
+  if ((int64_t(width) * int64_t(height) * int64_t(4)) > INT32_MAX) {
     NS_ERROR("Widget size too big - integer overflow!");
     return;
   }
@@ -1213,9 +1225,15 @@ LayerManagerOGL::CopyToTarget(gfxContext *aTarget)
 
   mGLContext->ReadPixelsIntoImageSurface(imageSurface);
 
+  // Map from GL space to Cairo space and reverse the world transform.
+  gfxMatrix glToCairoTransform = mWorldMatrix;
+  glToCairoTransform.Invert();
+  glToCairoTransform.Scale(1.0, -1.0);
+  glToCairoTransform.Translate(-gfxPoint(0.0, height));
+
+  gfxContextAutoSaveRestore restore(aTarget);
   aTarget->SetOperator(gfxContext::OPERATOR_SOURCE);
-  aTarget->Scale(1.0, -1.0);
-  aTarget->Translate(-gfxPoint(0.0, height));
+  aTarget->SetMatrix(glToCairoTransform);
   aTarget->SetSource(imageSurface);
   aTarget->Paint();
 }
@@ -1276,10 +1294,16 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
                                   0);
     } else {
       // Curses, incompatible formats.  Take a slow path.
-      //
-      // XXX Technically CopyTexSubImage2D also has the requirement of
-      // matching formats, but it doesn't seem to affect us in the
-      // real world.
+
+      // RGBA
+      size_t bufferSize = aRect.width * aRect.height * 4;
+      nsAutoArrayPtr<uint8_t> buf(new uint8_t[bufferSize]);
+
+      mGLContext->fReadPixels(aRect.x, aRect.y,
+                              aRect.width, aRect.height,
+                              LOCAL_GL_RGBA,
+                              LOCAL_GL_UNSIGNED_BYTE,
+                              buf);
       mGLContext->fTexImage2D(mFBOTextureTarget,
                               0,
                               LOCAL_GL_RGBA,
@@ -1287,12 +1311,7 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
                               0,
                               LOCAL_GL_RGBA,
                               LOCAL_GL_UNSIGNED_BYTE,
-                              NULL);
-      mGLContext->fCopyTexSubImage2D(mFBOTextureTarget,
-                                     0,    // level
-                                     0, 0, // offset
-                                     aRect.x, aRect.y,
-                                     aRect.width, aRect.height);
+                              buf);
     }
   } else {
     mGLContext->fTexImage2D(mFBOTextureTarget,
@@ -1412,6 +1431,26 @@ LayerManagerOGL::CreateShadowRefLayer()
     return nullptr;
   }
   return nsRefPtr<ShadowRefLayerOGL>(new ShadowRefLayerOGL(this)).forget();
+}
+
+TemporaryRef<DrawTarget>
+LayerManagerOGL::CreateDrawTarget(const IntSize &aSize,
+                               SurfaceFormat aFormat)
+{
+#ifdef XP_MACOSX
+  // We don't want to accelerate if the surface is too small which indicates
+  // that it's likely used for an icon/static image. We also don't want to
+  // accelerate anything that is above the maximum texture size of weakest gpu.
+  // Safari uses 5000 area as the minimum for acceleration, we decided 64^2 is more logical.
+  bool useAcceleration = aSize.width <= 4096 && aSize.height <= 4096 &&
+                         aSize.width > 64 && aSize.height > 64 &&
+                         gfxPlatformMac::GetPlatform()->UseAcceleratedCanvas();
+  if (useAcceleration) {
+    return Factory::CreateDrawTarget(BACKEND_COREGRAPHICS_ACCELERATED,
+                                     aSize, aFormat);
+  }
+#endif
+  return LayerManager::CreateDrawTarget(aSize, aFormat);
 }
 
 } /* layers */

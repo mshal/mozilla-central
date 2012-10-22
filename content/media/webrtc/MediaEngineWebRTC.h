@@ -11,6 +11,7 @@
 #include "nsIThread.h"
 #include "nsIRunnable.h"
 
+#include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nsDOMFile.h"
 #include "nsThreadUtils.h"
@@ -28,12 +29,12 @@
 // WebRTC library includes follow
 
 // Audio Engine
-#include "voice_engine/main/interface/voe_base.h"
-#include "voice_engine/main/interface/voe_codec.h"
-#include "voice_engine/main/interface/voe_hardware.h"
-#include "voice_engine/main/interface/voe_audio_processing.h"
-#include "voice_engine/main/interface/voe_volume_control.h"
-#include "voice_engine/main/interface/voe_external_media.h"
+#include "voice_engine/include/voe_base.h"
+#include "voice_engine/include/voe_codec.h"
+#include "voice_engine/include/voe_hardware.h"
+#include "voice_engine/include/voe_audio_processing.h"
+#include "voice_engine/include/voe_volume_control.h"
+#include "voice_engine/include/voe_external_media.h"
 
 // Video Engine
 #include "video_engine/include/vie_base.h"
@@ -48,35 +49,46 @@ namespace mozilla {
 /**
  * The WebRTC implementation of the MediaEngine interface.
  */
-
-enum WebRTCEngineState {
-  kAllocated,
-  kStarted,
-  kStopped,
-  kReleased
-};
-
 class MediaEngineWebRTCVideoSource : public MediaEngineVideoSource,
                                      public webrtc::ExternalRenderer,
                                      public nsRunnable
 {
 public:
+  static const int DEFAULT_VIDEO_FPS = 60;
+  static const int DEFAULT_MIN_VIDEO_FPS = 10;
+
   // ViEExternalRenderer.
   virtual int FrameSizeChange(unsigned int, unsigned int, unsigned int);
   virtual int DeliverFrame(unsigned char*, int, uint32_t, int64_t);
 
-  MediaEngineWebRTCVideoSource(webrtc::VideoEngine* videoEnginePtr,
-    int index, int aFps = 30);
-  ~MediaEngineWebRTCVideoSource();
+  MediaEngineWebRTCVideoSource(webrtc::VideoEngine* aVideoEnginePtr,
+    int aIndex, int aMinFps = DEFAULT_MIN_VIDEO_FPS)
+    : mVideoEngine(aVideoEnginePtr)
+    , mCaptureIndex(aIndex)
+    , mCapabilityChosen(false)
+    , mWidth(640)
+    , mHeight(480)
+    , mLastEndTime(0)
+    , mMonitor("WebRTCCamera.Monitor")
+    , mFps(DEFAULT_VIDEO_FPS)
+    , mMinFps(aMinFps)
+    , mInitDone(false)
+    , mInSnapshotMode(false)
+    , mSnapshotPath(NULL) {
+    mState = kReleased;
+    Init();
+  }
+  ~MediaEngineWebRTCVideoSource() { Shutdown(); }
 
   virtual void GetName(nsAString&);
   virtual void GetUUID(nsAString&);
-  virtual MediaEngineVideoOptions GetOptions();
+  virtual const MediaEngineVideoOptions *GetOptions();
   virtual nsresult Allocate();
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop();
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
 
   NS_DECL_ISUPPORTS
 
@@ -100,8 +112,8 @@ public:
   }
 
 private:
-  static const unsigned int KMaxDeviceNameLength;
-  static const unsigned int KMaxUniqueIdLength;
+  static const unsigned int KMaxDeviceNameLength = 128;
+  static const unsigned int KMaxUniqueIdLength = 256;
 
   // Initialize the needed Video engine interfaces.
   void Init();
@@ -113,26 +125,35 @@ private:
   webrtc::ViEBase* mViEBase;
   webrtc::ViECapture* mViECapture;
   webrtc::ViERender* mViERender;
-  webrtc::CaptureCapability mCaps; // Doesn't work on OS X.
+  webrtc::CaptureCapability mCapability; // Doesn't work on OS X.
 
-  int mCapIndex;
+  int mCaptureIndex;
+  bool mCapabilityChosen;
   int mWidth, mHeight;
   TrackID mTrackID;
+  TrackTicks mLastEndTime;
 
-  WebRTCEngineState mState;
   mozilla::ReentrantMonitor mMonitor; // Monitor for processing WebRTC frames.
   SourceMediaStream* mSource;
 
   int mFps; // Track rate (30 fps by default)
+  int mMinFps; // Min rate we want to accept
   bool mInitDone;
   bool mInSnapshotMode;
   nsString* mSnapshotPath;
 
+  nsRefPtr<layers::Image> mImage;
   nsRefPtr<layers::ImageContainer> mImageContainer;
 
   PRLock* mSnapshotLock;
   PRCondVar* mSnapshotCondVar;
 
+  // These are in UTF-8 but webrtc api uses char arrays
+  char mDeviceName[KMaxDeviceNameLength];
+  char mUniqueId[KMaxUniqueIdLength];
+
+  void ChooseCapability(uint32_t aWidth, uint32_t aHeight, uint32_t aMinFPS);
+  MediaEngineVideoOptions mOpts;
 };
 
 class MediaEngineWebRTCAudioSource : public MediaEngineAudioSource,
@@ -140,20 +161,17 @@ class MediaEngineWebRTCAudioSource : public MediaEngineAudioSource,
 {
 public:
   MediaEngineWebRTCAudioSource(webrtc::VoiceEngine* voiceEngine, int aIndex,
-    char* name, char* uuid)
+    const char* name, const char* uuid)
     : mVoiceEngine(voiceEngine)
     , mMonitor("WebRTCMic.Monitor")
     , mCapIndex(aIndex)
     , mChannel(-1)
-    , mInitDone(false)
-    , mState(kReleased) {
-
-    mVoEBase = webrtc::VoEBase::GetInterface(mVoiceEngine);
-    mDeviceName.Assign(NS_ConvertASCIItoUTF16(name));
-    mDeviceUUID.Assign(NS_ConvertASCIItoUTF16(uuid));
-    mInitDone = true;
+    , mInitDone(false) {
+    mState = kReleased;
+    mDeviceName.Assign(NS_ConvertUTF8toUTF16(name));
+    mDeviceUUID.Assign(NS_ConvertUTF8toUTF16(uuid));
+    Init();
   }
-
   ~MediaEngineWebRTCAudioSource() { Shutdown(); }
 
   virtual void GetName(nsAString&);
@@ -164,6 +182,7 @@ public:
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop();
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
 
   // VoEMediaProcess.
   void Process(const int channel, const webrtc::ProcessingTypes type,
@@ -173,8 +192,8 @@ public:
   NS_DECL_ISUPPORTS
 
 private:
-  static const unsigned int KMaxDeviceNameLength;
-  static const unsigned int KMaxUniqueIdLength;
+  static const unsigned int KMaxDeviceNameLength = 128;
+  static const unsigned int KMaxUniqueIdLength = 256;
 
   void Init();
   void Shutdown();
@@ -189,7 +208,6 @@ private:
   int mChannel;
   TrackID mTrackID;
   bool mInitDone;
-  WebRTCEngineState mState;
 
   nsString mDeviceName;
   nsString mDeviceUUID;
@@ -201,11 +219,15 @@ class MediaEngineWebRTC : public MediaEngine
 {
 public:
   MediaEngineWebRTC()
-  : mVideoEngine(NULL)
+  : mMutex("mozilla::MediaEngineWebRTC")
+  , mVideoEngine(NULL)
   , mVoiceEngine(NULL)
   , mVideoEngineInit(false)
-  , mAudioEngineInit(false) {}
-
+  , mAudioEngineInit(false)
+  {
+    mVideoSources.Init();
+    mAudioSources.Init();
+  }
   ~MediaEngineWebRTC() { Shutdown(); }
 
   // Clients should ensure to clean-up sources video/audio sources
@@ -216,12 +238,20 @@ public:
   virtual void EnumerateAudioDevices(nsTArray<nsRefPtr<MediaEngineAudioSource> >*);
 
 private:
+  Mutex mMutex;
+  // protected with mMutex:
+
   webrtc::VideoEngine* mVideoEngine;
   webrtc::VoiceEngine* mVoiceEngine;
 
   // Need this to avoid unneccesary WebRTC calls while enumerating.
   bool mVideoEngineInit;
   bool mAudioEngineInit;
+
+  // Store devices we've already seen in a hashtable for quick return.
+  // Maps UUID to MediaEngineSource (one set for audio, one for video).
+  nsRefPtrHashtable<nsStringHashKey, MediaEngineWebRTCVideoSource > mVideoSources;
+  nsRefPtrHashtable<nsStringHashKey, MediaEngineWebRTCAudioSource > mAudioSources;
 };
 
 }

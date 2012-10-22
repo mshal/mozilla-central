@@ -30,7 +30,7 @@ class imgLoader;
 class imgRequest;
 class imgRequestProxy;
 class imgIRequest;
-class imgIDecoderObserver;
+class imgINotificationObserver;
 class nsILoadGroup;
 class imgCacheExpirationTracker;
 class imgMemoryReporter;
@@ -226,6 +226,8 @@ public:
   nsresult Init();
 
   static nsresult GetMimeTypeFromContent(const char* aContents, uint32_t aLength, nsACString& aContentType);
+  // exported for use by mimei.cpp in libxul sdk builds
+  static NS_EXPORT_(bool) SupportImageWithMimeType(const char* aMimeType);
 
   static void GlobalInit(); // for use by the factory
   static void Shutdown(); // for use by the factory
@@ -287,7 +289,7 @@ private: // methods
   bool ValidateEntry(imgCacheEntry *aEntry, nsIURI *aKey,
                        nsIURI *aInitialDocumentURI, nsIURI *aReferrerURI, 
                        nsILoadGroup *aLoadGroup,
-                       imgIDecoderObserver *aObserver, nsISupports *aCX,
+                       imgINotificationObserver *aObserver, nsISupports *aCX,
                        nsLoadFlags aLoadFlags, bool aCanMakeNewChannel,
                        imgIRequest *aExistingRequest,
                        imgIRequest **aProxyRequest,
@@ -298,7 +300,7 @@ private: // methods
                                        nsIURI *aInitialDocumentURI,
                                        nsIURI *aReferrerURI,
                                        nsILoadGroup *aLoadGroup,
-                                       imgIDecoderObserver *aObserver,
+                                       imgINotificationObserver *aObserver,
                                        nsISupports *aCX, nsLoadFlags aLoadFlags,
                                        imgIRequest *aExistingRequest,
                                        imgIRequest **aProxyRequest,
@@ -307,7 +309,7 @@ private: // methods
                                        int32_t aCORSMode);
 
   nsresult CreateNewProxyForRequest(imgRequest *aRequest, nsILoadGroup *aLoadGroup,
-                                    imgIDecoderObserver *aObserver,
+                                    imgINotificationObserver *aObserver,
                                     nsLoadFlags aLoadFlags, imgIRequest *aRequestProxy,
                                     imgIRequest **_retval);
 

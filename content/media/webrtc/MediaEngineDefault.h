@@ -29,14 +29,6 @@ class PlanarYCbCrImage;
 /**
  * The default implementation of the MediaEngine interface.
  */
-
-enum DefaultEngineState {
-  kAllocated,
-  kStarted,
-  kStopped,
-  kReleased
-};
-
 class MediaEngineDefaultVideoSource : public nsITimerCallback,
                                       public MediaEngineVideoSource
 {
@@ -47,43 +39,48 @@ public:
   virtual void GetName(nsAString&);
   virtual void GetUUID(nsAString&);
 
-  virtual MediaEngineVideoOptions GetOptions();
+  virtual const MediaEngineVideoOptions *GetOptions();
   virtual nsresult Allocate();
-
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop();
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
+
+  // Need something better...
+  static const int DEFAULT_WIDTH=640;
+  static const int DEFAULT_HEIGHT=480;
+  static const int DEFAULT_FPS=30;
 
 protected:
   TrackID mTrackID;
   nsCOMPtr<nsITimer> mTimer;
   nsRefPtr<layers::ImageContainer> mImageContainer;
 
-  DefaultEngineState mState;
   SourceMediaStream* mSource;
   layers::PlanarYCbCrImage* mImage;
+  static const MediaEngineVideoOptions mOpts;
 };
 
 class MediaEngineDefaultAudioSource : public nsITimerCallback,
                                       public MediaEngineAudioSource
 {
 public:
-  MediaEngineDefaultAudioSource() : mTimer(nullptr), mState(kReleased) {}
-  ~MediaEngineDefaultAudioSource(){};
+  MediaEngineDefaultAudioSource();
+  ~MediaEngineDefaultAudioSource();
 
   virtual void GetName(nsAString&);
   virtual void GetUUID(nsAString&);
 
   virtual nsresult Allocate();
-
   virtual nsresult Deallocate();
   virtual nsresult Start(SourceMediaStream*, TrackID);
   virtual nsresult Stop();
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile);
+  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
@@ -92,25 +89,26 @@ protected:
   TrackID mTrackID;
   nsCOMPtr<nsITimer> mTimer;
 
-  DefaultEngineState mState;
   SourceMediaStream* mSource;
 };
 
 class MediaEngineDefault : public MediaEngine
 {
 public:
-  MediaEngineDefault() {
-    mVSource = new MediaEngineDefaultVideoSource();
-    mASource = new MediaEngineDefaultAudioSource();
-  }
+  MediaEngineDefault()
+  : mMutex("mozilla::MediaEngineDefault")
+  {}
   ~MediaEngineDefault() {}
 
   virtual void EnumerateVideoDevices(nsTArray<nsRefPtr<MediaEngineVideoSource> >*);
   virtual void EnumerateAudioDevices(nsTArray<nsRefPtr<MediaEngineAudioSource> >*);
 
 private:
-  nsRefPtr<MediaEngineVideoSource> mVSource;
-  nsRefPtr<MediaEngineAudioSource> mASource;
+  Mutex mMutex;
+  // protected with mMutex:
+
+  nsTArray<nsRefPtr<MediaEngineVideoSource> > mVSources;
+  nsTArray<nsRefPtr<MediaEngineAudioSource> > mASources;
 };
 
 }

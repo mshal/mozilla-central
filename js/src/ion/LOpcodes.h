@@ -20,11 +20,13 @@
     _(Parameter)                    \
     _(Callee)                       \
     _(TableSwitch)                  \
+    _(TableSwitchV)                 \
     _(Goto)                         \
     _(NewArray)                     \
     _(NewObject)                    \
     _(NewSlots)                     \
     _(NewCallObject)                \
+    _(NewStringObject)              \
     _(InitProp)                     \
     _(CheckOverRecursed)            \
     _(RecompileCheck)               \
@@ -69,6 +71,7 @@
     _(SqrtD)                        \
     _(PowI)                         \
     _(PowD)                         \
+    _(Random)                       \
     _(MathFunctionD)                \
     _(NotI)                         \
     _(NotD)                         \
@@ -93,6 +96,7 @@
     _(OsrValue)                     \
     _(OsrScopeChain)                \
     _(RegExp)                       \
+    _(RegExpTest)                   \
     _(Lambda)                       \
     _(LambdaForSingleton)           \
     _(ImplicitThis)                 \
@@ -120,6 +124,7 @@
     _(ArrayPopShiftT)               \
     _(ArrayPushV)                   \
     _(ArrayPushT)                   \
+    _(ArrayConcat)                  \
     _(StoreElementHoleV)            \
     _(StoreElementHoleT)            \
     _(LoadTypedArrayElement)        \
@@ -160,6 +165,7 @@
     _(ToIdV)                        \
     _(Floor)                        \
     _(Round)                        \
+    _(In)                           \
     _(InstanceOfO)                  \
     _(InstanceOfV)                  \
     _(InterruptCheck)               \

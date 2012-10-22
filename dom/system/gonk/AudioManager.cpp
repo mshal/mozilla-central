@@ -32,9 +32,11 @@ using namespace mozilla;
 #define HEADPHONES_STATUS_ON      NS_LITERAL_STRING("on").get()
 #define HEADPHONES_STATUS_OFF     NS_LITERAL_STRING("off").get()
 #define HEADPHONES_STATUS_UNKNOWN NS_LITERAL_STRING("unknown").get()
+#define BLUETOOTH_SCO_STATUS_CHANGED "bluetooth-sco-status-changed"
 
 // A bitwise variable for recording what kind of headset is attached.
 static int sHeadsetState;
+static int kBtSampleRate = 8000;
 
 static bool
 IsFmRadioAudioOn()
@@ -49,7 +51,7 @@ IsFmRadioAudioOn()
   }
 }
 
-NS_IMPL_ISUPPORTS1(AudioManager, nsIAudioManager)
+NS_IMPL_ISUPPORTS2(AudioManager, nsIAudioManager, nsIObserver)
 
 static AudioSystem::audio_devices
 GetRoutingMode(int aType) {
@@ -122,6 +124,33 @@ InternalSetAudioRoutes(SwitchState aState)
   }
 }
 
+nsresult
+AudioManager::Observe(nsISupports* aSubject,
+                      const char* aTopic,
+                      const PRUnichar* aData)
+{
+  if (!strcmp(aTopic, BLUETOOTH_SCO_STATUS_CHANGED)) {
+    if (aData) {
+      String8 cmd;
+      cmd.appendFormat("bt_samplerate=%d", kBtSampleRate);
+      AudioSystem::setParameters(0, cmd);
+      const char* address = NS_ConvertUTF16toUTF8(nsDependentString(aData)).get();
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_BLUETOOTH_SCO_HEADSET,
+                                            AUDIO_POLICY_DEVICE_STATE_AVAILABLE, address);
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET,
+                                            AUDIO_POLICY_DEVICE_STATE_AVAILABLE, address);
+    } else {
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_BLUETOOTH_SCO_HEADSET,
+                                            AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET,
+                                            AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+    }
+
+    return NS_OK;
+  }
+  return NS_ERROR_UNEXPECTED;
+}
+
 static void
 NotifyHeadphonesStatus(SwitchState aState)
 {
@@ -152,10 +181,21 @@ AudioManager::AudioManager() : mPhoneState(PHONE_STATE_CURRENT),
   RegisterSwitchObserver(SWITCH_HEADPHONES, mObserver);
 
   InternalSetAudioRoutes(GetCurrentSwitchState(SWITCH_HEADPHONES));
+  NotifyHeadphonesStatus(GetCurrentSwitchState(SWITCH_HEADPHONES));
+
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_FAILED(obs->AddObserver(this, BLUETOOTH_SCO_STATUS_CHANGED, false))) {
+    NS_WARNING("Failed to add bluetooth-sco-status-changed oberver!");
+  }
 }
 
 AudioManager::~AudioManager() {
   UnregisterSwitchObserver(SWITCH_HEADPHONES, mObserver);
+
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (NS_FAILED(obs->RemoveObserver(this, BLUETOOTH_SCO_STATUS_CHANGED))) {
+    NS_WARNING("Failed to add bluetooth-sco-status-changed oberver!");
+  }
 }
 
 NS_IMETHODIMP

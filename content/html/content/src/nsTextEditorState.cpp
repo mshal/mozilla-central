@@ -24,6 +24,7 @@
 #include "nsITransactionManager.h"
 #include "nsIControllerContext.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMEventListener.h"
 #include "EditActionListener.h"
@@ -1009,29 +1010,31 @@ public:
   PrepareEditorEvent(nsTextEditorState &aState,
                      nsIContent *aOwnerContent,
                      const nsAString &aCurrentValue)
-    : mState(aState)
+    : mState(aState.asWeakPtr())
     , mOwnerContent(aOwnerContent)
     , mCurrentValue(aCurrentValue)
   {
-    mState.mValueTransferInProgress = true;
+    aState.mValueTransferInProgress = true;
   }
 
   NS_IMETHOD Run() {
+    NS_ENSURE_TRUE(mState, NS_ERROR_NULL_POINTER);
+
     // Transfer the saved value to the editor if we have one
     const nsAString *value = nullptr;
     if (!mCurrentValue.IsEmpty()) {
       value = &mCurrentValue;
     }
 
-    mState.PrepareEditor(value);
+    mState->PrepareEditor(value);
 
-    mState.mValueTransferInProgress = false;
+    mState->mValueTransferInProgress = false;
 
     return NS_OK;
   }
 
 private:
-  nsTextEditorState &mState;
+  WeakPtr<nsTextEditorState> mState;
   nsCOMPtr<nsIContent> mOwnerContent; // strong reference
   nsAutoString mCurrentValue;
 };
@@ -1119,6 +1122,26 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
   return NS_OK;
 }
 
+struct PreDestroyer
+{
+  void Init(nsIEditor* aEditor)
+  {
+    mNewEditor = aEditor;
+  }
+  ~PreDestroyer()
+  {
+    if (mNewEditor) {
+      mNewEditor->PreDestroy(true);
+    }
+  }
+  void Swap(nsCOMPtr<nsIEditor>& aEditor)
+  {
+    return mNewEditor.swap(aEditor);
+  }
+private:
+  nsCOMPtr<nsIEditor> mNewEditor;
+};
+
 nsresult
 nsTextEditorState::PrepareEditor(const nsAString *aValue)
 {
@@ -1165,12 +1188,14 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
   bool shouldInitializeEditor = false;
   nsCOMPtr<nsIEditor> newEditor; // the editor that we might create
   nsresult rv = NS_OK;
+  PreDestroyer preDestroyer;
   if (!mEditor) {
     shouldInitializeEditor = true;
 
     // Create an editor
     newEditor = do_CreateInstance(kTextEditorCID, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
+    preDestroyer.Init(newEditor);
 
     // Make sure we clear out the non-breaking space before we initialize the editor
     rv = mBoundFrame->UpdateValueDisplay(false, true);
@@ -1299,7 +1324,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
 
   if (shouldInitializeEditor) {
     // Hold on to the newly created editor
-    mEditor = newEditor;
+    preDestroyer.Swap(mEditor);
   }
 
   // If we have a default value, insert it under the div we created

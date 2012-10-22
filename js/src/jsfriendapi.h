@@ -265,6 +265,9 @@ typedef void
 extern JS_FRIEND_API(void)
 VisitGrayWrapperTargets(JSCompartment *comp, GCThingCallback *callback, void *closure);
 
+extern JS_FRIEND_API(JSObject *)
+GetWeakmapKeyDelegate(JSObject *key);
+
 /*
  * Shadow declarations of JS internal structures, for access by inline access
  * functions below. Do not use these structures in any other way. When adding
@@ -973,10 +976,10 @@ uint32_t GetListBaseExpandoSlot();
  * out-of-band for js_DateGet*)
  */
 extern JS_FRIEND_API(JSBool)
-js_DateIsValid(JSContext *cx, JSObject* obj);
+js_DateIsValid(JSObject* obj);
 
 extern JS_FRIEND_API(double)
-js_DateGetMsecSinceEpoch(JSContext *cx, JSRawObject obj);
+js_DateGetMsecSinceEpoch(JSRawObject obj);
 
 /* Implemented in jscntxt.cpp. */
 

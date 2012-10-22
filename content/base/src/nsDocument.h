@@ -694,7 +694,7 @@ public:
   virtual bool IsNodeOfType(uint32_t aFlags) const;
   virtual nsIContent *GetChildAt(uint32_t aIndex) const;
   virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
-  virtual int32_t IndexOf(nsINode* aPossibleChild) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
   virtual uint32_t GetChildCount() const;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
@@ -735,7 +735,7 @@ private:
 
 public:
   // nsIDOMNode
-  NS_DECL_NSIDOMNODE
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE_OVERRIDABLE
 
   // nsIDOMDocument
   NS_DECL_NSIDOMDOCUMENT
@@ -915,7 +915,7 @@ public:
   virtual Element *LookupImageElement(const nsAString& aElementId);
 
   virtual NS_HIDDEN_(nsresult) AddImage(imgIRequest* aImage);
-  virtual NS_HIDDEN_(nsresult) RemoveImage(imgIRequest* aImage);
+  virtual NS_HIDDEN_(nsresult) RemoveImage(imgIRequest* aImage, uint32_t aFlags);
   virtual NS_HIDDEN_(nsresult) SetImageLockingState(bool aLocked);
 
   // AddPlugin adds a plugin-related element to mPlugins when the element is

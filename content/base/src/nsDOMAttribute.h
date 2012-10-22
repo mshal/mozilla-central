@@ -36,7 +36,13 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   // nsIDOMNode interface
-  NS_DECL_NSIDOMNODE
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
+  virtual void GetTextContentInternal(nsAString& aTextContent);
+  virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError);
+  virtual void GetNodeValueInternal(nsAString& aNodeValue);
+  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
+                                    mozilla::ErrorResult& aError);
 
   // nsIDOMAttr interface
   NS_DECL_NSIDOMATTR
@@ -53,7 +59,7 @@ public:
   virtual uint32_t GetChildCount() const;
   virtual nsIContent *GetChildAt(uint32_t aIndex) const;
   virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
-  virtual int32_t IndexOf(nsINode* aPossibleChild) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
   virtual nsresult AppendChildTo(nsIContent* aKid, bool aNotify);

@@ -85,6 +85,7 @@ public:
                                        const nsAString& aBody,
                                        const char *aURL, uint32_t aLineNo,
                                        uint32_t aVersion,
+                                       bool aIsXBL,
                                        nsScriptObjectHolder<JSObject>& aHandler);
   virtual nsresult CallEventHandler(nsISupports* aTarget, JSObject* aScope,
                                     JSObject* aHandler,
@@ -102,6 +103,7 @@ public:
                                    uint32_t aLineNo,
                                    uint32_t aVersion,
                                    bool aShared,
+                                   bool aIsXBL,
                                    JSObject** aFunctionObject);
 
   virtual nsIScriptGlobalObject *GetGlobalObject();
@@ -119,9 +121,6 @@ public:
   virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts);
 
   virtual nsresult SetProperty(JSObject* aTarget, const char* aPropName, nsISupports* aVal);
-
-  virtual bool GetProcessingScriptTag();
-  virtual void SetProcessingScriptTag(bool aResult);
 
   virtual bool GetExecutingScript();
 
@@ -283,7 +282,6 @@ private:
   bool mIsInitialized;
   bool mScriptsEnabled;
   bool mGCOnDestruction;
-  bool mProcessingScriptTag;
 
   uint32_t mExecuteDepth;
   uint32_t mDefaultJSOptions;

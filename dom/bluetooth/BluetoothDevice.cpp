@@ -15,6 +15,7 @@
 #include "nsIDOMDOMRequest.h"
 #include "nsDOMClassInfo.h"
 #include "nsContentUtils.h"
+#include "nsTArrayHelpers.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 
 USING_BLUETOOTH_NAMESPACE
@@ -61,17 +62,6 @@ BluetoothDevice::BluetoothDevice(nsPIDOMWindow* aOwner,
     aValue.get_ArrayOfBluetoothNamedValue();
   for (uint32_t i = 0; i < values.Length(); ++i) {
     SetPropertyByValue(values[i]);
-    if (values[i].name().EqualsLiteral("Path")) {
-      // Since this is our signal handler string, set it as we set the property
-      // in the object. Odd place to do it, but makes more sense than in
-      // SetPropertyByValue.
-      BluetoothService* bs = BluetoothService::Get();
-      if (!bs) {
-        NS_WARNING("BluetoothService not available!");
-      } else {
-        bs->RegisterBluetoothSignalHandler(mPath, this);
-      }
-    }
   }
 }
 
@@ -120,15 +110,7 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
   } else if (name.EqualsLiteral("Icon")) {
     mIcon = value.get_nsString();
   } else if (name.EqualsLiteral("Connected")) {
-#ifdef MOZ_WIDGET_GONK
-    // Connected is an 2-byte array
-    // arr[0]: boolean value, true means connected, false means disconnected
-    // arr[1]: disconnection reason
-    InfallibleTArray<uint8_t> arr = value.get_ArrayOfuint8_t();
-    mConnected = (arr[0] == 1);
-#else
     mConnected = value.get_bool();
-#endif
   } else if (name.EqualsLiteral("Paired")) {
     mPaired = value.get_bool();
   } else if (name.EqualsLiteral("UUIDs")) {
@@ -137,8 +119,7 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
     nsIScriptContext* sc = GetContextForEventHandlers(&rv);
     if (sc) {
       rv =
-        StringArrayToJSArray(sc->GetNativeContext(),
-                             sc->GetNativeGlobal(), mUuids, &mJsUuids);
+        nsTArrayToJSArray(sc->GetNativeContext(), mUuids, &mJsUuids);
       if (NS_FAILED(rv)) {
         NS_WARNING("Cannot set JS UUIDs object!");
         return;
@@ -153,8 +134,7 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
     nsIScriptContext* sc = GetContextForEventHandlers(&rv);
     if (sc) {
       rv =
-        StringArrayToJSArray(sc->GetNativeContext(),
-                             sc->GetNativeGlobal(), mServices, &mJsServices);
+        nsTArrayToJSArray(sc->GetNativeContext(), mServices, &mJsServices);
       if (NS_FAILED(rv)) {
         NS_WARNING("Cannot set JS Services object!");
         return;
@@ -208,21 +188,8 @@ BluetoothDevice::Notify(const BluetoothSignal& aData)
 
     SetPropertyByValue(v);
     if (name.EqualsLiteral("Connected")) {
-      nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nullptr, nullptr);
-      nsresult rv;
-      if (mConnected) {
-        rv = event->InitEvent(NS_LITERAL_STRING("connected"), false, false);
-      } else {
-        rv = event->InitEvent(NS_LITERAL_STRING("disconnected"), false, false);
-      }
-      if (NS_FAILED(rv)) {
-        NS_WARNING("Failed to init the connected/disconnected event!!!");
-        return;
-      }
-
-      event->SetTrusted(true);
-      bool dummy;
-      DispatchEvent(event, &dummy);
+      DispatchTrustedEvent(mConnected ? NS_LITERAL_STRING("connected")
+                           : NS_LITERAL_STRING("disconnected"));
     } else {
       nsRefPtr<BluetoothPropertyEvent> e = BluetoothPropertyEvent::Create(name);
       e->Dispatch(ToIDOMEventTarget(), NS_LITERAL_STRING("propertychanged"));

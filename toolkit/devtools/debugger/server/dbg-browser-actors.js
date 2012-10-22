@@ -141,7 +141,7 @@ BrowserRootActor.prototype = {
     for (let name in aFactories) {
       let actor = this._extraActors[name];
       if (!actor) {
-        actor = aFactories[name].bind(null, this.conn);
+        actor = aFactories[name].bind(null, this.conn, this);
         actor.prototype = aFactories[name].prototype;
         actor.parentID = this.actorID;
         this._extraActors[name] = actor;
@@ -280,8 +280,8 @@ BrowserTabActor.prototype = {
   /**
    * Remove the specified breakpint from the default actor pool.
    *
-   * @param string aActor
-   *        The actor ID.
+   * @param BreakpointActor aActor
+   *        The actor object.
    */
   removeFromBreakpointPool: function BTA_removeFromBreakpointPool(aActor) {
     this.conn.removeActor(aActor);

@@ -390,6 +390,10 @@ public:
   // nsIInterfaceRequestor
   NS_DECL_NSIINTERFACEREQUESTOR
 
+  // WebIDL interface.
+  uint32_t GetLength();
+  already_AddRefed<nsIDOMWindow> IndexedGetter(uint32_t aIndex, bool& aFound);
+
   // Object Management
   nsGlobalWindow(nsGlobalWindow *aOuterWindow);
 
@@ -537,6 +541,9 @@ public:
   virtual void EnableTimeChangeNotifications();
   virtual void DisableTimeChangeNotifications();
 
+  virtual void EnableNetworkEvent(uint32_t aType);
+  virtual void DisableNetworkEvent(uint32_t aType);
+
   virtual nsresult SetArguments(nsIArray *aArguments, nsIPrincipal *aOrigin);
 
   static bool DOMWindowDumpEnabled();
@@ -597,6 +604,10 @@ public:
   bool ContainsIdleObserver(nsIIdleObserver* aIdleObserver, uint32_t timeInS);
   void HandleIdleObserverCallback();
 
+  void AllowScriptsToClose()
+  {
+    mAllowScriptsToClose = true;
+  }
 protected:
   // Array of idle observers that are notified of idle events.
   nsTObserverArray<IdleObserverHolder> mIdleObservers;
@@ -918,6 +929,15 @@ protected:
   // Helper for creating performance objects.
   void CreatePerformanceObjectIfNeeded();
 
+  // Outer windows only.
+  nsDOMWindowList* GetWindowList();
+
+  // Helper for getComputedStyle and getDefaultComputedStyle
+  nsresult GetComputedStyleHelper(nsIDOMElement* aElt,
+                                  const nsAString& aPseudoElt,
+                                  bool aDefaultStylesOnly,
+                                  nsIDOMCSSStyleDeclaration** aReturn);
+
   // When adding new member variables, be careful not to create cycles
   // through JavaScript.  If there is any chance that a member variable
   // could own objects that are implemented in JavaScript, then those
@@ -986,6 +1006,9 @@ protected:
 
   // whether we've sent the destroy notification for our window id
   bool                   mNotifiedIDDestroyed : 1;
+  // whether scripts may close the window,
+  // even if "dom.allow_scripts_to_close_windows" is false.
+  bool                   mAllowScriptsToClose : 1;
 
   nsCOMPtr<nsIScriptContext>    mContext;
   nsWeakPtr                     mOpener;

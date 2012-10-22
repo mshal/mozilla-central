@@ -20,7 +20,6 @@ WIN_LIBS=                                       \
 
 ---------------------------------------------------------------------- */
 
-#include "prmem.h"
 #include "plstr.h"
 #include <windows.h>
 #include <tchar.h>
@@ -409,7 +408,7 @@ static PropKeyInfo gAllPropKeys[] = {
     {"asLaidOutWindows", rad4},
     {"selectedFrameWindows", rad5},
     {"separateFramesWindows", rad6},
-    {NULL, NULL}};
+    {NULL, 0}};
 
 //--------------------------------------------------------
 //--------------------------------------------------------
@@ -883,7 +882,7 @@ ShowNativePrintDialog(HWND              aHWnd,
   prntdlg.lpPrintTemplateName = NULL;
 
   if (!ShouldExtendPrintDialog()) {
-    prntdlg.lCustData         = NULL;
+    prntdlg.lCustData         = 0;
     prntdlg.lpfnPrintHook     = NULL;
   } else {
     // Set up print dialog "hook" procedure for extending the dialog

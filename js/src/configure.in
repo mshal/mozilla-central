@@ -55,7 +55,7 @@ NSPR_VERSION=4
 dnl Set the minimum version of toolkit libs used by mozilla
 dnl ========================================================
 PERL_VERSION=5.006
-PYTHON_VERSION=2.5
+PYTHON_VERSION=2.6
 WINDRES_VERSION=2.14.90
 W32API_VERSION=3.14
 
@@ -167,6 +167,7 @@ if test -n "$gonkdir" ; then
     AR="$gonk_toolchain_prefix"ar
     RANLIB="$gonk_toolchain_prefix"ranlib
     STRIP="$gonk_toolchain_prefix"strip
+    OBJCOPY="$gonk_toolchain_prefix"objcopy
 
     STLPORT_CPPFLAGS="-I$gonkdir/external/stlport/stlport"
     STLPORT_LIBS="-lstlport"
@@ -399,9 +400,14 @@ case "$target" in
         CFLAGS="$CFLAGS -TC -nologo"
         CXXFLAGS="$CXXFLAGS -TP -nologo"
         # MSVC warning C4345 warns of newly conformant behavior as of VS2003.
+        # MSVC warning C4351 warns of newly conformant behavior as of VS2005.
+        # MSVC warning C4800 warns when a value is implicitly cast to bool,
+        # because this also forces narrowing to a single byte, which can be a
+        # perf hit.  But this matters so little in practice (and often we want
+        # that behavior) that it's better to turn it off.
         # _CRT_SECURE_NO_WARNINGS disables warnings about using MSVC-specific
         # secure CRT functions.
-        CXXFLAGS="$CXXFLAGS -wd4345 -D_CRT_SECURE_NO_WARNINGS"
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -D_CRT_SECURE_NO_WARNINGS"
         AC_LANG_SAVE
         AC_LANG_C
         AC_TRY_COMPILE([#include <stdio.h>],
@@ -1399,8 +1405,8 @@ dnl System overrides of the defaults for host
 dnl ========================================================
 case "$host" in
 *mingw*)
-    # we need Python 2.5 on Windows
-    PYTHON_VERSION=2.5
+    # we need Python 2.6 on Windows
+    PYTHON_VERSION=2.6
     if test -n "$_WIN32_MSVC"; then
         HOST_AR=lib
         HOST_AR_FLAGS='-NOLOGO -OUT:"$@"'
@@ -1730,6 +1736,11 @@ ia64*-hpux*)
         DLL_PREFIX=
         IMPORT_LIB_SUFFIX=dll.a
         GCC_VERSION=`$CC -v 2>&1 | awk '/^gcc version/ { print $3 }'`
+
+        # We use mix of both POSIX and Win32 printf format across the tree, so format
+        # warnings are useless on mingw.
+        MOZ_C_SUPPORTS_WARNING(-Wno-, format, ac_c_has_wno_format)
+        MOZ_CXX_SUPPORTS_WARNING(-Wno-, format, ac_cxx_has_wno_format)
     else
         TARGET_COMPILER_ABI=msvc
         HOST_CC='$(CC)'
@@ -1762,8 +1773,8 @@ ia64*-hpux*)
         _DEFINES_CXXFLAGS='-FI $(DEPTH)/js-confdefs.h -DMOZILLA_CLIENT'
         CFLAGS="$CFLAGS -W3 -Gy -Fd\$(COMPILE_PDBFILE)"
         CXXFLAGS="$CXXFLAGS -W3 -Gy -Fd\$(COMPILE_PDBFILE)"
-        # MSVC warnings C4244 and C4800 are ubiquitous, useless, and annoying.
-        CXXFLAGS="$CXXFLAGS -wd4244 -wd4800"
+        # MSVC warning C4244 is ubiquitous, useless, and annoying.
+        CXXFLAGS="$CXXFLAGS -wd4244"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -1778,24 +1789,22 @@ ia64*-hpux*)
         XPCOM_FROZEN_LDOPTS='$(LIBXUL_DIST)/lib/xpcom.lib $(LIBXUL_DIST)/lib/mozalloc.lib'
         LIBXUL_LIBS='$(LIBXUL_DIST)/lib/xpcom.lib $(LIBXUL_DIST)/lib/xul.lib $(LIBXUL_DIST)/lib/mozalloc.lib'
         MOZ_COMPONENT_NSPR_LIBS='$(NSPR_LIBS)'
-        if test $_MSC_VER -ge 1400; then
-            LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE -NXCOMPAT"
-            dnl For profile-guided optimization
-            PROFILE_GEN_CFLAGS="-GL"
-            PROFILE_GEN_LDFLAGS="-LTCG:PGINSTRUMENT"
-            dnl XXX: PGO builds can fail with warnings treated as errors,
-            dnl specifically "no profile data available" appears to be
-            dnl treated as an error sometimes. This might be a consequence
-            dnl of using WARNINGS_AS_ERRORS in some modules, combined
-            dnl with the linker doing most of the work in the whole-program
-            dnl optimization/PGO case. I think it's probably a compiler bug,
-            dnl but we work around it here.
-            PROFILE_USE_CFLAGS="-GL -wd4624 -wd4952"
-            dnl XXX: should be -LTCG:PGOPTIMIZE, but that fails on libxul.
-            dnl Probably also a compiler bug, but what can you do?
-            PROFILE_USE_LDFLAGS="-LTCG:PGUPDATE"
-            LDFLAGS="$LDFLAGS -DYNAMICBASE"
-        fi
+        LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE -NXCOMPAT"
+        dnl For profile-guided optimization
+        PROFILE_GEN_CFLAGS="-GL"
+        PROFILE_GEN_LDFLAGS="-LTCG:PGINSTRUMENT"
+        dnl XXX: PGO builds can fail with warnings treated as errors,
+        dnl specifically "no profile data available" appears to be
+        dnl treated as an error sometimes. This might be a consequence
+        dnl of using WARNINGS_AS_ERRORS in some modules, combined
+        dnl with the linker doing most of the work in the whole-program
+        dnl optimization/PGO case. I think it's probably a compiler bug,
+        dnl but we work around it here.
+        PROFILE_USE_CFLAGS="-GL -wd4624 -wd4952"
+        dnl XXX: should be -LTCG:PGOPTIMIZE, but that fails on libxul.
+        dnl Probably also a compiler bug, but what can you do?
+        PROFILE_USE_LDFLAGS="-LTCG:PGUPDATE"
+        LDFLAGS="$LDFLAGS -DYNAMICBASE"
     fi
     AC_DEFINE(HAVE_SNPRINTF)
     AC_DEFINE(_WINDOWS)
@@ -1852,15 +1861,12 @@ ia64*-hpux*)
             AC_MSG_ERROR([You are targeting i386 but using the 64-bit compiler.])
         fi
 
-        if test $_MSC_VER -ge 1400; then
-            LDFLAGS="$LDFLAGS -SAFESEH"
-        fi
-
         if test -n "$GNU_CC"; then
             CFLAGS="$CFLAGS -mstackrealign -fno-keep-inline-dllexport"
             CXXFLAGS="$CXXFLAGS -mstackrealign -fno-keep-inline-dllexport"
         else
             DSO_LDOPTS="$DSO_LDOPTS -MACHINE:X86"
+            LDFLAGS="$LDFLAGS -SAFESEH"
         fi
 
     	AC_DEFINE(_X86_)
@@ -3069,23 +3075,6 @@ if test "$ac_cv_thread_keyword" = yes; then
       ;;
   esac
 fi
-
-dnl Check for the existence of various allocation headers/functions
-
-MALLOC_H=
-MOZ_CHECK_HEADER(malloc.h,        [MALLOC_H=malloc.h])
-if test "$MALLOC_H" = ""; then
-  MOZ_CHECK_HEADER(malloc/malloc.h, [MALLOC_H=malloc/malloc.h])
-  if test "$MALLOC_H" = ""; then
-    MOZ_CHECK_HEADER(sys/malloc.h,    [MALLOC_H=sys/malloc.h])
-  fi
-fi
-if test "$MALLOC_H" != ""; then
-   AC_DEFINE_UNQUOTED(MALLOC_H, <$MALLOC_H>)
-fi
-
-MOZ_ALLOCATING_FUNCS="strndup posix_memalign memalign valloc"
-AC_CHECK_FUNCS(strndup posix_memalign memalign valloc)
 
 dnl See if compiler supports some gcc-style attributes
 

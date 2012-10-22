@@ -44,14 +44,13 @@
 #include "nsIParser.h"
 #include "nsIFragmentContentSink.h"
 #include "nsIContentSink.h"
-#include "nsContentList.h"
 #include "nsIHTMLDocument.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIForm.h"
 #include "nsIFormControl.h"
 #include "nsGkAtoms.h"
-#include "imgIDecoderObserver.h"
+#include "imgINotificationObserver.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
 #include "imgILoader.h"
@@ -99,6 +98,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsDOMJSUtils.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsReferencedElement.h"
 #include "nsIDragService.h"
 #include "nsIChannelEventSink.h"
@@ -128,6 +128,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsISVGChildFrame.h"
 #include "nsRenderingContext.h"
 #include "gfxSVGGlyphs.h"
+#include "mozilla/dom/EncodingUtils.h"
 
 #ifdef IBMBIDI
 #include "nsIBidiKeyboard.h"
@@ -169,6 +170,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsIParserService.h"
 #include "nsIDOMScriptObjectFactory.h"
 #include "nsSandboxFlags.h"
+#include "nsSVGFeatures.h"
 
 #include "nsWrapperCacheInlines.h"
 
@@ -248,8 +250,8 @@ namespace {
 /**
  * Default values for the ViewportInfo structure.
  */
-static const float    kViewportMinScale = 0.0;
-static const float    kViewportMaxScale = 10.0;
+static const double   kViewportMinScale = 0.0;
+static const double   kViewportMaxScale = 10.0;
 static const uint32_t kViewportMinWidth = 200;
 static const uint32_t kViewportMaxWidth = 10000;
 static const uint32_t kViewportMinHeight = 223;
@@ -275,7 +277,7 @@ public:
     NS_ASSERTION(!mListenerManager, "caller must release and disconnect ELM");
   }
 
-private:
+protected:          // declared protected to silence clang warnings
   const void *mKey; // must be first, to look like PLDHashEntryStub
 
 public:
@@ -1527,6 +1529,7 @@ nsContentUtils::Shutdown()
 
   NS_IF_RELEASE(sSameOriginChecker);
   
+  EncodingUtils::Shutdown();
   nsTextEditorState::ShutDown();
 }
 
@@ -1672,7 +1675,7 @@ nsContentUtils::InProlog(nsINode *aNode)
 {
   NS_PRECONDITION(aNode, "missing node to nsContentUtils::InProlog");
 
-  nsINode* parent = aNode->GetNodeParent();
+  nsINode* parent = aNode->GetParentNode();
   if (!parent || !parent->IsNodeOfType(nsINode::eDOCUMENT)) {
     return false;
   }
@@ -1715,23 +1718,6 @@ nsContentUtils::TraceSafeJSContext(JSTracer* aTrc)
   if (JSObject* global = JS_GetGlobalObject(cx)) {
     JS_CALL_OBJECT_TRACER(aTrc, global, "safe context");
   }
-}
-
-nsresult
-nsContentUtils::ReparentContentWrappersInScope(JSContext *cx,
-                                               nsIScriptGlobalObject *aOldScope,
-                                               nsIScriptGlobalObject *aNewScope)
-{
-  JSObject *oldScopeObj = aOldScope->GetGlobalJSObject();
-  JSObject *newScopeObj = aNewScope->GetGlobalJSObject();
-
-  if (!newScopeObj || !oldScopeObj) {
-    // We can't really do anything without the JSObjects.
-
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  return sXPConnect->MoveWrappers(cx, oldScopeObj, newScopeObj);
 }
 
 nsPIDOMWindow *
@@ -1825,7 +1811,7 @@ nsContentUtils::GetCrossDocParentNode(nsINode* aChild)
 {
   NS_PRECONDITION(aChild, "The child is null!");
 
-  nsINode* parent = aChild->GetNodeParent();
+  nsINode* parent = aChild->GetParentNode();
   if (parent || !aChild->IsNodeOfType(nsINode::eDOCUMENT))
     return parent;
 
@@ -1845,7 +1831,7 @@ nsContentUtils::ContentIsDescendantOf(const nsINode* aPossibleDescendant,
   do {
     if (aPossibleDescendant == aPossibleAncestor)
       return true;
-    aPossibleDescendant = aPossibleDescendant->GetNodeParent();
+    aPossibleDescendant = aPossibleDescendant->GetParentNode();
   } while (aPossibleDescendant);
 
   return false;
@@ -1876,7 +1862,7 @@ nsContentUtils::GetAncestors(nsINode* aNode,
 {
   while (aNode) {
     aArray.AppendElement(aNode);
-    aNode = aNode->GetNodeParent();
+    aNode = aNode->GetParentNode();
   }
   return NS_OK;
 }
@@ -1955,11 +1941,11 @@ nsContentUtils::GetCommonAncestor(nsINode* aNode1,
   nsAutoTArray<nsINode*, 30> parents1, parents2;
   do {
     parents1.AppendElement(aNode1);
-    aNode1 = aNode1->GetNodeParent();
+    aNode1 = aNode1->GetParentNode();
   } while (aNode1);
   do {
     parents2.AppendElement(aNode2);
-    aNode2 = aNode2->GetNodeParent();
+    aNode2 = aNode2->GetParentNode();
   } while (aNode2);
 
   // Find where the parent chain differs
@@ -1996,11 +1982,11 @@ nsContentUtils::ComparePoints(nsINode* aParent1, int32_t aOffset1,
   nsINode* node2 = aParent2;
   do {
     parents1.AppendElement(node1);
-    node1 = node1->GetNodeParent();
+    node1 = node1->GetParentNode();
   } while (node1);
   do {
     parents2.AppendElement(node2);
-    node2 = node2->GetNodeParent();
+    node2 = node2->GetParentNode();
   } while (node2);
 
   uint32_t pos1 = parents1.Length() - 1;
@@ -2354,16 +2340,30 @@ nsContentUtils::GenerateStateKey(nsIContent* aContent,
     // Now start at aContent and append the indices of it and all its ancestors
     // in their containers.  That should at least pin down its position in the
     // DOM...
-    nsINode* parent = aContent->GetNodeParent();
+    nsINode* parent = aContent->GetParentNode();
     nsINode* content = aContent;
     while (parent) {
       KeyAppendInt(parent->IndexOf(content), aKey);
       content = parent;
-      parent = content->GetNodeParent();
+      parent = content->GetParentNode();
     }
   }
 
   return NS_OK;
+}
+
+// static
+nsIPrincipal*
+nsContentUtils::GetSubjectPrincipal()
+{
+  nsCOMPtr<nsIPrincipal> subject;
+  sSecurityManager->GetSubjectPrincipal(getter_AddRefs(subject));
+
+  // When the ssm says the subject is null, that means system principal.
+  if (!subject)
+    sSecurityManager->GetSystemPrincipal(getter_AddRefs(subject));
+
+  return subject;
 }
 
 // static
@@ -2692,11 +2692,7 @@ nsContentUtils::GetImgLoaderForDocument(nsIDocument* aDoc)
     }
   } else {
     nsCOMPtr<nsIChannel> channel = aDoc->GetChannel();
-    if (channel) {
-      nsCOMPtr<nsILoadContext> context;
-      NS_QueryNotificationCallbacks(channel, context);
-      isPrivate = context && context->UsePrivateBrowsing();
-    }
+    isPrivate = channel && NS_UsePrivateBrowsing(channel);
   }
   return isPrivate ? sPrivateImgLoader : sImgLoader;
 }
@@ -2735,7 +2731,7 @@ nsContentUtils::IsImageInCache(nsIURI* aURI, nsIDocument* aDocument)
 nsresult
 nsContentUtils::LoadImage(nsIURI* aURI, nsIDocument* aLoadingDocument,
                           nsIPrincipal* aLoadingPrincipal, nsIURI* aReferrer,
-                          imgIDecoderObserver* aObserver, int32_t aLoadFlags,
+                          imgINotificationObserver* aObserver, int32_t aLoadFlags,
                           imgIRequest** aRequest)
 {
   NS_PRECONDITION(aURI, "Must have a URI");
@@ -2778,7 +2774,7 @@ nsContentUtils::LoadImage(nsIURI* aURI, nsIDocument* aLoadingDocument,
                               aReferrer,            /* referrer */
                               aLoadingPrincipal,    /* loading principal */
                               loadGroup,            /* loadgroup */
-                              aObserver,            /* imgIDecoderObserver */
+                              aObserver,            /* imgINotificationObserver */
                               aLoadingDocument,     /* uniquification key */
                               aLoadFlags,           /* load flags */
                               nullptr,               /* cache key */
@@ -3827,7 +3823,7 @@ nsContentUtils::HasMutationListeners(nsINode* aNode,
   }
 
   if (aNode->IsNodeOfType(nsINode::eCONTENT) &&
-      static_cast<nsIContent*>(aNode)->IsInNativeAnonymousSubtree()) {
+      static_cast<nsIContent*>(aNode)->ChromeOnlyAccess()) {
     return false;
   }
 
@@ -3862,7 +3858,7 @@ nsContentUtils::HasMutationListeners(nsINode* aNode,
         continue;
       }
     }
-    aNode = aNode->GetNodeParent();
+    aNode = aNode->GetParentNode();
   }
 
   return false;
@@ -3886,7 +3882,7 @@ nsContentUtils::MaybeFireNodeRemoved(nsINode* aChild, nsINode* aParent,
                                      nsIDocument* aOwnerDoc)
 {
   NS_PRECONDITION(aChild, "Missing child");
-  NS_PRECONDITION(aChild->GetNodeParent() == aParent, "Wrong parent");
+  NS_PRECONDITION(aChild->GetParentNode() == aParent, "Wrong parent");
   NS_PRECONDITION(aChild->OwnerDoc() == aOwnerDoc, "Wrong owner-doc");
 
   // This checks that IsSafeToRunScript is true since we don't want to fire
@@ -3935,7 +3931,7 @@ ListenerEnumerator(PLDHashTable* aTable, PLDHashEntryHdr* aEntry,
     nsINode* n = static_cast<nsINode*>(entry->mListenerManager->GetTarget());
     if (n && n->IsInDoc() &&
         nsCCUncollectableMarker::InGeneration(n->OwnerDoc()->GetMarkedCCGeneration())) {
-      entry->mListenerManager->UnmarkGrayJSListeners();
+      entry->mListenerManager->MarkForCC();
     }
   }
   return PL_DHASH_NEXT;
@@ -4386,7 +4382,7 @@ nsContentUtils::SetNodeTextContent(nsIContent* aContent,
       nsCOMPtr<nsINode> child;
       bool skipFirst = aTryReuse;
       for (child = aContent->GetFirstChild();
-           child && child->GetNodeParent() == aContent;
+           child && child->GetParentNode() == aContent;
            child = child->GetNextSibling()) {
         if (skipFirst && child->IsNodeOfType(nsINode::eTEXT)) {
           skipFirst = false;
@@ -5103,6 +5099,18 @@ static void ProcessViewportToken(nsIDocument *aDocument,
                          (c == '\t') || (c == '\n') || (c == '\r'))
 
 /* static */
+void
+nsContentUtils::ConstrainViewportValues(ViewportInfo& aViewInfo)
+{
+  // Constrain the min/max zoom as specified at:
+  // dev.w3.org/csswg/css-device-adapt section 6.2
+  aViewInfo.maxZoom = NS_MAX(aViewInfo.minZoom, aViewInfo.maxZoom);
+
+  aViewInfo.defaultZoom = NS_MIN(aViewInfo.defaultZoom, aViewInfo.maxZoom);
+  aViewInfo.defaultZoom = NS_MAX(aViewInfo.defaultZoom, aViewInfo.minZoom);
+}
+
+/* static */
 ViewportInfo
 nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
                                 uint32_t aDisplayWidth,
@@ -5112,6 +5120,10 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
   ret.defaultZoom = 1.0;
   ret.autoSize = true;
   ret.allowZoom = true;
+  ret.width = aDisplayWidth;
+  ret.height = aDisplayHeight;
+  ret.minZoom = kViewportMinScale;
+  ret.maxZoom = kViewportMaxScale;
 
   nsAutoString viewport;
   aDocument->GetHeaderData(nsGkAtoms::viewport, viewport);
@@ -5129,6 +5141,7 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
             (docId.Find("Mobile") != -1) ||
             (docId.Find("WML") != -1))
         {
+          nsContentUtils::ConstrainViewportValues(ret);
           return ret;
         }
       }
@@ -5137,6 +5150,7 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
     nsAutoString handheldFriendly;
     aDocument->GetHeaderData(nsGkAtoms::handheldFriendly, handheldFriendly);
     if (handheldFriendly.EqualsLiteral("true")) {
+      nsContentUtils::ConstrainViewportValues(ret);
       return ret;
     }
   }
@@ -5151,8 +5165,8 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
     scaleMinFloat = kViewportMinScale;
   }
 
-  scaleMinFloat = NS_MIN(scaleMinFloat, kViewportMaxScale);
-  scaleMinFloat = NS_MAX(scaleMinFloat, kViewportMinScale);
+  scaleMinFloat = NS_MIN((double)scaleMinFloat, kViewportMaxScale);
+  scaleMinFloat = NS_MAX((double)scaleMinFloat, kViewportMinScale);
 
   nsAutoString maxScaleStr;
   aDocument->GetHeaderData(nsGkAtoms::viewport_maximum_scale, maxScaleStr);
@@ -5166,16 +5180,14 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
     scaleMaxFloat = kViewportMaxScale;
   }
 
-  scaleMaxFloat = NS_MIN(scaleMaxFloat, kViewportMaxScale);
-  scaleMaxFloat = NS_MAX(scaleMaxFloat, kViewportMinScale);
+  scaleMaxFloat = NS_MIN((double)scaleMaxFloat, kViewportMaxScale);
+  scaleMaxFloat = NS_MAX((double)scaleMaxFloat, kViewportMinScale);
 
   nsAutoString scaleStr;
   aDocument->GetHeaderData(nsGkAtoms::viewport_initial_scale, scaleStr);
 
   nsresult scaleErrorCode;
   float scaleFloat = scaleStr.ToFloat(&scaleErrorCode);
-  scaleFloat = NS_MIN(scaleFloat, scaleMaxFloat);
-  scaleFloat = NS_MAX(scaleFloat, scaleMinFloat);
 
   nsAutoString widthStr, heightStr;
 
@@ -5275,6 +5287,8 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
   ret.minZoom = scaleMinFloat;
   ret.maxZoom = scaleMaxFloat;
   ret.autoSize = autoSize;
+
+  nsContentUtils::ConstrainViewportValues(ret);
   return ret;
 }
 
@@ -6036,47 +6050,26 @@ nsContentTypeParser::GetParameter(const char* aParameterName, nsAString& aResult
 bool
 nsContentUtils::CanAccessNativeAnon()
 {
-  JSContext* cx = nullptr;
-  sThreadJSContextStack->Peek(&cx);
+  JSContext* cx = GetCurrentJSContext();
   if (!cx) {
     return true;
   }
-  JSStackFrame* fp;
-  nsIPrincipal* principal =
-    sSecurityManager->GetCxSubjectPrincipalAndFrame(cx, &fp);
-  NS_ENSURE_TRUE(principal, false);
 
-  JSScript *script = nullptr;
-  if (fp) {
-    script = JS_GetFrameScript(cx, fp);
-  } else {
-    if (!JS_DescribeScriptedCaller(cx, &script, nullptr)) {
-      // No code at all is running. So we must be arriving here as the result
-      // of C++ code asking us to do something. Allow access.
-      return true;
-    }
-  }
-
-  bool privileged;
-  if (NS_SUCCEEDED(sSecurityManager->IsSystemPrincipal(principal, &privileged)) &&
-      privileged) {
-    // Chrome things are allowed to touch us.
+  if (IsCallerChrome()) {
     return true;
   }
 
-  // XXX HACK EWW! Allow chrome://global/ access to these things, even
-  // if they've been cloned into less privileged contexts.
+  // Allow any code loaded from chrome://global/ to touch us, even if it was
+  // cloned into a less privileged context.
+  JSScript *script;
+  if (!JS_DescribeScriptedCaller(cx, &script, nullptr) || !script) {
+    return false;
+  }
   static const char prefix[] = "chrome://global/";
   const char *filename;
-  if (script &&
-      (filename = JS_GetScriptFilename(cx, script)) &&
-      !strncmp(filename, prefix, ArrayLength(prefix) - 1)) {
-    return true;
-  }
-
-  // Before we throw, check for UniversalXPConnect.
-  nsresult rv = sSecurityManager->IsCapabilityEnabled("UniversalXPConnect", &privileged);
-  if (NS_SUCCEEDED(rv) && privileged) {
+  if ((filename = JS_GetScriptFilename(cx, script)) &&
+      !strncmp(filename, prefix, ArrayLength(prefix) - 1))
+  {
     return true;
   }
 
@@ -6204,6 +6197,26 @@ nsContentUtils::CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
   return NS_OK;
 }
 
+// Initial implementation: only stores to RAM, not file
+// TODO: bug 704447: large file support
+nsresult
+nsContentUtils::CreateBlobBuffer(JSContext* aCx,
+                                 const nsACString& aData,
+                                 jsval& aBlob)
+{
+  uint32_t blobLen = aData.Length();
+  void* blobData = PR_Malloc(blobLen);
+  nsCOMPtr<nsIDOMBlob> blob;
+  if (blobData) {
+    memcpy(blobData, aData.BeginReading(), blobLen);
+    blob = new nsDOMMemoryFile(blobData, blobLen, EmptyString());
+  } else {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  JSObject* scope = JS_GetGlobalForScopeChain(aCx);
+  return nsContentUtils::WrapNative(aCx, scope, blob, &aBlob, nullptr, true);
+}
+
 void
 nsContentUtils::StripNullChars(const nsAString& aInStr, nsAString& aOutStr)
 {
@@ -6231,9 +6244,10 @@ struct ClassMatchingInfo {
   nsCaseTreatment mCaseTreatment;
 };
 
-static bool
-MatchClassNames(nsIContent* aContent, int32_t aNamespaceID, nsIAtom* aAtom,
-                void* aData)
+// static
+bool
+nsContentUtils::MatchClassNames(nsIContent* aContent, int32_t aNamespaceID,
+                                nsIAtom* aAtom, void* aData)
 {
   // We can't match if there are no class names
   const nsAttrValue* classAttr = aContent->GetClasses();
@@ -6259,23 +6273,23 @@ MatchClassNames(nsIContent* aContent, int32_t aNamespaceID, nsIAtom* aAtom,
   return true;
 }
 
-static void
-DestroyClassNameArray(void* aData)
+// static
+void
+nsContentUtils::DestroyClassNameArray(void* aData)
 {
   ClassMatchingInfo* info = static_cast<ClassMatchingInfo*>(aData);
   delete info;
 }
 
-static void*
-AllocClassMatchingInfo(nsINode* aRootNode,
-                       const nsString* aClasses)
+// static
+void*
+nsContentUtils::AllocClassMatchingInfo(nsINode* aRootNode,
+                                       const nsString* aClasses)
 {
   nsAttrValue attrValue;
   attrValue.ParseAtomArray(*aClasses);
   // nsAttrValue::Equals is sensitive to order, so we'll send an array
   ClassMatchingInfo* info = new ClassMatchingInfo;
-  NS_ENSURE_TRUE(info, nullptr);
-
   if (attrValue.Type() == nsAttrValue::eAtomArray) {
     info->mClasses.SwapElements(*(attrValue.GetAtomArrayValue()));
   } else if (attrValue.Type() == nsAttrValue::eAtom) {
@@ -6289,26 +6303,6 @@ AllocClassMatchingInfo(nsINode* aRootNode,
 }
 
 // static
-
-nsresult
-nsContentUtils::GetElementsByClassName(nsINode* aRootNode,
-                                       const nsAString& aClasses,
-                                       nsIDOMNodeList** aReturn)
-{
-  NS_PRECONDITION(aRootNode, "Must have root node");
-  
-  nsContentList* elements =
-    NS_GetFuncStringHTMLCollection(aRootNode, MatchClassNames,
-                                   DestroyClassNameArray,
-                                   AllocClassMatchingInfo,
-                                   aClasses).get();
-  NS_ENSURE_TRUE(elements, NS_ERROR_OUT_OF_MEMORY);
-
-  // Transfer ownership
-  *aReturn = elements;
-
-  return NS_OK;
-}
 
 #ifdef DEBUG
 class DebugWrapperTraversalCallback : public nsCycleCollectionTraversalCallback
@@ -6358,7 +6352,7 @@ public:
   {
   }
 
-  NS_IMETHOD_(void) NoteWeakMapping(void* map, void* key, void* val)
+  NS_IMETHOD_(void) NoteWeakMapping(void* map, void* key, void* kdelegate, void* val)
   {
   }
 
@@ -6378,26 +6372,24 @@ DebugWrapperTraceCallback(void *p, const char *name, void *closure)
 
 // static
 void
-nsContentUtils::CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
-                                        nsWrapperCache* aCache)
+nsContentUtils::CheckCCWrapperTraversal(void* aScriptObjectHolder,
+                                        nsWrapperCache* aCache,
+                                        nsScriptObjectTracer* aTracer)
 {
   JSObject* wrapper = aCache->GetWrapper();
   if (!wrapper) {
     return;
   }
 
-  nsXPCOMCycleCollectionParticipant* participant;
-  CallQueryInterface(aScriptObjectHolder, &participant);
-
   DebugWrapperTraversalCallback callback(wrapper);
 
-  participant->Traverse(aScriptObjectHolder, callback);
+  aTracer->Traverse(aScriptObjectHolder, callback);
   NS_ASSERTION(callback.mFound,
                "Cycle collection participant didn't traverse to preserved "
                "wrapper! This will probably crash.");
 
   callback.mFound = false;
-  participant->Trace(aScriptObjectHolder, DebugWrapperTraceCallback, &callback);
+  aTracer->Trace(aScriptObjectHolder, DebugWrapperTraceCallback, &callback);
   NS_ASSERTION(callback.mFound,
                "Cycle collection participant didn't trace preserved wrapper! "
                "This will probably crash.");
@@ -6510,8 +6502,8 @@ nsContentUtils::PlatformToDOMLineBreaks(nsString &aString)
   }
 }
 
-nsIWidget *
-nsContentUtils::WidgetForDocument(nsIDocument *aDoc)
+nsIPresShell*
+nsContentUtils::FindPresShellForDocument(nsIDocument* aDoc)
 {
   nsIDocument* doc = aDoc;
   nsIDocument* displayDoc = doc->GetDisplayDocument();
@@ -6520,25 +6512,35 @@ nsContentUtils::WidgetForDocument(nsIDocument *aDoc)
   }
 
   nsIPresShell* shell = doc->GetShell();
+  if (shell) {
+    return shell;
+  }
+
   nsCOMPtr<nsISupports> container = doc->GetContainer();
   nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem = do_QueryInterface(container);
-  while (!shell && docShellTreeItem) {
+  while (docShellTreeItem) {
     // We may be in a display:none subdocument, or we may not have a presshell
     // created yet.
     // Walk the docshell tree to find the nearest container that has a presshell,
-    // and find the root widget from that.
+    // and return that.
     nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(docShellTreeItem);
     nsCOMPtr<nsIPresShell> presShell;
     docShell->GetPresShell(getter_AddRefs(presShell));
     if (presShell) {
-      shell = presShell;
-    } else {
-      nsCOMPtr<nsIDocShellTreeItem> parent;
-      docShellTreeItem->GetParent(getter_AddRefs(parent));
-      docShellTreeItem = parent;
+      return presShell;
     }
+    nsCOMPtr<nsIDocShellTreeItem> parent;
+    docShellTreeItem->GetParent(getter_AddRefs(parent));
+    docShellTreeItem = parent;
   }
 
+  return nullptr;
+}
+
+nsIWidget*
+nsContentUtils::WidgetForDocument(nsIDocument* aDoc)
+{
+  nsIPresShell* shell = FindPresShellForDocument(aDoc);
   if (shell) {
     nsIViewManager* VM = shell->GetViewManager();
     if (VM) {
@@ -6916,7 +6918,7 @@ nsContentUtils::GetRootDocument(nsIDocument* aDoc)
 
 // static
 void
-nsContentUtils::ReleaseWrapper(nsISupports* aScriptObjectHolder,
+nsContentUtils::ReleaseWrapper(void* aScriptObjectHolder,
                                nsWrapperCache* aCache)
 {
   if (aCache->PreservingWrapper()) {
@@ -6925,9 +6927,7 @@ nsContentUtils::ReleaseWrapper(nsISupports* aScriptObjectHolder,
     // from both here.
     JSObject* obj = aCache->GetWrapperPreserveColor();
     if (aCache->IsDOMBinding() && obj) {
-      JSCompartment *compartment = js::GetObjectCompartment(obj);
-      xpc::CompartmentPrivate *priv =
-        static_cast<xpc::CompartmentPrivate *>(JS_GetCompartmentPrivate(compartment));
+      xpc::CompartmentPrivate *priv = xpc::GetCompartmentPrivate(obj);
       priv->RemoveDOMExpandoObject(obj);
     }
     DropJSObjects(aScriptObjectHolder);
@@ -7110,4 +7110,64 @@ nsContentUtils::GetHTMLEditor(nsPresContext* aPresContext)
   nsCOMPtr<nsIEditor> editor;
   editorDocShell->GetEditor(getter_AddRefs(editor));
   return editor;
+}
+
+bool
+nsContentUtils::InternalIsSupported(nsISupports* aObject,
+                                    const nsAString& aFeature,
+                                    const nsAString& aVersion)
+{
+  // Convert the incoming UTF16 strings to raw char*'s to save us some
+  // code when doing all those string compares.
+  NS_ConvertUTF16toUTF8 feature(aFeature);
+  NS_ConvertUTF16toUTF8 version(aVersion);
+
+  const char *f = feature.get();
+  const char *v = version.get();
+
+  if (PL_strcasecmp(f, "XML") == 0 ||
+      PL_strcasecmp(f, "HTML") == 0) {
+    if (aVersion.IsEmpty() ||
+        PL_strcmp(v, "1.0") == 0 ||
+        PL_strcmp(v, "2.0") == 0) {
+      return true;
+    }
+  } else if (PL_strcasecmp(f, "Views") == 0 ||
+             PL_strcasecmp(f, "StyleSheets") == 0 ||
+             PL_strcasecmp(f, "Core") == 0 ||
+             PL_strcasecmp(f, "CSS") == 0 ||
+             PL_strcasecmp(f, "CSS2") == 0 ||
+             PL_strcasecmp(f, "Events") == 0 ||
+             PL_strcasecmp(f, "UIEvents") == 0 ||
+             PL_strcasecmp(f, "MouseEvents") == 0 ||
+             // Non-standard!
+             PL_strcasecmp(f, "MouseScrollEvents") == 0 ||
+             PL_strcasecmp(f, "HTMLEvents") == 0 ||
+             PL_strcasecmp(f, "Range") == 0 ||
+             PL_strcasecmp(f, "XHTML") == 0) {
+    if (aVersion.IsEmpty() ||
+        PL_strcmp(v, "2.0") == 0) {
+      return true;
+    }
+  } else if (PL_strcasecmp(f, "XPath") == 0) {
+    if (aVersion.IsEmpty() ||
+        PL_strcmp(v, "3.0") == 0) {
+      return true;
+    }
+  } else if (PL_strcasecmp(f, "SVGEvents") == 0 ||
+             PL_strcasecmp(f, "SVGZoomEvents") == 0 ||
+             nsSVGFeatures::HasFeature(aObject, aFeature)) {
+    if (aVersion.IsEmpty() ||
+        PL_strcmp(v, "1.0") == 0 ||
+        PL_strcmp(v, "1.1") == 0) {
+      return true;
+    }
+  }
+  else if (NS_SMILEnabled() && PL_strcasecmp(f, "TimeControl") == 0) {
+    if (aVersion.IsEmpty() || PL_strcmp(v, "1.0") == 0) {
+      return true;
+    }
+  }
+
+  return false;
 }

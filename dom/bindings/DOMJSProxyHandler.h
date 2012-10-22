@@ -19,16 +19,17 @@ namespace mozilla {
 namespace dom {
 
 enum {
-  JSPROXYSLOT_EXPANDO = 0
+  JSPROXYSLOT_EXPANDO = 0,
+  JSPROXYSLOT_XRAY_EXPANDO
 };
 
 template<typename T> struct Prefable;
 
-class DOMProxyHandler : public DOMBaseProxyHandler
+class DOMProxyHandler : public js::BaseProxyHandler
 {
 public:
   DOMProxyHandler(const DOMClass& aClass)
-    : DOMBaseProxyHandler(true),
+    : js::BaseProxyHandler(ProxyFamily()),
       mClass(aClass)
   {
   }

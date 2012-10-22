@@ -10,7 +10,7 @@
 #include "SVGAnimatedNumberList.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "dombindings.h"
+#include "mozilla/dom/SVGNumberListBinding.h"
 
 // See the comment in this file's header.
 
@@ -77,15 +77,7 @@ NS_INTERFACE_MAP_END
 JSObject*
 DOMSVGNumberList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::SVGNumberList::create(cx, scope, this,
-                                                      triedToWrap);
-}
-
-nsIDOMSVGNumber*
-DOMSVGNumberList::GetItemAt(uint32_t aIndex)
-{
-  ErrorResult rv;
-  return GetItem(aIndex, rv);
+  return mozilla::dom::SVGNumberListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 void

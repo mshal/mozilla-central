@@ -99,7 +99,7 @@
 #include "nsRuleProcessorData.h"
 #include "nsAsyncDOMEvent.h"
 #include "nsTextNode.h"
-#include "dombindings.h"
+#include "mozilla/dom/NodeListBinding.h"
 
 #ifdef MOZ_XUL
 #include "nsIXULDocument.h"
@@ -112,7 +112,6 @@
 
 #include "prprf.h"
 #include "nsDOMMutationObserver.h"
-#include "nsSVGFeatures.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsCycleCollector.h"
 #include "xpcpublic.h"
@@ -134,12 +133,12 @@ bool nsIContent::sTabFocusModelAppliesToXUL = false;
 uint32_t nsMutationGuard::sMutationCount = 0;
 
 nsIContent*
-nsIContent::FindFirstNonNativeAnonymous() const
+nsIContent::FindFirstNonChromeOnlyAccessContent() const
 {
   // This handles also nested native anonymous content.
   for (const nsIContent *content = this; content;
        content = content->GetBindingParent()) {
-    if (!content->IsInNativeAnonymousSubtree()) {
+    if (!content->ChromeOnlyAccess()) {
       // Oops, this function signature allows casting const to
       // non-const.  (Then again, so does GetChildAt(0)->GetParent().)
       return const_cast<nsIContent*>(content);
@@ -389,7 +388,7 @@ JSObject*
 nsChildContentList::WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::NodeList::create(cx, scope, this, triedToWrap);
+  return NodeListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 NS_IMETHODIMP
@@ -403,7 +402,7 @@ nsChildContentList::GetLength(uint32_t* aLength)
 NS_IMETHODIMP
 nsChildContentList::Item(uint32_t aIndex, nsIDOMNode** aReturn)
 {
-  nsINode* node = GetNodeAt(aIndex);
+  nsINode* node = Item(aIndex);
   if (!node) {
     *aReturn = nullptr;
 
@@ -414,7 +413,7 @@ nsChildContentList::Item(uint32_t aIndex, nsIDOMNode** aReturn)
 }
 
 nsIContent*
-nsChildContentList::GetNodeAt(uint32_t aIndex)
+nsChildContentList::Item(uint32_t aIndex)
 {
   if (mNode) {
     return mNode->GetChildAt(aIndex);
@@ -448,7 +447,8 @@ NS_IMETHODIMP
 nsNode3Tearoff::LookupNamespaceURI(const nsAString& aNamespacePrefix,
                                    nsAString& aNamespaceURI)
 {
-  return mNode->LookupNamespaceURI(aNamespacePrefix, aNamespaceURI);
+  mNode->LookupNamespaceURI(aNamespacePrefix, aNamespaceURI);
+  return NS_OK;
 }
 
 nsContentList*
@@ -475,10 +475,9 @@ NS_IMPL_ISUPPORTS1(nsNodeWeakReference,
 nsNodeWeakReference::~nsNodeWeakReference()
 {
   if (mNode) {
-    NS_ASSERTION(mNode->GetSlots() &&
-                 mNode->GetSlots()->mWeakReference == this,
+    NS_ASSERTION(mNode->Slots()->mWeakReference == this,
                  "Weak reference has wrong value");
-    mNode->GetSlots()->mWeakReference = nullptr;
+    mNode->Slots()->mWeakReference = nullptr;
   }
 }
 
@@ -502,9 +501,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsNodeSupportsWeakRefTearoff)
 NS_IMETHODIMP
 nsNodeSupportsWeakRefTearoff::GetWeakReference(nsIWeakReference** aInstancePtr)
 {
-  nsINode::nsSlots* slots = mNode->GetSlots();
-  NS_ENSURE_TRUE(slots, NS_ERROR_OUT_OF_MEMORY);
-
+  nsINode::nsSlots* slots = mNode->Slots();
   if (!slots->mWeakReference) {
     slots->mWeakReference = new nsNodeWeakReference(mNode);
     NS_ENSURE_TRUE(slots->mWeakReference, NS_ERROR_OUT_OF_MEMORY);
@@ -598,6 +595,30 @@ FragmentOrElement::nsDOMSlots::Unlink(bool aIsXUL)
   }
 }
 
+size_t
+FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+
+  if (mAttributeMap) {
+    n += mAttributeMap->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - Superclass members (nsINode::nsSlots)
+  // - mStyle
+  // - mDataSet
+  // - mSMILOverrideStyle
+  // - mSMILOverrideStyleRule
+  // - mChildrenList
+  // - mClassList
+
+  // The following members are not measured:
+  // - mBindingParent / mControllers: because they're   non-owning
+  return n;
+}
+
 FragmentOrElement::FragmentOrElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsIContent(aNodeInfo)
 {
@@ -610,153 +631,6 @@ FragmentOrElement::~FragmentOrElement()
   if (GetParent()) {
     NS_RELEASE(mParent);
   }
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetNodeName(nsAString& aNodeName)
-{
-  aNodeName = NodeName();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetLocalName(nsAString& aLocalName)
-{
-  aLocalName = LocalName();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetNodeValue(nsAString& aNodeValue)
-{
-  SetDOMStringToNull(aNodeValue);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::SetNodeValue(const nsAString& aNodeValue)
-{
-  // The DOM spec says that when nodeValue is defined to be null "setting it
-  // has no effect", so we don't throw an exception.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetNodeType(uint16_t* aNodeType)
-{
-  *aNodeType = NodeType();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetNamespaceURI(nsAString& aNamespaceURI)
-{
-  return mNodeInfo->GetNamespaceURI(aNamespaceURI);
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetPrefix(nsAString& aPrefix)
-{
-  mNodeInfo->GetPrefix(aPrefix);
-  return NS_OK;
-}
-
-nsresult
-FragmentOrElement::InternalIsSupported(nsISupports* aObject,
-                                      const nsAString& aFeature,
-                                      const nsAString& aVersion,
-                                      bool* aReturn)
-{
-  NS_ENSURE_ARG_POINTER(aReturn);
-  *aReturn = false;
-
-  // Convert the incoming UTF16 strings to raw char*'s to save us some
-  // code when doing all those string compares.
-  NS_ConvertUTF16toUTF8 feature(aFeature);
-  NS_ConvertUTF16toUTF8 version(aVersion);
-
-  const char *f = feature.get();
-  const char *v = version.get();
-
-  if (PL_strcasecmp(f, "XML") == 0 ||
-      PL_strcasecmp(f, "HTML") == 0) {
-    if (aVersion.IsEmpty() ||
-        PL_strcmp(v, "1.0") == 0 ||
-        PL_strcmp(v, "2.0") == 0) {
-      *aReturn = true;
-    }
-  } else if (PL_strcasecmp(f, "Views") == 0 ||
-             PL_strcasecmp(f, "StyleSheets") == 0 ||
-             PL_strcasecmp(f, "Core") == 0 ||
-             PL_strcasecmp(f, "CSS") == 0 ||
-             PL_strcasecmp(f, "CSS2") == 0 ||
-             PL_strcasecmp(f, "Events") == 0 ||
-             PL_strcasecmp(f, "UIEvents") == 0 ||
-             PL_strcasecmp(f, "MouseEvents") == 0 ||
-             // Non-standard!
-             PL_strcasecmp(f, "MouseScrollEvents") == 0 ||
-             PL_strcasecmp(f, "HTMLEvents") == 0 ||
-             PL_strcasecmp(f, "Range") == 0 ||
-             PL_strcasecmp(f, "XHTML") == 0) {
-    if (aVersion.IsEmpty() ||
-        PL_strcmp(v, "2.0") == 0) {
-      *aReturn = true;
-    }
-  } else if (PL_strcasecmp(f, "XPath") == 0) {
-    if (aVersion.IsEmpty() ||
-        PL_strcmp(v, "3.0") == 0) {
-      *aReturn = true;
-    }
-  } else if (PL_strcasecmp(f, "SVGEvents") == 0 ||
-             PL_strcasecmp(f, "SVGZoomEvents") == 0 ||
-             nsSVGFeatures::HasFeature(aObject, aFeature)) {
-    if (aVersion.IsEmpty() ||
-        PL_strcmp(v, "1.0") == 0 ||
-        PL_strcmp(v, "1.1") == 0) {
-      *aReturn = true;
-    }
-  }
-  else if (NS_SMILEnabled() && PL_strcasecmp(f, "TimeControl") == 0) {
-    if (aVersion.IsEmpty() || PL_strcmp(v, "1.0") == 0) {
-      *aReturn = true;
-    }
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::IsSupported(const nsAString& aFeature,
-                               const nsAString& aVersion,
-                               bool* aReturn)
-{
-  return InternalIsSupported(this, aFeature, aVersion, aReturn);
-}
-
-NS_IMETHODIMP
-FragmentOrElement::HasAttributes(bool* aReturn)
-{
-  NS_ENSURE_ARG_POINTER(aReturn);
-
-  *aReturn = GetAttrCount() > 0;
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FragmentOrElement::GetAttributes(nsIDOMNamedNodeMap** aAttributes)
-{
-  *aAttributes = nullptr;
-  return NS_OK;
-}
-
-nsresult
-FragmentOrElement::HasChildNodes(bool* aReturn)
-{
-  *aReturn = mAttrsAndChildren.ChildCount() > 0;
-
-  return NS_OK;
 }
 
 already_AddRefed<nsINodeList>
@@ -787,7 +661,7 @@ FragmentOrElement::GetChildren(uint32_t aFilter)
   if (!(aFilter & eAllButXBL)) {
     childList = document->BindingManager()->GetXBLChildNodesFor(this);
     if (!childList) {
-      childList = GetChildNodesList();
+      childList = ChildNodes();
     }
 
   } else {
@@ -798,7 +672,7 @@ FragmentOrElement::GetChildren(uint32_t aFilter)
     uint32_t length = 0;
     childList->GetLength(&length);
     for (uint32_t idx = 0; idx < length; idx++) {
-      nsIContent* child = childList->GetNodeAt(idx);
+      nsIContent* child = childList->Item(idx);
       list->AppendElement(child);
     }
   }
@@ -823,12 +697,12 @@ FragmentOrElement::GetChildren(uint32_t aFilter)
 }
 
 static nsIContent*
-FindNativeAnonymousSubtreeOwner(nsIContent* aContent)
+FindChromeAccessOnlySubtreeOwner(nsIContent* aContent)
 {
-  if (aContent->IsInNativeAnonymousSubtree()) {
-    bool isNativeAnon = false;
-    while (aContent && !isNativeAnon) {
-      isNativeAnon = aContent->IsRootOfNativeAnonymousSubtree();
+  if (aContent->ChromeOnlyAccess()) {
+    bool chromeAccessOnly = false;
+    while (aContent && !chromeAccessOnly) {
+      chromeAccessOnly = aContent->IsRootOfChromeAccessOnlySubtree();
       aContent = aContent->GetParent();
     }
   }
@@ -843,15 +717,15 @@ nsIContent::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   aVisitor.mMayHaveListenerManager = HasListenerManager();
 
   // Don't propagate mouseover and mouseout events when mouse is moving
-  // inside native anonymous content.
-  bool isAnonForEvents = IsRootOfNativeAnonymousSubtree();
+  // inside chrome access only content.
+  bool isAnonForEvents = IsRootOfChromeAccessOnlySubtree();
   if ((aVisitor.mEvent->message == NS_MOUSE_ENTER_SYNTH ||
        aVisitor.mEvent->message == NS_MOUSE_EXIT_SYNTH) &&
       // Check if we should stop event propagation when event has just been
       // dispatched or when we're about to propagate from
-      // native anonymous subtree.
+      // chrome access only subtree.
       ((this == aVisitor.mEvent->originalTarget &&
-        !IsInNativeAnonymousSubtree()) || isAnonForEvents)) {
+        !ChromeOnlyAccess()) || isAnonForEvents)) {
      nsCOMPtr<nsIContent> relatedTarget =
        do_QueryInterface(static_cast<nsMouseEvent*>
                                     (aVisitor.mEvent)->relatedTarget);
@@ -866,19 +740,19 @@ nsIContent::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
       if (isAnonForEvents || aVisitor.mRelatedTargetIsInAnon ||
           (aVisitor.mEvent->originalTarget == this &&
            (aVisitor.mRelatedTargetIsInAnon =
-            relatedTarget->IsInNativeAnonymousSubtree()))) {
-        nsIContent* anonOwner = FindNativeAnonymousSubtreeOwner(this);
+            relatedTarget->ChromeOnlyAccess()))) {
+        nsIContent* anonOwner = FindChromeAccessOnlySubtreeOwner(this);
         if (anonOwner) {
           nsIContent* anonOwnerRelated =
-            FindNativeAnonymousSubtreeOwner(relatedTarget);
+            FindChromeAccessOnlySubtreeOwner(relatedTarget);
           if (anonOwnerRelated) {
             // Note, anonOwnerRelated may still be inside some other
             // native anonymous subtree. The case where anonOwner is still
             // inside native anonymous subtree will be handled when event
             // propagates up in the DOM tree.
             while (anonOwner != anonOwnerRelated &&
-                   anonOwnerRelated->IsInNativeAnonymousSubtree()) {
-              anonOwnerRelated = FindNativeAnonymousSubtreeOwner(anonOwnerRelated);
+                   anonOwnerRelated->ChromeOnlyAccess()) {
+              anonOwnerRelated = FindChromeAccessOnlySubtreeOwner(anonOwnerRelated);
             }
             if (anonOwner == anonOwnerRelated) {
 #ifdef DEBUG_smaug
@@ -899,13 +773,14 @@ nsIContent::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
                      NS_ConvertUTF16toUTF8(ct).get(),
                      isAnonForEvents
                        ? "(is native anonymous)"
-                       : (IsInNativeAnonymousSubtree()
+                       : (ChromeOnlyAccess()
                            ? "(is in native anonymous subtree)" : ""),
                      NS_ConvertUTF16toUTF8(rt).get(),
-                     relatedTarget->IsInNativeAnonymousSubtree()
+                     relatedTarget->ChromeOnlyAccess()
                        ? "(is in native anonymous subtree)" : "",
-                     (originalTarget && relatedTarget->FindFirstNonNativeAnonymous() ==
-                       originalTarget->FindFirstNonNativeAnonymous())
+                     (originalTarget &&
+                      relatedTarget->FindFirstNonChromeOnlyAccessContent() ==
+                        originalTarget->FindFirstNonChromeOnlyAccessContent())
                        ? "" : "Wrong event propagation!?!\n");
 #endif
               aVisitor.mParentTarget = nullptr;
@@ -923,11 +798,15 @@ nsIContent::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   // Event may need to be retargeted if this is the root of a native
   // anonymous content subtree or event is dispatched somewhere inside XBL.
   if (isAnonForEvents) {
+#ifdef DEBUG
     // If a DOM event is explicitly dispatched using node.dispatchEvent(), then
     // all the events are allowed even in the native anonymous content..
-    NS_ASSERTION(aVisitor.mEvent->eventStructType != NS_MUTATION_EVENT ||
+    nsCOMPtr<nsIContent> t = do_QueryInterface(aVisitor.mEvent->originalTarget);
+    NS_ASSERTION(!t || !t->ChromeOnlyAccess() ||
+                 aVisitor.mEvent->eventStructType != NS_MUTATION_EVENT ||
                  aVisitor.mDOMEvent,
                  "Mutation event dispatched in native anonymous content!?!");
+#endif
     aVisitor.mEventTargetAtParent = parent;
   } else if (parent && aVisitor.mOriginalTargetIsInAnon) {
     nsCOMPtr<nsIContent> content(do_QueryInterface(aVisitor.mEvent->target));
@@ -1009,17 +888,17 @@ FragmentOrElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
   }
 }
 
-NS_IMETHODIMP
-FragmentOrElement::GetTextContent(nsAString &aTextContent)
+void
+FragmentOrElement::GetTextContentInternal(nsAString& aTextContent)
 {
   nsContentUtils::GetNodeTextContent(this, true, aTextContent);
-  return NS_OK;
 }
 
-NS_IMETHODIMP
-FragmentOrElement::SetTextContent(const nsAString& aTextContent)
+void
+FragmentOrElement::SetTextContentInternal(const nsAString& aTextContent,
+                                          ErrorResult& aError)
 {
-  return nsContentUtils::SetNodeTextContent(this, aTextContent, false);
+  aError = nsContentUtils::SetNodeTextContent(this, aTextContent, false);
 }
 
 void
@@ -1200,9 +1079,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
       tmp->DeleteProperty(nsGkAtoms::itemtype);
       tmp->DeleteProperty(nsGkAtoms::itemref);
       tmp->DeleteProperty(nsGkAtoms::itemprop);
-    } else if (tmp->IsXUL()) {
-      tmp->DeleteProperty(nsGkAtoms::contextmenulistener);
-      tmp->DeleteProperty(nsGkAtoms::popuplistener);
     }
   }
 
@@ -1242,7 +1118,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
 
   {
     nsIDocument *doc;
-    if (!tmp->GetNodeParent() && (doc = tmp->OwnerDoc())) {
+    if (!tmp->GetParentNode() && (doc = tmp->OwnerDoc())) {
       doc->BindingManager()->RemovedFromDocument(tmp, doc);
     }
   }
@@ -1275,7 +1151,7 @@ FragmentOrElement::MarkNodeChildren(nsINode* aNode)
 
   nsEventListenerManager* elm = aNode->GetListenerManager(false);
   if (elm) {
-    elm->UnmarkGrayJSListeners();
+    elm->MarkForCC();
   }
 
   if (aNode->HasProperties()) {
@@ -1293,7 +1169,7 @@ nsINode*
 FindOptimizableSubtreeRoot(nsINode* aNode)
 {
   nsINode* p;
-  while ((p = aNode->GetNodeParent())) {
+  while ((p = aNode->GetParentNode())) {
     if (aNode->UnoptimizableCCNode()) {
       return nullptr;
     }
@@ -1743,13 +1619,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
       cb.NoteXPCOMChild(property);
       property = static_cast<nsISupports*>(tmp->GetProperty(nsGkAtoms::itemtype));
       cb.NoteXPCOMChild(property);
-    } else if (tmp->IsXUL()) {
-      nsISupports* property = static_cast<nsISupports*>
-                                         (tmp->GetProperty(nsGkAtoms::contextmenulistener));
-      cb.NoteXPCOMChild(property);
-      property = static_cast<nsISupports*>
-                            (tmp->GetProperty(nsGkAtoms::popuplistener));
-      cb.NoteXPCOMChild(property);
     }
   }
 
@@ -1904,7 +1773,7 @@ FragmentOrElement::GetChildArray(uint32_t* aChildCount) const
 }
 
 int32_t
-FragmentOrElement::IndexOf(nsINode* aPossibleChild) const
+FragmentOrElement::IndexOf(const nsINode* aPossibleChild) const
 {
   return mAttrsAndChildren.IndexOfChild(aPossibleChild);
 }
@@ -1929,7 +1798,7 @@ FragmentOrElement::FireNodeRemovedForChildren()
 
   nsCOMPtr<nsINode> child;
   for (child = GetFirstChild();
-       child && child->GetNodeParent() == this;
+       child && child->GetParentNode() == this;
        child = child->GetNextSibling()) {
     nsContentUtils::MaybeFireNodeRemoved(child, this, doc);
   }
@@ -1938,6 +1807,14 @@ FragmentOrElement::FireNodeRemovedForChildren()
 size_t
 FragmentOrElement::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
-  return nsIContent::SizeOfExcludingThis(aMallocSizeOf) +
-         mAttrsAndChildren.SizeOfExcludingThis(aMallocSizeOf);
+  size_t n = 0;
+  n += nsIContent::SizeOfExcludingThis(aMallocSizeOf);
+  n += mAttrsAndChildren.SizeOfExcludingThis(aMallocSizeOf);
+
+  nsDOMSlots* slots = GetExistingDOMSlots();
+  if (slots) {
+    n += slots->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  return n;
 }

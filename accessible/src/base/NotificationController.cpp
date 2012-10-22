@@ -16,7 +16,7 @@
 #include "TextLeafAccessible.h"
 #include "TextUpdater.h"
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
 #include "Logging.h"
 #endif
 
@@ -198,7 +198,7 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
       return;
     }
 
-#ifdef DEBUG
+#ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eTree)) {
       logging::MsgBegin("TREE", "initial tree created");
       logging::Address("document", mDocument);
@@ -243,8 +243,8 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
     if (childDoc->IsDefunct())
       continue;
 
-    nsIContent* ownerContent = mDocument->GetDocumentNode()->
-      FindContentForSubDocument(childDoc->GetDocumentNode());
+    nsIContent* ownerContent = mDocument->DocumentNode()->
+      FindContentForSubDocument(childDoc->DocumentNode());
     if (ownerContent) {
       Accessible* outerDocAcc = mDocument->GetAccessible(ownerContent);
       if (outerDocAcc && outerDocAcc->AppendChild(childDoc)) {
@@ -303,7 +303,7 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
   events.SwapElements(mEvents);
 
   uint32_t eventCount = events.Length();
-#ifdef DEBUG
+#ifdef A11Y_LOG
   if (eventCount > 0 && logging::IsEnabled(logging::eEvents)) {
     logging::MsgBegin("EVENTS", "events processing");
     logging::Address("document", mDocument);
@@ -424,8 +424,8 @@ NotificationController::CoalesceEvents()
 
         // Coalesce events by sibling targets (this is a case for reorder
         // events).
-        if (thisEvent->mNode->GetNodeParent() ==
-            tailEvent->mNode->GetNodeParent()) {
+        if (thisEvent->mNode->GetParentNode() ==
+            tailEvent->mNode->GetParentNode()) {
           tailEvent->mEventRule = thisEvent->mEventRule;
           return;
         }
@@ -521,7 +521,7 @@ NotificationController::ApplyToSiblings(uint32_t aStart, uint32_t aEnd,
     AccEvent* accEvent = mEvents[index];
     if (accEvent->mEventType == aEventType &&
         accEvent->mEventRule != AccEvent::eDoNotEmit && accEvent->mNode &&
-        accEvent->mNode->GetNodeParent() == aNode->GetNodeParent()) {
+        accEvent->mNode->GetParentNode() == aNode->GetParentNode()) {
       accEvent->mEventRule = aEventRule;
     }
   }
@@ -705,7 +705,7 @@ NotificationController::TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
 
   // If the text node is not in tree or doesn't have frame then this case should
   // have been handled already by content removal notifications.
-  nsINode* containerNode = textNode->GetNodeParent();
+  nsINode* containerNode = textNode->GetParentNode();
   if (!containerNode) {
     NS_ASSERTION(!textAcc,
                  "Text node was removed but accessible is kept alive!");
@@ -728,7 +728,7 @@ NotificationController::TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
   // Remove text accessible if rendered text is empty.
   if (textAcc) {
     if (text.IsEmpty()) {
-#ifdef DEBUG
+#ifdef A11Y_LOG
       if (logging::IsEnabled(logging::eTree | logging::eText)) {
         logging::MsgBegin("TREE", "text node lost its content");
         logging::Node("container", containerElm);
@@ -742,7 +742,7 @@ NotificationController::TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
     }
 
     // Update text of the accessible and fire text change events.
-#ifdef DEBUG
+#ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eText)) {
       logging::MsgBegin("TEXT", "text may be changed");
       logging::Node("container", containerElm);
@@ -761,7 +761,7 @@ NotificationController::TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
 
   // Append an accessible if rendered text is not empty.
   if (!text.IsEmpty()) {
-#ifdef DEBUG
+#ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eTree | logging::eText)) {
       logging::MsgBegin("TREE", "text node gains new content");
       logging::Node("container", containerElm);

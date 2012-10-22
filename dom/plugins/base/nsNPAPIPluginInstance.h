@@ -34,6 +34,7 @@ class nsPluginStreamListenerPeer; // browser-initiated stream class
 class nsNPAPIPluginStreamListener; // plugin-initiated stream class
 class nsIPluginInstanceOwner;
 class nsIOutputStream;
+class nsPluginInstanceOwner;
 
 #if defined(OS_WIN)
 const NPDrawingModel kDefaultDrawingModel = NPDrawingModelSyncWin;
@@ -67,7 +68,7 @@ private:
 public:
   NS_DECL_ISUPPORTS
 
-  nsresult Initialize(nsNPAPIPlugin *aPlugin, nsIPluginInstanceOwner* aOwner, const char* aMIMEType);
+  nsresult Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const char* aMIMEType);
   nsresult Start();
   nsresult Stop();
   nsresult SetWindow(NPWindow* window);
@@ -77,6 +78,7 @@ public:
   nsresult GetValueFromPlugin(NPPVariable variable, void* value);
   nsresult GetDrawingModel(int32_t* aModel);
   nsresult IsRemoteDrawingCoreAnimation(bool* aDrawing);
+  nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
   nsresult GetJSObject(JSContext *cx, JSObject** outObject);
   bool ShouldCache();
   nsresult IsWindowless(bool* isWindowless);
@@ -97,10 +99,9 @@ public:
   nsresult InvalidateRegion(NPRegion invalidRegion);
   nsresult GetMIMEType(const char* *result);
   nsresult GetJSContext(JSContext* *outContext);
-  nsresult GetOwner(nsIPluginInstanceOwner **aOwner);
-  nsresult SetOwner(nsIPluginInstanceOwner *aOwner);
+  nsPluginInstanceOwner* GetOwner();
+  void SetOwner(nsPluginInstanceOwner *aOwner);
   nsresult ShowStatus(const char* message);
-  nsresult InvalidateOwner();
 #if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
   nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
 #endif
@@ -266,6 +267,9 @@ public:
   // event model is not supported.
   void CarbonNPAPIFailure();
 
+  // Returns the contents scale factor of the screen the plugin is drawn on.
+  double GetContentsScaleFactor();
+
 protected:
 
   nsresult GetTagType(nsPluginTagType *result);
@@ -274,6 +278,11 @@ protected:
   nsresult GetParameters(uint16_t& n, const char*const*& names,
                          const char*const*& values);
   nsresult GetMode(int32_t *result);
+
+  // check if this is a Java applet and affected by bug 750480
+  void CheckJavaC2PJSObjectQuirk(uint16_t paramCount,
+                                 const char* const* names,
+                                 const char* const* values);
 
   // The structure used to communicate between the plugin instance and
   // the browser.
@@ -332,7 +341,7 @@ private:
 
   // Weak pointer to the owner. The owner nulls this out (by calling
   // InvalidateOwner()) when it's no longer our owner.
-  nsIPluginInstanceOwner *mOwner;
+  nsPluginInstanceOwner *mOwner;
 
   nsTArray<nsNPAPITimer*> mTimers;
 
@@ -352,6 +361,9 @@ private:
 
   nsIntSize mCurrentSize;
 #endif
+
+  // is this instance Java and affected by bug 750480?
+  bool mHaveJavaC2PJSObjectQuirk;
 };
 
 #endif // nsNPAPIPluginInstance_h_

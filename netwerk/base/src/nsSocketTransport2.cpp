@@ -24,6 +24,7 @@
 #include "prnetdb.h"
 #include "prerror.h"
 #include "prerr.h"
+#include "NetworkActivityMonitor.h"
 
 #include "nsIServiceManager.h"
 #include "nsISocketProviderService.h"
@@ -702,8 +703,8 @@ nsSocketTransport::nsSocketTransport()
 
     NS_ADDREF(gSocketTransportService);
 
-    mTimeouts[TIMEOUT_CONNECT]    = PR_UINT16_MAX; // no timeout
-    mTimeouts[TIMEOUT_READ_WRITE] = PR_UINT16_MAX; // no timeout
+    mTimeouts[TIMEOUT_CONNECT]    = UINT16_MAX; // no timeout
+    mTimeouts[TIMEOUT_READ_WRITE] = UINT16_MAX; // no timeout
 }
 
 nsSocketTransport::~nsSocketTransport()
@@ -881,7 +882,7 @@ nsSocketTransport::SendStatus(nsresult status)
         }
     }
     if (sink)
-        sink->OnTransportStatus(this, status, progress, LL_MAXUINT);
+        sink->OnTransportStatus(this, status, progress, UINT64_MAX);
 }
 
 nsresult
@@ -1094,6 +1095,9 @@ nsSocketTransport::InitiateSocket()
         SOCKET_LOG(("  BuildSocket failed [rv=%x]\n", rv));
         return rv;
     }
+
+    // Attach network activity monitor
+    mozilla::net::NetworkActivityMonitor::AttachIOLayer(fd);
 
     PRStatus status;
 
@@ -1983,7 +1987,7 @@ nsSocketTransport::SetTimeout(uint32_t type, uint32_t value)
 {
     NS_ENSURE_ARG_MAX(type, nsISocketTransport::TIMEOUT_READ_WRITE);
     // truncate overly large timeout values.
-    mTimeouts[type] = (uint16_t) NS_MIN(value, PR_UINT16_MAX);
+    mTimeouts[type] = (uint16_t) NS_MIN<uint32_t>(value, UINT16_MAX);
     PostEvent(MSG_TIMEOUT_CHANGED);
     return NS_OK;
 }
@@ -2006,6 +2010,112 @@ nsSocketTransport::GetQoSBits(uint8_t *aQoSBits)
 {
     *aQoSBits = mQoSBits;
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::GetRecvBufferSize(uint32_t *aSize)
+{
+    PRFileDesc *fd;
+    {
+        MutexAutoLock lock(mLock);
+        fd = GetFD_Locked();
+    }
+
+    if (!fd)
+        return NS_ERROR_NOT_CONNECTED;
+
+    nsresult rv = NS_OK;
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_RecvBufferSize;
+    if (PR_GetSocketOption(mFD, &opt) == PR_SUCCESS)
+        *aSize = opt.value.recv_buffer_size;
+    else
+        rv = NS_ERROR_FAILURE;
+
+    {
+        MutexAutoLock lock(mLock);
+        ReleaseFD_Locked(fd);
+    }
+    return rv;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::GetSendBufferSize(uint32_t *aSize)
+{
+    PRFileDesc *fd;
+    {
+        MutexAutoLock lock(mLock);
+        fd = GetFD_Locked();
+    }
+
+    if (!fd)
+        return NS_ERROR_NOT_CONNECTED;
+
+    nsresult rv = NS_OK;
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_SendBufferSize;
+    if (PR_GetSocketOption(mFD, &opt) == PR_SUCCESS)
+        *aSize = opt.value.send_buffer_size;
+    else
+        rv = NS_ERROR_FAILURE;
+
+    {
+        MutexAutoLock lock(mLock);
+        ReleaseFD_Locked(fd);
+    }
+    return rv;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetRecvBufferSize(uint32_t aSize)
+{
+    PRFileDesc *fd;
+    {
+        MutexAutoLock lock(mLock);
+        fd = GetFD_Locked();
+    }
+
+    if (!fd)
+        return NS_ERROR_NOT_CONNECTED;
+
+    nsresult rv = NS_OK;
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_RecvBufferSize;
+    opt.value.recv_buffer_size = aSize;
+    if (PR_SetSocketOption(mFD, &opt) != PR_SUCCESS)
+        rv = NS_ERROR_FAILURE;
+
+    {
+        MutexAutoLock lock(mLock);
+        ReleaseFD_Locked(fd);
+    }
+    return rv;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetSendBufferSize(uint32_t aSize)
+{
+    PRFileDesc *fd;
+    {
+        MutexAutoLock lock(mLock);
+        fd = GetFD_Locked();
+    }
+
+    if (!fd)
+        return NS_ERROR_NOT_CONNECTED;
+
+    nsresult rv = NS_OK;
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_SendBufferSize;
+    opt.value.send_buffer_size = aSize;
+    if (PR_SetSocketOption(mFD, &opt) != PR_SUCCESS)
+        rv = NS_ERROR_FAILURE;
+
+    {
+        MutexAutoLock lock(mLock);
+        ReleaseFD_Locked(fd);
+    }
+    return rv;
 }
 
 NS_IMETHODIMP

@@ -25,6 +25,9 @@
 #include "../d3d9/Nv3DVUtils.h"
 
 #include "gfxCrashReporterUtils.h"
+#ifdef MOZ_METRO
+#include "DXGI1_2.h"
+#endif
 
 using namespace std;
 using namespace mozilla::gfx;
@@ -360,6 +363,12 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
     mCurrentCallbackInfo.Callback = aCallback;
     mCurrentCallbackInfo.CallbackData = aCallbackData;
 
+    if (aFlags & END_NO_COMPOSITE) {
+      // Apply pending tree updates before recomputing effective
+      // properties.
+      mRoot->ApplyPendingUpdatesToSubtree();
+    }
+
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
     mRoot->ComputeEffectiveTransforms(gfx3DMatrix());
@@ -493,7 +502,6 @@ LayerManagerD3D10::CreateDrawTarget(const IntSize &aSize,
 {
   if ((aFormat != FORMAT_B8G8R8A8 &&
        aFormat != FORMAT_B8G8R8X8) ||
-       !gfxPlatform::GetPlatform()->SupportsAzureCanvas() ||
        gfxPlatform::GetPlatform()->GetPreferredCanvasBackend() != BACKEND_DIRECT2D) {
     return LayerManager::CreateDrawTarget(aSize, aFormat);
   }

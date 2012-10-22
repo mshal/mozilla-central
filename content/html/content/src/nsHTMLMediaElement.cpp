@@ -6,11 +6,13 @@
 
 #include "mozilla/Util.h"
 
+#include "base/basictypes.h"
 #include "nsIDOMHTMLMediaElement.h"
 #include "nsIDOMHTMLSourceElement.h"
 #include "nsHTMLMediaElement.h"
 #include "nsTimeRanges.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsGkAtoms.h"
@@ -86,6 +88,12 @@
 #ifdef MOZ_MEDIA_PLUGINS
 #include "nsMediaPluginHost.h"
 #include "nsMediaPluginDecoder.h"
+#endif
+#ifdef MOZ_WIDGET_GONK
+#include "nsMediaOmxDecoder.h"
+#endif
+#ifdef MOZ_DASH
+#include "nsDASHDecoder.h"
 #endif
 
 #ifdef PR_LOGGING
@@ -2125,21 +2133,23 @@ nsHTMLMediaElement::IsWebMType(const nsACString& aType)
 }
 #endif
 
+#if defined(MOZ_GSTREAMER) || defined(MOZ_WIDGET_GONK)
+char const *const nsHTMLMediaElement::gH264Codecs[7] = {
+  "avc1.42E01E",  // H.264 Constrained Baseline Profile Level 3.0
+  "avc1.42001E",  // H.264 Baseline Profile Level 3.0
+  "avc1.58A01E",  // H.264 Extended Profile Level 3.0
+  "avc1.4D401E",  // H.264 Main Profile Level 3.0
+  "avc1.64001E",  // H.264 High Profile Level 3.0
+  "mp4a.40.2",    // AAC-LC
+  nullptr
+};
+#endif
+
 #ifdef MOZ_GSTREAMER
 const char nsHTMLMediaElement::gH264Types[3][16] = {
   "video/mp4",
   "video/3gpp",
   "video/quicktime",
-};
-
-char const *const nsHTMLMediaElement::gH264Codecs[7] = {
-  "avc1.42E01E",
-  "avc1.42001E",
-  "avc1.58A01E",
-  "avc1.4D401E",
-  "avc1.64001E",
-  "mp4a.40.2",
-  nullptr
 };
 
 bool
@@ -2157,6 +2167,38 @@ nsHTMLMediaElement::IsH264Type(const nsACString& aType)
 
   for (uint32_t i = 0; i < ArrayLength(gH264Types); ++i) {
     if (aType.EqualsASCII(gH264Types[i])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+#endif
+
+#ifdef MOZ_WIDGET_GONK
+const char nsHTMLMediaElement::gOmxTypes[5][16] = {
+  "audio/mpeg",
+  "audio/mp4",
+  "video/mp4",
+  "video/3gpp",
+  "video/quicktime",
+};
+
+bool
+nsHTMLMediaElement::IsOmxEnabled()
+{
+  return Preferences::GetBool("media.omx.enabled", false);
+}
+
+bool
+nsHTMLMediaElement::IsOmxSupportedType(const nsACString& aType)
+{
+  if (!IsOmxEnabled()) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < ArrayLength(gOmxTypes); ++i) {
+    if (aType.EqualsASCII(gOmxTypes[i])) {
       return true;
     }
   }
@@ -2191,6 +2233,37 @@ nsHTMLMediaElement::IsMediaPluginsType(const nsACString& aType)
 }
 #endif
 
+#ifdef MOZ_DASH
+/* static */
+const char nsHTMLMediaElement::gDASHMPDTypes[1][21] = {
+  "application/dash+xml"
+};
+
+/* static */
+bool
+nsHTMLMediaElement::IsDASHEnabled()
+{
+  return Preferences::GetBool("media.dash.enabled");
+}
+
+/* static */
+bool
+nsHTMLMediaElement::IsDASHMPDType(const nsACString& aType)
+{
+  if (!IsDASHEnabled()) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < ArrayLength(gDASHMPDTypes); ++i) {
+    if (aType.EqualsASCII(gDASHMPDTypes[i])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+#endif
+
 /* static */
 nsHTMLMediaElement::CanPlayStatus 
 nsHTMLMediaElement::CanHandleMediaType(const char* aMIMEType,
@@ -2220,9 +2293,22 @@ nsHTMLMediaElement::CanHandleMediaType(const char* aMIMEType,
     return CANPLAY_YES;
   }
 #endif
+#ifdef MOZ_DASH
+  if (IsDASHMPDType(nsDependentCString(aMIMEType))) {
+    // DASH manifest uses WebM codecs only.
+    *aCodecList = gWebMCodecs;
+    return CANPLAY_YES;
+  }
+#endif
 
 #ifdef MOZ_GSTREAMER
   if (IsH264Type(nsDependentCString(aMIMEType))) {
+    *aCodecList = gH264Codecs;
+    return CANPLAY_MAYBE;
+  }
+#endif
+#ifdef MOZ_WIDGET_GONK
+  if (IsOmxSupportedType(nsDependentCString(aMIMEType))) {
     *aCodecList = gH264Codecs;
     return CANPLAY_MAYBE;
   }
@@ -2252,6 +2338,11 @@ bool nsHTMLMediaElement::ShouldHandleMediaType(const char* aMIMEType)
 #ifdef MOZ_GSTREAMER
   if (IsH264Type(nsDependentCString(aMIMEType)))
     return true;
+#endif
+#ifdef MOZ_WIDGET_GONK
+  if (IsOmxSupportedType(nsDependentCString(aMIMEType))) {
+    return true;
+  }
 #endif
 #ifdef MOZ_MEDIA_PLUGINS
   if (IsMediaPluginsEnabled() && GetMediaPluginHost()->FindDecoder(nsDependentCString(aMIMEType), NULL))
@@ -2369,6 +2460,14 @@ nsHTMLMediaElement::CreateDecoder(const nsACString& aType)
     }
   }
 #endif
+#ifdef MOZ_WIDGET_GONK
+  if (IsOmxSupportedType(aType)) {
+    nsRefPtr<nsMediaOmxDecoder> decoder = new nsMediaOmxDecoder();
+    if (decoder->Init(this)) {
+      return decoder.forget();
+    }
+  }
+#endif
 #ifdef MOZ_MEDIA_PLUGINS
   if (IsMediaPluginsEnabled() && GetMediaPluginHost()->FindDecoder(aType, NULL)) {
     nsRefPtr<nsMediaPluginDecoder> decoder = new nsMediaPluginDecoder(aType);
@@ -2384,6 +2483,15 @@ nsHTMLMediaElement::CreateDecoder(const nsACString& aType)
 #else
     nsRefPtr<nsWebMDecoder> decoder = new nsWebMDecoder();
 #endif
+    if (decoder->Init(this)) {
+      return decoder.forget();
+    }
+  }
+#endif
+
+#ifdef MOZ_DASH
+  if (IsDASHMPDType(aType)) {
+    nsRefPtr<nsDASHDecoder> decoder = new nsDASHDecoder();
     if (decoder->Init(this)) {
       return decoder.forget();
     }
@@ -2684,7 +2792,7 @@ void nsHTMLMediaElement::EndSrcMediaStreamPlayback()
   VideoFrameContainer* container = GetVideoFrameContainer();
   if (container) {
     GetSrcMediaStream()->RemoveVideoOutput(container);
-    container->GetImageContainer()->SetCurrentImage(nullptr);
+    container->ClearCurrentFrame();
   }
   if (mPaused) {
     GetSrcMediaStream()->ChangeExplicitBlockerCount(-1);

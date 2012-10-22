@@ -58,9 +58,9 @@
 // Emulate string comparison (used for sorting) for PRTime and int.
 inline int32_t ComparePRTime(PRTime a, PRTime b)
 {
-  if (LL_CMP(a, <, b))
+  if (a < b)
     return -1;
-  else if (LL_CMP(a, >, b))
+  else if (a > b)
     return 1;
   return 0;
 }
@@ -691,10 +691,10 @@ nsNavHistoryContainerResultNode::ReverseUpdateStats(int32_t aAccessCountChange)
 
     if ((sortingByVisitCount && aAccessCountChange != 0) ||
         (sortingByTime && timeChanged)) {
-      uint32_t ourIndex = mParent->FindChild(this);
+      int32_t ourIndex = mParent->FindChild(this);
       NS_ASSERTION(ourIndex >= 0, "Could not find self in parent");
       if (ourIndex >= 0)
-        EnsureItemPosition(ourIndex);
+        EnsureItemPosition(static_cast<uint32_t>(ourIndex));
     }
 
     nsresult rv = mParent->ReverseUpdateStats(aAccessCountChange);
@@ -1163,7 +1163,7 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_AnnotationLess(
                                                          &b_type), 0);
       }
       // We better make the API not support this state, really
-      // XXXmano: this is actually wrong for double<->int and int64<->int32
+      // XXXmano: this is actually wrong for double<->int and int64_t<->int32_t
       if (a_hasAnno && b_type != annoType)
         return 0;
       annoType = b_type;
@@ -3701,7 +3701,7 @@ nsNavHistoryFolderResultNode::OnItemAdded(int64_t aItemId,
       !isQuery && excludeItems) {
     // don't update items when we aren't displaying them, but we still need
     // to adjust bookmark indices to account for the insertion
-    ReindexRange(aIndex, PR_INT32_MAX, 1);
+    ReindexRange(aIndex, INT32_MAX, 1);
     return NS_OK;
   }
 
@@ -3709,7 +3709,7 @@ nsNavHistoryFolderResultNode::OnItemAdded(int64_t aItemId,
     return NS_OK; // folder was completely refreshed for us
 
   // adjust indices to account for insertion
-  ReindexRange(aIndex, PR_INT32_MAX, 1);
+  ReindexRange(aIndex, INT32_MAX, 1);
 
   nsRefPtr<nsNavHistoryResultNode> node;
   if (aItemType == nsINavBookmarksService::TYPE_BOOKMARK) {
@@ -3793,7 +3793,7 @@ nsNavHistoryFolderResultNode::OnItemRemoved(int64_t aItemId,
   if ((node->IsURI() || node->IsSeparator()) && excludeItems) {
     // don't update items when we aren't displaying them, but we do need to
     // adjust everybody's bookmark indices to account for the removal
-    ReindexRange(aIndex, PR_INT32_MAX, -1);
+    ReindexRange(aIndex, INT32_MAX, -1);
     return NS_OK;
   }
 
@@ -3801,7 +3801,7 @@ nsNavHistoryFolderResultNode::OnItemRemoved(int64_t aItemId,
     return NS_OK; // we are completely refreshed
 
   // shift all following indices down
-  ReindexRange(aIndex + 1, PR_INT32_MAX, -1);
+  ReindexRange(aIndex + 1, INT32_MAX, -1);
 
   return RemoveChildAt(index);
 }
@@ -4015,8 +4015,8 @@ nsNavHistoryFolderResultNode::OnItemMoved(int64_t aItemId,
     // an add because that will lose your tree state.
 
     // adjust bookmark indices
-    ReindexRange(aOldIndex + 1, PR_INT32_MAX, -1);
-    ReindexRange(aNewIndex, PR_INT32_MAX, 1);
+    ReindexRange(aOldIndex + 1, INT32_MAX, -1);
+    ReindexRange(aNewIndex, INT32_MAX, 1);
 
     uint32_t index;
     nsNavHistoryResultNode* node = FindChildById(aItemId, &index);
@@ -4029,8 +4029,7 @@ nsNavHistoryFolderResultNode::OnItemMoved(int64_t aItemId,
     node->mBookmarkIndex = aNewIndex;
 
     // adjust position
-    if (index >= 0)
-      EnsureItemPosition(index);
+    EnsureItemPosition(index);
     return NS_OK;
   } else {
     // moving between two different folders, just do a remove and an add

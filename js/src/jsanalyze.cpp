@@ -141,7 +141,8 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
     bool allVarsAliased = script_->compartment()->debugMode();
     bool allArgsAliased = allVarsAliased || script_->argumentsHasVarBinding();
 
-    for (BindingIter bi(script_->bindings); bi; bi++) {
+    RootedScript script(cx, script_);
+    for (BindingIter bi(script); bi; bi++) {
         if (bi->kind() == ARGUMENT)
             escapedSlots[ArgSlot(bi.frameIndex())] = allArgsAliased || bi->aliased();
         else
@@ -278,7 +279,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
          * Assign an observed type set to each reachable JOF_TYPESET opcode.
          * This may be less than the number of type sets in the script if some
          * are unreachable, and may be greater in case the number of type sets
-         * overflows a uint16. In the latter case a single type set will be
+         * overflows a uint16_t. In the latter case a single type set will be
          * used for the observed types of all ops after the overflow.
          */
         if ((js_CodeSpec[op].format & JOF_TYPESET) && cx->typeInferenceEnabled()) {
@@ -1221,11 +1222,10 @@ ScriptAnalysis::analyzeSSA(JSContext *cx)
         return;
     }
     struct FreeSSAValues {
-        JSContext *cx;
         SSAValueInfo *values;
-        FreeSSAValues(JSContext *cx, SSAValueInfo *values) : cx(cx), values(values) {}
+        FreeSSAValues(SSAValueInfo *values) : values(values) {}
         ~FreeSSAValues() { js_free(values); }
-    } free(cx, values);
+    } free(values);
 
     SSAValueInfo *stack = values + numSlots;
     uint32_t stackDepth = 0;

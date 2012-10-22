@@ -377,12 +377,19 @@ ThreadActor.prototype = {
                message: "no actors were specified" };
     }
 
+    let res;
     for each (let actorID in aRequest.actors) {
       let actor = this.threadLifetimePool.get(actorID);
-      this.threadLifetimePool.objectActors.delete(actor.obj);
-      this.threadLifetimePool.removeActor(actorID);
+      if (!actor) {
+        if (!res) {
+          res = { error: "notReleasable",
+                  message: "Only thread-lifetime actors can be released." };
+        }
+        continue;
+      }
+      actor.onRelease();
     }
-    return {};
+    return res ? res : {};
   },
 
   /**
@@ -546,10 +553,12 @@ ThreadActor.prototype = {
         if (!this._scripts[url][i]) {
           continue;
         }
+
         let script = {
           url: url,
           startLine: i,
-          lineCount: this._scripts[url][i].lineCount
+          lineCount: this._scripts[url][i].lineCount,
+          source: this.sourceGrip(this._scripts[url][i], this)
         };
         scripts.push(script);
       }
@@ -781,13 +790,16 @@ ThreadActor.prototype = {
 
   /**
    * Create a grip for the given debuggee value.  If the value is an
-   * object, will create a pause-lifetime actor.
+   * object, will create an actor with the given lifetime.
    */
-  createValueGrip: function TA_createValueGrip(aValue) {
+  createValueGrip: function TA_createValueGrip(aValue, aPool=false) {
+    if (!aPool) {
+      aPool = this._pausePool;
+    }
     let type = typeof(aValue);
 
     if (type === "string" && this._stringIsLong(aValue)) {
-      return this.longStringGrip(aValue);
+      return this.longStringGrip(aValue, aPool);
     }
 
     if (type === "boolean" || type === "string" || type === "number") {
@@ -803,7 +815,7 @@ ThreadActor.prototype = {
     }
 
     if (typeof(aValue) === "object") {
-      return this.pauseObjectGrip(aValue);
+      return this.objectGrip(aValue, aPool);
     }
 
     dbg_assert(false, "Failed to provide a grip for: " + aValue);
@@ -867,13 +879,20 @@ ThreadActor.prototype = {
   },
 
   /**
-   * Create a grip for the given debuggee object with a thread lifetime.
+   * Extend the lifetime of the provided object actor to thread lifetime.
    *
-   * @param aValue Debugger.Object
-   *        The debuggee object value.
+   * @param aActor object
+   *        The object actor.
    */
-  threadObjectGrip: function TA_threadObjectGrip(aValue) {
-    return this.objectGrip(aValue, this.threadLifetimePool);
+  threadObjectGrip: function TA_threadObjectGrip(aActor) {
+    if (!this.threadLifetimePool.objectActors) {
+      this.threadLifetimePool.objectActors = new WeakMap();
+    }
+    // We want to reuse the existing actor ID, so we just remove it from the
+    // current pool's weak map and then let pool.addActor do the rest.
+    aActor.registeredPool.objectActors.delete(aActor.obj);
+    this.threadLifetimePool.addActor(aActor);
+    this.threadLifetimePool.objectActors.set(aActor.obj, aActor);
   },
 
   /**
@@ -881,24 +900,42 @@ ThreadActor.prototype = {
    *
    * @param aString String
    *        The string we are creating a grip for.
+   * @param aPool ActorPool
+   *        The actor pool where the new actor will be added.
    */
-  longStringGrip: function TA_longStringGrip(aString) {
-    if (!this._pausePool) {
-      throw new Error("LongString grip requested while not paused.");
+  longStringGrip: function TA_longStringGrip(aString, aPool) {
+    if (!aPool.longStringActors) {
+      aPool.longStringActors = {};
     }
 
-    if (!this._pausePool.longStringActors) {
-      this._pausePool.longStringActors = {};
-    }
-
-    if (this._pausePool.longStringActors.hasOwnProperty(aString)) {
-      return this._pausePool.longStringActors[aString].grip();
+    if (aPool.longStringActors.hasOwnProperty(aString)) {
+      return aPool.longStringActors[aString].grip();
     }
 
     let actor = new LongStringActor(aString, this);
-    this._pausePool.addActor(actor);
-    this._pausePool.longStringActors[aString] = actor;
+    aPool.addActor(actor);
+    aPool.longStringActors[aString] = actor;
     return actor.grip();
+  },
+
+  /**
+   * Create a long string grip that is scoped to a pause.
+   *
+   * @param aString String
+   *        The string we are creating a grip for.
+   */
+  pauseLongStringGrip: function TA_pauseLongStringGrip (aString) {
+    return this.longStringGrip(aString, this._pausePool);
+  },
+
+  /**
+   * Create a long string grip that is scoped to a thread.
+   *
+   * @param aString String
+   *        The string we are creating a grip for.
+   */
+  threadLongStringGrip: function TA_pauseLongStringGrip (aString) {
+    return this.longStringGrip(aString, this._threadLifetimePool);
   },
 
   /**
@@ -910,6 +947,26 @@ ThreadActor.prototype = {
    */
   _stringIsLong: function TA__stringIsLong(aString) {
     return aString.length >= DebuggerServer.LONG_STRING_LENGTH;
+  },
+
+  /**
+   * Create a source grip for the given script.
+   */
+  sourceGrip: function TA_sourceGrip(aScript) {
+    // TODO: Once we have Debugger.Source, this should be replaced with a
+    // weakmap mapping Debugger.Source instances to SourceActor instances.
+    if (!this.threadLifetimePool.sourceActors) {
+      this.threadLifetimePool.sourceActors = {};
+    }
+
+    if (this.threadLifetimePool.sourceActors[aScript.url]) {
+      return this.threadLifetimePool.sourceActors[aScript.url].grip();
+    }
+
+    let actor = new SourceActor(aScript, this);
+    this.threadLifetimePool.addActor(actor);
+    this.threadLifetimePool.sourceActors[aScript.url] = actor;
+    return actor.grip();
   },
 
   // JS Debugger API hooks.
@@ -981,7 +1038,8 @@ ThreadActor.prototype = {
         type: "newScript",
         url: aScript.url,
         startLine: aScript.startLine,
-        lineCount: aScript.lineCount
+        lineCount: aScript.lineCount,
+        source: this.sourceGrip(aScript, this)
       });
     }
   },
@@ -994,6 +1052,9 @@ ThreadActor.prototype = {
    * @returns true, if the script was added, false otherwise.
    */
   _addScript: function TA__addScript(aScript) {
+    // Ignore anything we don't have a URL for (eval scripts, for example).
+    if (!aScript.url)
+      return false;
     // Ignore XBL bindings for content debugging.
     if (aScript.url.indexOf("chrome://") == 0) {
       return false;
@@ -1134,6 +1195,176 @@ function update(aTarget, aNewAttrs) {
 
 
 /**
+ * A SourceActor provides information about the source of a script.
+ *
+ * @param aScript Debugger.Script
+ *        The script whose source we are representing.
+ * @param aThreadActor ThreadActor
+ *        The current thread actor.
+ */
+function SourceActor(aScript, aThreadActor) {
+  this._threadActor = aThreadActor;
+  this._script = aScript;
+}
+
+SourceActor.prototype = {
+  constructor: SourceActor,
+  actorPrefix: "source",
+
+  get threadActor() { return this._threadActor; },
+
+  grip: function SA_grip() {
+    return this.actorID;
+  },
+
+  disconnect: function LSA_disconnect() {
+    if (this.registeredPool && this.registeredPool.sourceActors) {
+      delete this.registeredPool.sourceActors[this.actorID];
+    }
+  },
+
+  /**
+   * Handler for the "source" packet.
+   */
+  onSource: function SA_onSource(aRequest) {
+    this
+      ._loadSource()
+      .chainPromise(function(aSource) {
+        return this._threadActor.createValueGrip(
+          aSource, this.threadActor.threadLifetimePool);
+      }.bind(this))
+      .chainPromise(function (aSourceGrip) {
+        return {
+          from: this.actorID,
+          source: aSourceGrip
+        };
+      }.bind(this))
+      .trap(function (aError) {
+        return {
+          "from": this.actorID,
+          "error": "loadSourceError",
+          "message": "Could not load the source for " + this._script.url + "."
+        };
+      }.bind(this))
+      .chainPromise(function (aPacket) {
+        this.conn.send(aPacket);
+      }.bind(this));
+  },
+
+  /**
+   * Convert a given string, encoded in a given character set, to unicode.
+   * @param string aString
+   *        A string.
+   * @param string aCharset
+   *        A character set.
+   * @return string
+   *         A unicode string.
+   */
+  _convertToUnicode: function SS__convertToUnicode(aString, aCharset) {
+    // Decoding primitives.
+    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+        .createInstance(Ci.nsIScriptableUnicodeConverter);
+
+    try {
+      converter.charset = aCharset || "UTF-8";
+      return converter.ConvertToUnicode(aString);
+    } catch(e) {
+      return aString;
+    }
+  },
+
+  /**
+   * Performs a request to load the desired URL and returns a promise.
+   *
+   * @param aURL String
+   *        The URL we will request.
+   * @returns Promise
+   *
+   * XXX: It may be better to use nsITraceableChannel to get to the sources
+   * without relying on caching when we can (not for eval, etc.):
+   * http://www.softwareishard.com/blog/firebug/nsitraceablechannel-intercept-http-traffic/
+   */
+  _loadSource: function SA__loadSource() {
+    let promise = new Promise();
+    let url = this._script.url;
+    let scheme;
+    try {
+      scheme = Services.io.extractScheme(url);
+    } catch (e) {
+      // In the xpcshell tests, the script url is the absolute path of the test
+      // file, which will make a malformed URI error be thrown. Add the file
+      // scheme prefix ourselves.
+      url = "file://" + url;
+      scheme = Services.io.extractScheme(url);
+    }
+
+    switch (scheme) {
+      case "file":
+      case "chrome":
+      case "resource":
+        try {
+          NetUtil.asyncFetch(url, function onFetch(aStream, aStatus) {
+            if (!Components.isSuccessCode(aStatus)) {
+              promise.reject(new Error("Request failed"));
+              return;
+            }
+
+            let source = NetUtil.readInputStreamToString(aStream, aStream.available());
+            promise.resolve(this._convertToUnicode(source));
+            aStream.close();
+          }.bind(this));
+        } catch (ex) {
+          promise.reject(new Error("Request failed"));
+        }
+        break;
+
+      default:
+        let channel;
+        try {
+          channel = Services.io.newChannel(url, null, null);
+        } catch (e if e.name == "NS_ERROR_UNKNOWN_PROTOCOL") {
+          // On Windows xpcshell tests, c:/foo/bar can pass as a valid URL, but
+          // newChannel won't be able to handle it.
+          url = "file:///" + url;
+          channel = Services.io.newChannel(url, null, null);
+        }
+        let chunks = [];
+        let streamListener = {
+          onStartRequest: function(aRequest, aContext, aStatusCode) {
+            if (!Components.isSuccessCode(aStatusCode)) {
+              promise.reject("Request failed");
+            }
+          },
+          onDataAvailable: function(aRequest, aContext, aStream, aOffset, aCount) {
+            chunks.push(NetUtil.readInputStreamToString(aStream, aCount));
+          },
+          onStopRequest: function(aRequest, aContext, aStatusCode) {
+            if (!Components.isSuccessCode(aStatusCode)) {
+              promise.reject("Request failed");
+              return;
+            }
+
+            promise.resolve(this._convertToUnicode(chunks.join(""),
+                                                   channel.contentCharset));
+          }.bind(this)
+        };
+
+        channel.loadFlags = channel.LOAD_FROM_CACHE;
+        channel.asyncOpen(streamListener, null);
+        break;
+    }
+
+    return promise;
+  }
+
+};
+
+SourceActor.prototype.requestTypes = {
+  "source": SourceActor.prototype.onSource
+};
+
+
+/**
  * Creates an actor for the specified object.
  *
  * @param aObj Debugger.Object
@@ -1167,7 +1398,7 @@ update(ObjectActor.prototype, {
    */
   release: function OA_release() {
     this.registeredPool.objectActors.delete(this.obj);
-    this.registeredPool.removeActor(this.actorID);
+    this.registeredPool.removeActor(this);
   },
 
   /**
@@ -1329,7 +1560,8 @@ update(ObjectActor.prototype, {
    *        The protocol request object.
    */
   onThreadGrip: PauseScopedActor.withPaused(function OA_onThreadGrip(aRequest) {
-    return { threadGrip: this.threadActor.threadObjectGrip(this.obj) };
+    this.threadActor.threadObjectGrip(this);
+    return {};
   }),
 
   /**
@@ -1341,7 +1573,7 @@ update(ObjectActor.prototype, {
   onRelease: PauseScopedActor.withPaused(function OA_onRelease(aRequest) {
     if (this.registeredPool !== this.threadActor.threadLifetimePool) {
       return { error: "notReleasable",
-               message: "only thread-lifetime actors can be released." };
+               message: "Only thread-lifetime actors can be released." };
     }
 
     this.release();
@@ -1583,7 +1815,7 @@ BreakpointActor.prototype = {
     let scriptBreakpoints = this.threadActor._breakpointStore[this.location.url];
     delete scriptBreakpoints[this.location.line];
     // Remove the actual breakpoint.
-    this.threadActor._hooks.removeFromBreakpointPool(this.actorID);
+    this.threadActor._hooks.removeFromBreakpointPool(this);
     for (let script of this.scripts) {
       script.clearBreakpoint(this);
     }

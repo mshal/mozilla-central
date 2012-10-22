@@ -384,7 +384,7 @@ JSObject::setArrayLength(JSContext *cx, js::HandleObject obj, uint32_t length)
 inline void
 JSObject::setDenseArrayLength(uint32_t length)
 {
-    /* Variant of setArrayLength for use on dense arrays where the length cannot overflow int32. */
+    /* Variant of setArrayLength for use on dense arrays where the length cannot overflow int32_t. */
     JS_ASSERT(isDenseArray());
     JS_ASSERT(length <= INT32_MAX);
     getElementsHeader()->length = length;
@@ -1538,20 +1538,6 @@ GuessArrayGCKind(size_t numSlots)
     if (numSlots)
         return gc::GetGCArrayKind(numSlots);
     return gc::FINALIZE_OBJECT8;
-}
-
-/*
- * Get the GC kind to use for scripted 'new' on the given class.
- * FIXME bug 547327: estimate the size from the allocation site.
- */
-static inline gc::AllocKind
-NewObjectGCKind(JSContext *cx, js::Class *clasp)
-{
-    if (clasp == &ArrayClass || clasp == &SlowArrayClass)
-        return gc::FINALIZE_OBJECT8;
-    if (clasp == &FunctionClass)
-        return gc::FINALIZE_OBJECT2;
-    return gc::FINALIZE_OBJECT4;
 }
 
 /*

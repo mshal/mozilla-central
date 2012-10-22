@@ -54,7 +54,7 @@ class ArrayBufferObject : public JSObject
     template<typename T>
     static JSBool createTypedArrayFromBuffer(JSContext *cx, unsigned argc, Value *vp);
 
-    static void obj_trace(JSTracer *trc, JSObject *obj);
+    static void obj_trace(JSTracer *trc, RawObject obj);
 
     static JSBool obj_lookupGeneric(JSContext *cx, HandleObject obj, HandleId id,
                                     MutableHandleObject objp, MutableHandleShape propp);
@@ -136,7 +136,7 @@ class ArrayBufferObject : public JSObject
 
     static inline void setElementsHeader(js::ObjectElements *header, uint32_t bytes);
 
-    void addView(JSContext *cx, RawObject view);
+    void addView(RawObject view);
 
     bool allocateSlots(JSContext *cx, uint32_t size, uint8_t *contents = NULL);
 
@@ -208,8 +208,8 @@ struct TypedArray : public BufferView {
         TYPE_FLOAT64,
 
         /*
-         * Special type that's a uint8, but assignments are clamped to 0 .. 255.
-         * Treat the raw data type as a uint8.
+         * Special type that's a uint8_t, but assignments are clamped to 0 .. 255.
+         * Treat the raw data type as a uint8_t.
          */
         TYPE_UINT8_CLAMPED,
 
@@ -269,9 +269,9 @@ struct TypedArray : public BufferView {
     static inline void * viewData(JSObject *obj);
 
   public:
-    static bool isArrayIndex(JSContext *cx, JSObject *obj, jsid id, uint32_t *ip = NULL);
+    static bool isArrayIndex(JSObject *obj, jsid id, uint32_t *ip = NULL);
 
-    static void neuter(JSContext *cx, RawObject tarray);
+    static void neuter(RawObject tarray);
 
     static inline uint32_t slotWidth(int atype);
     static inline int slotWidth(JSObject *obj);

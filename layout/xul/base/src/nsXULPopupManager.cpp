@@ -192,7 +192,7 @@ nsXULPopupManager::Rollup(uint32_t aCount, bool aGetLastRolledUp)
     // if a number of popups to close has been specified, determine the last
     // popup to close
     nsIContent* lastPopup = nullptr;
-    if (aCount != PR_UINT32_MAX) {
+    if (aCount != UINT32_MAX) {
       nsMenuChainItem* last = item;
       while (--aCount && last->GetParent()) {
         last = last->GetParent();
@@ -316,6 +316,11 @@ nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt)
   if (!menuPopupFrame)
     return;
 
+  // Convert desired point to CSS pixels for comparison
+  nsPresContext* presContext = menuPopupFrame->PresContext();
+  aPnt.x = presContext->DevPixelsToIntCSSPixels(aPnt.x);
+  aPnt.y = presContext->DevPixelsToIntCSSPixels(aPnt.y);
+
   // Don't do anything if the popup is already at the specified location. This
   // prevents recursive calls when a popup is positioned.
   nsIntPoint currentPnt = menuPopupFrame->ScreenPosition();
@@ -346,13 +351,20 @@ nsXULPopupManager::PopupResized(nsIFrame* aFrame, nsIntSize aSize)
   nsPresContext* presContext = menuPopupFrame->PresContext();
 
   nsSize currentSize = menuPopupFrame->GetSize();
-  if (aSize.width != presContext->AppUnitsToDevPixels(currentSize.width) ||
-      aSize.height != presContext->AppUnitsToDevPixels(currentSize.height)) {
+
+  // convert both current and new sizes to integer CSS pixels for comparison;
+  // we won't set attributes if there is only a sub-CSS-pixel discrepancy
+  nsIntSize currCSS(nsPresContext::AppUnitsToIntCSSPixels(currentSize.width),
+                    nsPresContext::AppUnitsToIntCSSPixels(currentSize.height));
+  nsIntSize newCSS(presContext->DevPixelsToIntCSSPixels(aSize.width),
+                   presContext->DevPixelsToIntCSSPixels(aSize.height));
+
+  if (newCSS.width != currCSS.width || newCSS.height != currCSS.height) {
     // for resizes, we just set the width and height attributes
     nsIContent* popup = menuPopupFrame->GetContent();
     nsAutoString width, height;
-    width.AppendInt(aSize.width);
-    height.AppendInt(aSize.height);
+    width.AppendInt(newCSS.width);
+    height.AppendInt(newCSS.height);
     popup->SetAttr(kNameSpaceID_None, nsGkAtoms::width, width, false);
     popup->SetAttr(kNameSpaceID_None, nsGkAtoms::height, height, true);
   }
@@ -1611,7 +1623,7 @@ nsXULPopupManager::UpdateMenuItems(nsIContent* aPopup)
           else
             grandChild->UnsetAttr(kNameSpaceID_None, nsGkAtoms::disabled, true);
 
-          // The menu's label, accesskey and checked states need to be updated
+          // The menu's label, accesskey checked and hidden states need to be updated
           // to match the command. Note that unlike the disabled state if the
           // command has *no* value, we assume the menu is supplying its own.
           if (commandContent->GetAttr(kNameSpaceID_None, nsGkAtoms::label, commandValue))
@@ -1622,6 +1634,9 @@ nsXULPopupManager::UpdateMenuItems(nsIContent* aPopup)
 
           if (commandContent->GetAttr(kNameSpaceID_None, nsGkAtoms::checked, commandValue))
             grandChild->SetAttr(kNameSpaceID_None, nsGkAtoms::checked, commandValue, true);
+
+          if (commandContent->GetAttr(kNameSpaceID_None, nsGkAtoms::hidden, commandValue))
+            grandChild->SetAttr(kNameSpaceID_None, nsGkAtoms::hidden, commandValue, true);
         }
       }
     }

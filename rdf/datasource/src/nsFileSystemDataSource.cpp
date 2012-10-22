@@ -1140,7 +1140,7 @@ FileSystemDataSource::GetLastMod(nsIRDFResource *source, nsIRDFDate **aResult)
     // convert from milliseconds to seconds
     PRTime      temp64, thousand;
     LL_I2L(thousand, PR_MSEC_PER_SEC);
-    LL_MUL(temp64, lastModDate, thousand);
+    temp64 = lastModDate * thousand;
 
     mRDFService->GetDateLiteral(temp64, aResult);
 
@@ -1192,9 +1192,7 @@ FileSystemDataSource::GetFileSize(nsIRDFResource *source, nsIRDFInt **aResult)
         return(rv);
 
     // convert 64bits to 32bits
-    int32_t     aFileSize32 = 0;
-    LL_L2I(aFileSize32, aFileSize64);
-
+    int32_t aFileSize32 = int32_t(aFileSize64);
     mRDFService->GetIntLiteral(aFileSize32, aResult);
 
     return(NS_OK);

@@ -133,7 +133,6 @@
 #include "xpcexception.h"
 #include "xpcjsid.h"
 #include "prlong.h"
-#include "prmem.h"
 #include "prenv.h"
 #include "prclist.h"
 #include "nsString.h"
@@ -317,13 +316,13 @@ inline void MorphMultiSlot(JSObject *obj)
     MOZ_ASSERT(!IS_SLIM_WRAPPER(obj));
 }
 
-inline void SetExpandoChain(JSObject *obj, JSObject *chain)
+inline void SetWNExpandoChain(JSObject *obj, JSObject *chain)
 {
     MOZ_ASSERT(IS_WN_WRAPPER(obj));
     JS_SetReservedSlot(obj, WRAPPER_MULTISLOT, JS::ObjectOrNullValue(chain));
 }
 
-inline JSObject* GetExpandoChain(JSObject *obj)
+inline JSObject* GetWNExpandoChain(JSObject *obj)
 {
     MOZ_ASSERT(IS_WN_WRAPPER(obj));
     return JS_GetReservedSlot(obj, WRAPPER_MULTISLOT).toObjectOrNull();
@@ -727,6 +726,45 @@ public:
 
     bool DeferredRelease(nsISupports* obj);
 
+
+    /**
+     * Infrastructure for classes that need to defer part of the finalization
+     * until after the GC has run, for example for objects that we don't want to
+     * destroy during the GC.
+     */
+
+    // Called once before the deferred finalization starts. Should hand off the
+    // buffer with things to finalize in the return value.
+    typedef void* (*DeferredFinalizeStartFunction)();
+
+    // Called to finalize a number of objects. Slice is the number of objects to
+    // finalize, if it's -1 all objects should be finalized. data is the pointer
+    // returned by DeferredFinalizeStartFunction. Should return if it finalized
+    // all objects remaining in the buffer.
+    typedef bool (*DeferredFinalizeFunction)(int32_t slice, void* data);
+
+private:
+    struct DeferredFinalizeFunctions
+    {
+        DeferredFinalizeStartFunction start;
+        DeferredFinalizeFunction run;
+    };
+    nsAutoTArray<DeferredFinalizeFunctions, 16> mDeferredFinalizeFunctions;
+
+public:
+    // Register deferred finalization functions. Should only be called once per
+    // pair of start and run.
+    bool RegisterDeferredFinalize(DeferredFinalizeStartFunction start,
+                                  DeferredFinalizeFunction run)
+    {
+        DeferredFinalizeFunctions* item =
+            mDeferredFinalizeFunctions.AppendElement();
+        item->start = start;
+        item->run = run;
+        return true;
+    }
+
+
     JSBool GetDoingFinalization() const {return mDoingFinalization;}
 
     // Mapping of often used strings to jsid atoms that live 'forever'.
@@ -737,6 +775,7 @@ public:
         IDX_CONSTRUCTOR             = 0 ,
         IDX_TO_STRING               ,
         IDX_TO_SOURCE               ,
+        IDX_VALUE_OF                ,
         IDX_LAST_RESULT             ,
         IDX_RETURN_CODE             ,
         IDX_VALUE                   ,
@@ -2794,12 +2833,6 @@ public:
                            nsISupports* aCOMObj,
                            XPCWrappedNative** aWrapper);
 
-    // Returns the wrapper corresponding to the parent of our mFlatJSObject.
-    //
-    // If the parent does not have a WN, or if there is no parent, null is
-    // returned.
-    XPCWrappedNative *GetParentWrapper();
-
     bool IsOrphan();
     nsresult RescueOrphans(XPCCallContext& ccx);
 
@@ -3792,7 +3825,7 @@ extern JSBool
 xpc_JSObjectIsID(JSContext *cx, JSObject* obj);
 
 /***************************************************************************/
-// in xpcdebug.cpp
+// in XPCDebug.cpp
 
 extern JSBool
 xpc_DumpJSStack(JSContext* cx, JSBool showArgs, JSBool showLocals,
@@ -3807,9 +3840,6 @@ xpc_PrintJSStack(JSContext* cx, JSBool showArgs, JSBool showLocals,
 
 extern JSBool
 xpc_DumpEvalInJSStackFrame(JSContext* cx, uint32_t frameno, const char* text);
-
-extern JSBool
-xpc_DumpJSObject(JSObject* obj);
 
 extern JSBool
 xpc_InstallJSDebuggerKeywordHandler(JSRuntime* rt);
@@ -4382,8 +4412,7 @@ GetCompartmentPrivate(JSObject *object)
 
 inline bool IsUniversalXPConnectEnabled(JSCompartment *compartment)
 {
-    CompartmentPrivate *priv =
-      static_cast<CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
+    CompartmentPrivate *priv = GetCompartmentPrivate(compartment);
     if (!priv)
         return false;
     return priv->universalXPConnectEnabled;
@@ -4402,8 +4431,7 @@ inline bool EnableUniversalXPConnect(JSContext *cx)
     JSCompartment *compartment = js::GetContextCompartment(cx);
     if (!compartment)
         return true;
-    CompartmentPrivate *priv =
-      static_cast<CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
+    CompartmentPrivate *priv = GetCompartmentPrivate(compartment);
     if (!priv)
         return true;
     priv->universalXPConnectEnabled = true;

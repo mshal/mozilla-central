@@ -9,15 +9,11 @@
       android:sharedUserId="@MOZ_ANDROID_SHARED_ID@"
 #endif
       >
-
-#ifdef ARMV7_ONLY
-    <supports-screens android:smallScreens="false" />
-#endif
-
     <uses-sdk android:minSdkVersion="8"
               android:targetSdkVersion="14"/>
 
-#include ../sync/manifests/SyncAndroidManifest_permissions.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_permissions.xml.in
+#include ../services/manifests/SyncAndroidManifest_permissions.xml.in
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -112,6 +108,13 @@
                 <data android:scheme="https" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH" />
+            </intent-filter>
+
+            <meta-data android:name="android.app.searchable"
+                       android:resource="@xml/searchable" />
+
             <!-- For debugging -->
             <intent-filter>
                 <action android:name="org.mozilla.gecko.DEBUG" />
@@ -120,25 +123,6 @@
         </activity>
 
 #include @OBJDIR@/WebAppManifestFragment.xml.in
-
-        <activity android:name=".MarketplaceApp"
-                  android:label="Mozilla Marketplace"
-                  android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize"
-                  android:windowSoftInputMode="stateUnspecified|adjustResize"
-                  android:icon="@drawable/marketplace"
-                  android:launchMode="singleTask"
-                  android:theme="@style/Gecko.NoActionBar"
-                  android:noHistory="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" android:host="marketplace.mozilla.org"/>
-                <data android:scheme="https" android:host="marketplace.mozilla.org"/>
-            </intent-filter>
-
-        </activity>
 
         <!-- Masquerade as the Resolver so that we can be opened from the Marketplace. -->
         <activity-alias
@@ -166,6 +150,21 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name="org.mozilla.gecko.ReferrerReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.vending.INSTALL_REFERRER" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name="GeckoAppWidgetProvider"
+                  android:label="@MOZ_APP_DISPLAYNAME@">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                       android:resource="@xml/gecko_appwidget_info" />
+        </receiver>
+
         <activity android:name="Restarter"
                   android:process="@ANDROID_PACKAGE_NAME@Restarter"
                   android:theme="@style/Gecko">
@@ -175,7 +174,8 @@
           </intent-filter>
         </activity>
 
-#include ../sync/manifests/SyncAndroidManifest_activities.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_activities.xml.in
+#include ../services/manifests/SyncAndroidManifest_activities.xml.in
 
 #if MOZ_CRASHREPORTER
   <activity android:name="CrashReporter"
@@ -213,7 +213,12 @@
 
         <provider android:name="@ANDROID_PACKAGE_NAME@.db.BrowserProvider"
                   android:authorities="@ANDROID_PACKAGE_NAME@.db.browser"
-                  android:permission="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"/>
+                  android:permission="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER">
+
+            <path-permission android:pathPrefix="/search_suggest_query"
+                             android:readPermission="android.permission.GLOBAL_SEARCH" />
+
+        </provider>
 
         <!--
           Ensure that passwords provider runs in its own process. (Bug 718760.)
@@ -242,7 +247,8 @@
         </service>
 
 
-#include ../sync/manifests/SyncAndroidManifest_services.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_services.xml.in
+#include ../services/manifests/SyncAndroidManifest_services.xml.in
     </application>
 
     <permission android:name="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"

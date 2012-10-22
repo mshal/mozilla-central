@@ -339,28 +339,36 @@ nsViewSourceChannel::SetContentCharset(const nsACString &aContentCharset)
     return mChannel->SetContentCharset(aContentCharset);
 }
 
+// We don't forward these methods becacuse content-disposition isn't whitelisted
+// (see GetResponseHeader/VisitResponseHeaders).
 NS_IMETHODIMP
 nsViewSourceChannel::GetContentDisposition(uint32_t *aContentDisposition)
 {
-    NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
+    return NS_ERROR_NOT_AVAILABLE;
+}
 
-    return mChannel->GetContentDisposition(aContentDisposition);
+NS_IMETHODIMP
+nsViewSourceChannel::SetContentDisposition(uint32_t aContentDisposition)
+{
+    return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP
 nsViewSourceChannel::GetContentDispositionFilename(nsAString &aContentDispositionFilename)
 {
-    NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
+    return NS_ERROR_NOT_AVAILABLE;
+}
 
-    return mChannel->GetContentDispositionFilename(aContentDispositionFilename);
+NS_IMETHODIMP
+nsViewSourceChannel::SetContentDispositionFilename(const nsAString &aContentDispositionFilename)
+{
+    return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP
 nsViewSourceChannel::GetContentDispositionHeader(nsACString &aContentDispositionHeader)
 {
-    NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
-
-    return mChannel->GetContentDispositionHeader(aContentDispositionHeader);
+    return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP

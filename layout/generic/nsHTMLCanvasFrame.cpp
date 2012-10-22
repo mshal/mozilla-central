@@ -20,10 +20,6 @@
 
 #include "gfxContext.h"
 
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
-
 using namespace mozilla;
 using namespace mozilla::layers;
 
@@ -213,10 +209,6 @@ nsHTMLCanvasFrame::Reflow(nsPresContext*           aPresContext,
   aMetrics.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aMetrics);
 
-  if (mRect.width != aMetrics.width || mRect.height != aMetrics.height) {
-    Invalidate(nsRect(0, 0, mRect.width, mRect.height));
-  }
-
   // Reflow the single anon block child.
   nsReflowStatus childStatus;
   nsSize availSize(aReflowState.ComputedWidth(), NS_UNCONSTRAINEDSIZE);
@@ -268,7 +260,7 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     return nullptr;
 
   CanvasLayer* oldLayer = static_cast<CanvasLayer*>
-    (aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, aManager, aItem));
+    (aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, aItem));
   nsRefPtr<CanvasLayer> layer = element->GetCanvasLayer(aBuilder, oldLayer, aManager);
   if (!layer)
     return nullptr;
@@ -346,14 +338,10 @@ nsHTMLCanvasFrame::GetContinuationOffset(nscoord* aWidth) const
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsHTMLCanvasFrame::CreateAccessible()
+a11y::AccType
+nsHTMLCanvasFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLCanvasAccessible(mContent, PresContext()->PresShell());
-  }
-  return nullptr;
+  return a11y::eHTMLCanvasAccessible;
 }
 #endif
 

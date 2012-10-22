@@ -49,21 +49,21 @@ function LOG(msg) {
 
 function TCPSocketEvent(type, sock, data) {
   this._type = type;
-  this._socket = sock;
+  this._target = sock;
   this._data = data;
 }
 
 TCPSocketEvent.prototype = {
   __exposedProps__: {
     type: 'r',
-    socket: 'r',
+    target: 'r',
     data: 'r'
   },
   get type() {
     return this._type;
   },
-  get socket() {
-    return this._socket;
+  get target() {
+    return this._target;
   },
   get data() {
     return this._data;
@@ -142,6 +142,12 @@ TCPSocket.prototype = {
   _waitingForDrain: false,
   _suspendCount: 0,
 
+  // Reported parent process buffer
+  _bufferedAmount: 0,
+
+  // IPC socket actor
+  _socketBridge: null,
+
   // Public accessors.
   get readyState() {
     return this._readyState;
@@ -159,6 +165,9 @@ TCPSocket.prototype = {
     return this._ssl;
   },
   get bufferedAmount() {
+    if (this._inChild) {
+      return this._bufferedAmount;
+    }
     return this._multiplexStream.available();
   },
   get onopen() {
@@ -224,8 +233,8 @@ TCPSocket.prototype = {
           self._readyState = kCLOSED;
           let err = new Error("Connection closed while writing: " + status);
           err.status = status;
-          self.callListener("onerror", err);
-          self.callListener("onclose");
+          self.callListener("error", err);
+          self.callListener("close");
           return;
         }
 
@@ -234,12 +243,12 @@ TCPSocket.prototype = {
         } else {
           if (self._waitingForDrain) {
             self._waitingForDrain = false;
-            self.callListener("ondrain");
+            self.callListener("drain");
           }
           if (self._readyState === kCLOSING) {
             self._socketOutputStream.close();
             self._readyState = kCLOSED;
-            self.callListener("onclose");
+            self.callListener("close");
           }
         }
       }
@@ -247,14 +256,42 @@ TCPSocket.prototype = {
   },
 
   callListener: function ts_callListener(type, data) {
-    if (!this[type])
+    if (!this["on" + type])
       return;
 
-    this[type].call(null, new TCPSocketEvent(type, this, data || ""));
+    this["on" + type].call(null, new TCPSocketEvent(type, this, data || ""));
+  },
+
+  /* nsITCPSocketInternal methods */
+  callListenerError: function ts_callListenerError(type, message, filename,
+                                                   lineNumber, columnNumber) {
+    this.callListener(type, new Error(message, filename, lineNumber, columnNumber));
+  },
+
+  callListenerData: function ts_callListenerString(type, data) {
+    this.callListener(type, data);
+  },
+
+  callListenerArrayBuffer: function ts_callListenerArrayBuffer(type, data) {
+    this.callListener(type, data);
+  },
+
+  callListenerVoid: function ts_callListenerVoid(type) {
+    this.callListener(type);
+  },
+
+  updateReadyStateAndBuffered: function ts_setReadyState(readyState, bufferedAmount) {
+    this._readyState = readyState;
+    this._bufferedAmount = bufferedAmount;
+  },
+  /* end nsITCPSocketInternal methods */
+
+  initWindowless: function ts_initWindowless() {
+    return Services.prefs.getBoolPref("dom.mozTCPSocket.enabled");
   },
 
   init: function ts_init(aWindow) {
-    if (!Services.prefs.getBoolPref("dom.mozTCPSocket.enabled"))
+    if (!this.initWindowless())
       return null;
 
     let principal = aWindow.document.nodePrincipal;
@@ -301,6 +338,13 @@ TCPSocket.prototype = {
 
   // nsIDOMTCPSocket
   open: function ts_open(host, port, options) {
+    if (!this.initWindowless())
+      return null;
+
+    this._inChild = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
+                       .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+    LOG("content process: " + (this._inChild ? "true" : "false") + "\n");
+
     // in the testing case, init won't be called and
     // hasPrivileges will be null. We want to proceed to test.
     if (this._hasPrivileges !== true && this._hasPrivileges !== null) {
@@ -310,6 +354,7 @@ TCPSocket.prototype = {
 
     that.useWin = this.useWin;
     that.innerWindowID = this.innerWindowID;
+    that._inChild = this._inChild;
 
     LOG("window init: " + that.innerWindowID);
     Services.obs.addObserver(that, "inner-window-destroyed", true);
@@ -330,6 +375,14 @@ TCPSocket.prototype = {
     }
 
     LOG("SSL: " + that.ssl + "\n");
+
+    if (this._inChild) {
+      that._socketBridge = Cc["@mozilla.org/tcp-socket-child;1"]
+                             .createInstance(Ci.nsITCPSocketChild);
+      that._socketBridge.open(that, host, port, !!that._ssl,
+                              that._binaryType, this.useWin, this);
+      return that;
+    }
 
     let transport = that._transport = this._createTransport(host, port, that._ssl);
     transport.setEventSink(that, Services.tm.currentThread);
@@ -372,6 +425,11 @@ TCPSocket.prototype = {
     LOG("close called\n");
     this._readyState = kCLOSING;
 
+    if (this._inChild) {
+      this._socketBridge.close();
+      return;
+    }
+
     if (!this._multiplexStream.count) {
       this._socketOutputStream.close();
     }
@@ -381,6 +439,10 @@ TCPSocket.prototype = {
   send: function ts_send(data) {
     if (this._readyState !== kOPEN) {
       throw new Error("Socket not open.");
+    }
+
+    if (this._inChild) {
+      this._socketBridge.send(data);
     }
 
     let new_stream = new StringInputStream();
@@ -405,6 +467,11 @@ TCPSocket.prototype = {
       data = result;
     }
     var newBufferedAmount = this.bufferedAmount + data.length;
+    var bufferNotFull = newBufferedAmount < BUFFER_SIZE;
+    if (this._inChild) {
+      return bufferNotFull;
+    }
+
     new_stream.setData(data, data.length);
     this._multiplexStream.appendStream(new_stream);
 
@@ -418,10 +485,15 @@ TCPSocket.prototype = {
     }
 
     this._ensureCopying();
-    return newBufferedAmount < BUFFER_SIZE;
+    return bufferNotFull;
   },
 
   suspend: function ts_suspend() {
+    if (this._inChild) {
+      this._socketBridge.suspend();
+      return;
+    }
+
     if (this._inputStreamPump) {
       this._inputStreamPump.suspend();
     } else {
@@ -430,6 +502,11 @@ TCPSocket.prototype = {
   },
 
   resume: function ts_resume() {
+    if (this._inChild) {
+      this._socketBridge.resume();
+      return;
+    }
+
     if (this._inputStreamPump) {
       this._inputStreamPump.resume();
     } else {
@@ -440,10 +517,9 @@ TCPSocket.prototype = {
   // nsITransportEventSink (Triggered by transport.setEventSink)
   onTransportStatus: function ts_onTransportStatus(
     transport, status, progress, max) {
-
     if (status === Ci.nsISocketTransport.STATUS_CONNECTED_TO) {
       this._readyState = kOPEN;
-      this.callListener("onopen");
+      this.callListener("open");
 
       this._inputStreamPump = new InputStreamPump(
         this._socketInputStream, -1, -1, 0, 0, false
@@ -463,7 +539,7 @@ TCPSocket.prototype = {
     try {
       input.available();
     } catch (e) {
-      this.callListener("onerror", new Error("Connection refused"));
+      this.callListener("error", new Error("Connection refused"));
     }
   },
 
@@ -491,10 +567,10 @@ TCPSocket.prototype = {
     if (status) {
       let err = new Error("Connection closed: " + status);
       err.status = status;
-      this.callListener("onerror", err);
+      this.callListener("error", err);
     }
 
-    this.callListener("onclose");
+    this.callListener("close");
   },
 
   // nsIStreamListener (Triggered by _inputStreamPump.asyncRead)
@@ -503,9 +579,9 @@ TCPSocket.prototype = {
       let ua = this.useWin ? new this.useWin.Uint8Array(count)
                            : new Uint8Array(count);
       ua.set(this._inputStreamBinary.readByteArray(count));
-      this.callListener("ondata", ua);
+      this.callListener("data", ua);
     } else {
-      this.callListener("ondata", this._inputStreamScriptable.read(count));
+      this.callListener("data", this._inputStreamScriptable.read(count));
     }
   },
 
@@ -526,6 +602,7 @@ TCPSocket.prototype = {
 
   QueryInterface: XPCOMUtils.generateQI([
     Ci.nsIDOMTCPSocket,
+    Ci.nsITCPSocketInternal,
     Ci.nsIDOMGlobalPropertyInitializer,
     Ci.nsIObserver,
     Ci.nsISupportsWeakReference
@@ -540,7 +617,7 @@ function SecurityCallbacks(socket) {
 SecurityCallbacks.prototype = {
   notifyCertProblem: function sc_notifyCertProblem(socketInfo, status,
                                                    targetSite) {
-    this._socket.callListener("onerror", status);
+    this._socket.callListener("error", status);
     this._socket.close();
     return true;
   },

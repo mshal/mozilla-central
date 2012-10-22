@@ -164,6 +164,9 @@
 
 #include "nsIContent.h"
 
+#include "mozilla/HangMonitor.h"
+#include "nsIMM32Handler.h"
+
 using namespace mozilla::widget;
 using namespace mozilla::layers;
 using namespace mozilla;
@@ -481,8 +484,13 @@ nsWindow::Create(nsIWidget *aParent,
   DWORD extendedStyle = WindowExStyle();
 
   if (mWindowType == eWindowType_popup) {
-    if (!aParent)
+    if (!aParent) {
       parent = NULL;
+    }
+
+    if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION) {
+      extendedStyle |= WS_EX_COMPOSITED;
+    }
 
     if (aInitData->mIsDragPopup) {
       // This flag makes the window transparent to mouse events
@@ -961,6 +969,19 @@ float nsWindow::GetDPI()
   return float(heightPx/heightInches);
 }
 
+double nsWindow::GetDefaultScale()
+{
+  HDC dc = ::GetDC(mWnd);
+  if (!dc)
+    return 1.0;
+
+  // LOGPIXELSY returns the number of logical pixels per inch. This is based
+  // on font DPI settings rather than the actual screen DPI.
+  double pixelsPerInch = ::GetDeviceCaps(dc, LOGPIXELSY);
+  ::ReleaseDC(mWnd, dc);
+  return pixelsPerInch/96.0;
+}
+
 nsWindow* nsWindow::GetParentWindow(bool aIncludeOwner)
 {
   if (mIsTopWidgetWindow) {
@@ -1061,6 +1082,13 @@ NS_METHOD nsWindow::Show(bool bState)
         ::SetClassLongA(mWnd, GCL_STYLE, CS_DROPSHADOW);
         sDropShadowEnabled = true;
       }
+    }
+
+    // WS_EX_COMPOSITED conflicts with the WS_EX_LAYERED style and causes
+    // some popup menus to become invisible.
+    LONG_PTR exStyle = ::GetWindowLongPtrW(mWnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_LAYERED) {
+      ::SetWindowLongPtrW(mWnd, GWL_EXSTYLE, exStyle & ~WS_EX_COMPOSITED);
     }
   }
 
@@ -4258,11 +4286,27 @@ DisplaySystemMenu(HWND hWnd, nsSizeMode sizeMode, bool isRtl, int32_t x, int32_t
   return false;
 }
 
+inline static mozilla::HangMonitor::ActivityType ActivityTypeForMessage(UINT msg)
+{
+  if ((msg >= WM_KEYFIRST && msg <= WM_IME_KEYLAST) ||
+      (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) ||
+      (msg >= MOZ_WM_MOUSEWHEEL_FIRST && msg <= MOZ_WM_MOUSEWHEEL_LAST) ||
+      (msg >= NS_WM_IMEFIRST && msg <= NS_WM_IMELAST)) {
+    return mozilla::HangMonitor::kUIActivity;
+  }
+
+  // This may not actually be right, but we don't want to reset the timer if
+  // we're not actually processing a UI message.
+  return mozilla::HangMonitor::kActivityUIAVail;
+}
+
 // The WndProc procedure for all nsWindows in this toolkit. This merely catches
 // exceptions and passes the real work to WindowProcInternal. See bug 587406
 // and http://msdn.microsoft.com/en-us/library/ms633573%28VS.85%29.aspx
 LRESULT CALLBACK nsWindow::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+  HangMonitor::NotifyActivity(ActivityTypeForMessage(msg));
+
   return mozilla::CallWindowProcCrashProtected(WindowProcInternal, hWnd, msg, wParam, lParam);
 }
 
@@ -6405,7 +6449,7 @@ LRESULT nsWindow::OnKeyDown(const MSG &aMsg,
         keyinput.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
       }
       keyinput.ki.time = 0;
-      keyinput.ki.dwExtraInfo = NULL;
+      keyinput.ki.dwExtraInfo = 0;
 
       sRedirectedKeyDownEventPreventedDefault = noDefault;
       sRedirectedKeyDown = aMsg;
@@ -7917,7 +7961,7 @@ nsWindow::DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam, LPARAM inLPara
 
       // If we're dealing with menus, we probably have submenus and we don't
       // want to rollup if the click is in a parent menu of the current submenu.
-      uint32_t popupsToRollup = PR_UINT32_MAX;
+      uint32_t popupsToRollup = UINT32_MAX;
       if (rollup) {
         if ( sRollupListener ) {
           nsAutoTArray<nsIWidget*, 5> widgetChain;
@@ -7941,7 +7985,7 @@ nsWindow::DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam, LPARAM inLPara
         } // if rollup listener knows about menus
       }
 
-      if (inMsg == WM_MOUSEACTIVATE && popupsToRollup == PR_UINT32_MAX) {
+      if (inMsg == WM_MOUSEACTIVATE && popupsToRollup == UINT32_MAX) {
         // Prevent the click inside the popup from causing a change in window
         // activation. Since the popup is shown non-activated, we need to eat
         // any requests to activate the window while it is displayed. Windows
@@ -8004,7 +8048,7 @@ nsWindow::DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam, LPARAM inLPara
         // if we are only rolling up some popups, don't activate and don't let
         // the event go through. This prevents clicks menus higher in the
         // chain from opening when a context menu is open
-        if (popupsToRollup != PR_UINT32_MAX && inMsg == WM_MOUSEACTIVATE) {
+        if (popupsToRollup != UINT32_MAX && inMsg == WM_MOUSEACTIVATE) {
           *outResult = MA_NOACTIVATEANDEAT;
           return TRUE;
         }

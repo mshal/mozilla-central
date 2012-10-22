@@ -9,6 +9,7 @@
 #include "nsCOMPtr.h"
 #include "nsIDOMHTMLBodyElement.h"
 #include "nsGenericHTMLElement.h"
+#include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
@@ -21,7 +22,7 @@
 #include "nsIDocShell.h"
 #include "nsIEditorDocShell.h"
 #include "nsRuleWalker.h"
-#include "jsapi.h"
+#include "jspubtd.h"
 
 //----------------------------------------------------------------------
 
@@ -61,7 +62,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
   NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)

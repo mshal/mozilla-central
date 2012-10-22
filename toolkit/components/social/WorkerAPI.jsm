@@ -27,9 +27,6 @@ function WorkerAPI(provider, port) {
   // used for the api.
   // later we might even include an API version - version 0 for now!
   this._port.postMessage({topic: "social.initialize"});
-  
-  // backwards compat, remove after Aug 1.
-  this._port.postMessage({topic: "social.cookie-changed"});
 }
 
 WorkerAPI.prototype = {
@@ -52,6 +49,13 @@ WorkerAPI.prototype = {
   },
 
   handlers: {
+    "social.reload-worker": function(data) {
+      getFrameWorkerHandle(this._provider.workerURL, null)._worker.reload();
+      // the frameworker is going to be reloaded, send the initialization
+      // so it can have the same startup sequence as if it were loaded
+      // the first time.  This will be queued until the frameworker is ready.
+      this._port.postMessage({topic: "social.initialize"});
+    },
     "social.user-profile": function (data) {
       this._provider.updateUserProfile(data);
     },
@@ -59,13 +63,13 @@ WorkerAPI.prototype = {
       this._provider.setAmbientNotification(data);
     },
     "social.cookies-get": function(data) {
-      let document = getFrameWorkerHandle(this._provider.workerURL, null).document;
+      let document = this._port._window.document;
       let cookies = document.cookie.split(";");
       let results = [];
       cookies.forEach(function(aCookie) {
         let [name, value] = aCookie.split("=");
         results.push({name: unescape(name.trim()),
-                      value: unescape(value.trim())});
+                      value: value ? unescape(value.trim()) : ""});
       });
       this._port.postMessage({topic: "social.cookies-get-response",
                               data: results});

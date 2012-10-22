@@ -281,6 +281,12 @@ TypeInferenceOracle::propertyReadIdempotent(JSScript *script, jsbytecode *pc, Ha
 }
 
 bool
+TypeInferenceOracle::propertyReadAccessGetter(JSScript *script, jsbytecode *pc)
+{
+    return script->analysis()->getCode(pc).accessGetter;
+}
+
+bool
 TypeInferenceOracle::elementReadIsDenseArray(JSScript *script, jsbytecode *pc)
 {
     // Check whether the object is a dense array and index is int32 or double.
@@ -351,8 +357,11 @@ TypeInferenceOracle::elementReadIsString(JSScript *script, jsbytecode *pc)
     if (id->getKnownTypeTag() != JSVAL_TYPE_INT32)
         return false;
 
-    types::TypeSet *pushed = script->analysis()->pushedTypes(pc, 0);
-    if (!pushed->hasType(types::Type::StringType()))
+    // This function is used for jsop_getelem_string which should return
+    // undefined if this is out-side the string bounds. Currently we just
+    // fallback to a CallGetElement.
+    StackTypeSet *pushed = script->analysis()->pushedTypes(pc, 0);
+    if (pushed->getKnownTypeTag() != JSVAL_TYPE_STRING)
         return false;
 
     return true;
@@ -373,6 +382,12 @@ TypeInferenceOracle::elementReadGeneric(JSScript *script, jsbytecode *pc, bool *
 
     *cacheable = (obj == MIRType_Object &&
                   (id == MIRType_Value || id == MIRType_Int32 || id == MIRType_String));
+
+    // Turn off cacheing if the element is int32 and we've seen non-native objects as the target
+    // of this getelem.
+    if (*cacheable && id == MIRType_Int32 && script->analysis()->getCode(pc).nonNativeGetElement)
+        *cacheable = false;
+
     if (*cacheable)
         *monitorResult = (id == MIRType_String || script->analysis()->getCode(pc).getStringElement);
     else
@@ -539,7 +554,8 @@ TypeInferenceOracle::canInlineCall(JSScript *caller, jsbytecode *pc)
 bool
 TypeInferenceOracle::canEnterInlinedFunction(JSFunction *target)
 {
-    JSScript *script = target->script();
+    AssertCanGC();
+    RootedScript script(cx, target->script());
     if (!script->hasAnalysis() || !script->analysis()->ranInference())
         return false;
 

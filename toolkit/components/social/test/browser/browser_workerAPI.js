@@ -102,6 +102,46 @@ let tests = {
     Services.cookies.add('.example.com', '/', 'cheez', 'burger', false, false, true, MAX_EXPIRY);
     port.postMessage({topic: "test-initialization"});
     port.postMessage({topic: "test.cookies-get"});
-  }
+  },
 
+  testWorkerReload: function(next) {
+    let fw = {};
+    Cu.import("resource://gre/modules/FrameWorker.jsm", fw);
+
+    // get a real handle to the worker so we can watch the unload event
+    // we watch for the unload of the worker to know it is infact being
+    // unloaded, after that if we get worker.connected we know that
+    // the worker was loaded again and ports reconnected
+    let reloading = false;
+    let worker = fw.getFrameWorkerHandle(provider.workerURL, undefined, "testWorkerReload");
+    let frame =  worker._worker.frame;
+    let win = frame.contentWindow;
+    let port = provider.getWorkerPort();
+    win.addEventListener("unload", function workerUnload(e) {
+      win.removeEventListener("unload", workerUnload);
+      ok(true, "worker unload event has fired");
+      is(port._pendingMessagesOutgoing.length, 0, "port has no pending outgoing message");
+    });
+    frame.addEventListener("DOMWindowCreated", function workerLoaded(e) {
+      frame.removeEventListener("DOMWindowCreated", workerLoaded);
+      // send a message which should end up pending
+      port.postMessage({topic: "test-pending-msg"});
+      ok(port._pendingMessagesOutgoing.length > 0, "port has pending outgoing message");
+    });
+    ok(port, "provider has a port");
+    port.onmessage = function (e) {
+      let topic = e.data.topic;
+      switch (topic) {
+        case "test-initialization-complete":
+          // tell the worker to send the reload msg
+          port.postMessage({topic: "test-reload-init"});
+          break;
+        case "test-pending-response":
+          ok(true, "worker reloaded and testPort was reconnected");
+          next();
+          break;
+      }
+    }
+    port.postMessage({topic: "test-initialization"});
+  }
 };

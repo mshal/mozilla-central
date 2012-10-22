@@ -36,9 +36,6 @@
 #include "nsGUIEvent.h"
 #include "nsIServiceManager.h"
 #include "nsINodeInfo.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsHTMLSelectElement.h"
 #include "nsCSSRendering.h"
 #include "nsITheme.h"
@@ -52,7 +49,7 @@
 using namespace mozilla;
 
 // Constants
-const int32_t kMaxDropDownRows          = 20; // This matches the setting for 4.x browsers
+const uint32_t kMaxDropDownRows         = 20; // This matches the setting for 4.x browsers
 const int32_t kNothingSelected          = -1;
 
 // Static members
@@ -256,15 +253,7 @@ nsListControlFrame::InvalidateFocus()
 
   nsIFrame* containerFrame = GetOptionsContainer();
   if (containerFrame) {
-    // Invalidating from the containerFrame because that's where our focus
-    // is drawn.
-    // The origin of the scrollport is the origin of containerFrame.
-    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
-    nsRect invalidateArea = containerFrame->GetVisualOverflowRect();
-    nsRect emptyFallbackArea(0, 0, GetScrollPortRect().width,
-                             CalcFallbackRowHeight(inflation));
-    invalidateArea.UnionRect(invalidateArea, emptyFallbackArea);
-    containerFrame->Invalidate(invalidateArea);
+    containerFrame->InvalidateFrame();
   }
 }
 
@@ -275,16 +264,10 @@ NS_QUERYFRAME_HEAD(nsListControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsHTMLScrollFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsListControlFrame::CreateAccessible()
+a11y::AccType
+nsListControlFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHTMLListboxAccessible(mContent,
-                                                   PresContext()->PresShell());
-  }
-
-  return nullptr;
+  return a11y::eHTMLSelectListAccessible;
 }
 #endif
 
@@ -585,11 +568,11 @@ nsListControlFrame::ReflowAsDropdown(nsPresContext*           aPresContext,
       nscoord bp = aReflowState.mComputedBorderPadding.TopBottom();
       nscoord availableHeight = NS_MAX(above, below) - bp;
       nscoord newHeight;
-      int32_t rows;
+      uint32_t rows;
       if (visibleHeight <= availableHeight) {
         // The dropdown fits in the available height.
         rows = GetNumberOfOptions();
-        mNumDisplayRows = clamped(rows, 1, kMaxDropDownRows);
+        mNumDisplayRows = clamped<uint32_t>(rows, 1, kMaxDropDownRows);
         if (mNumDisplayRows == rows) {
           newHeight = visibleHeight;  // use the exact height
         } else {
@@ -597,7 +580,7 @@ nsListControlFrame::ReflowAsDropdown(nsPresContext*           aPresContext,
         }
       } else {
         rows = availableHeight / heightOfARow;
-        mNumDisplayRows = clamped(rows, 1, kMaxDropDownRows);
+        mNumDisplayRows = clamped<uint32_t>(rows, 1, kMaxDropDownRows);
         newHeight = mNumDisplayRows * heightOfARow; // approximate
       }
       state.SetComputedHeight(newHeight);
@@ -1000,6 +983,8 @@ nsListControlFrame::Init(nsIContent*     aContent,
 
   mLastDropdownBackstopColor = PresContext()->DefaultBackgroundColor();
 
+  AddStateBits(NS_FRAME_IN_POPUP);
+
   return result;
 }
 
@@ -1271,21 +1256,21 @@ nsListControlFrame::IsInDropDownMode() const
   return (mComboboxFrame != nullptr);
 }
 
-int32_t
+uint32_t
 nsListControlFrame::GetNumberOfOptions()
 {
-  if (mContent != nullptr) {
-    nsCOMPtr<nsIDOMHTMLOptionsCollection> options = GetOptions(mContent);
-
-    if (!options) {
-      return 0;
-    } else {
-      uint32_t length = 0;
-      options->GetLength(&length);
-      return (int32_t)length;
-    }
+  if (!mContent) {
+    return 0;
   }
-  return 0;
+
+  nsCOMPtr<nsIDOMHTMLOptionsCollection> options = GetOptions(mContent);
+  if (!options) {
+    return 0;
+  }
+
+  uint32_t length = 0;
+  options->GetLength(&length);
+  return length;
 }
 
 //----------------------------------------------------------------------
@@ -1338,10 +1323,10 @@ nsListControlFrame::AddOption(int32_t aIndex)
       mIsAllFramesHere    = false;
       mHasBeenInitialized = false;
     } else {
-      mIsAllFramesHere = (aIndex == GetNumberOfOptions()-1);
+      mIsAllFramesHere = (aIndex == static_cast<int32_t>(GetNumberOfOptions()-1));
     }
   }
-  
+
   // Make sure we scroll to the selected option as needed
   mNeedToReset = true;
 
@@ -1677,18 +1662,6 @@ nsIAtom*
 nsListControlFrame::GetType() const
 {
   return nsGkAtoms::listControlFrame; 
-}
-
-void
-nsListControlFrame::InvalidateInternal(const nsRect& aDamageRect,
-                                       nscoord aX, nscoord aY, nsIFrame* aForChild,
-                                       uint32_t aFlags)
-{
-  if (!IsInDropDownMode()) {
-    nsHTMLScrollFrame::InvalidateInternal(aDamageRect, aX, aY, this, aFlags);
-    return;
-  }
-  InvalidateRoot(aDamageRect + nsPoint(aX, aY), aFlags);
 }
 
 #ifdef DEBUG

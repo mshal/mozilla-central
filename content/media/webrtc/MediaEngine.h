@@ -21,6 +21,13 @@ namespace mozilla {
 class MediaEngineVideoSource;
 class MediaEngineAudioSource;
 
+enum MediaEngineState {
+  kAllocated,
+  kStarted,
+  kStopped,
+  kReleased
+};
+
 class MediaEngine
 {
 public:
@@ -66,11 +73,26 @@ public:
    */
   virtual nsresult Snapshot(uint32_t aDuration, nsIDOMFile** aFile) = 0;
 
+  /* Called when the stream wants more data */
+  virtual void NotifyPull(MediaStreamGraph* aGraph, StreamTime aDesiredTime) = 0;
+
   /* Stop the device and release the corresponding MediaStream */
   virtual nsresult Stop() = 0;
 
+  /* Return false if device is currently allocated or started */
+  bool IsAvailable() {
+    if (mState == kAllocated || mState == kStarted) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
   /* It is an error to call Start() before an Allocate(), and Stop() before
    * a Start(). Only Allocate() may be called after a Deallocate(). */
+
+protected:
+  MediaEngineState mState;
 };
 
 /**
@@ -96,7 +118,7 @@ public:
 
   /* Return a MediaEngineVideoOptions struct with appropriate values for all
    * fields. */
-  virtual MediaEngineVideoOptions GetOptions() = 0;
+  virtual const MediaEngineVideoOptions *GetOptions() = 0;
 };
 
 /**

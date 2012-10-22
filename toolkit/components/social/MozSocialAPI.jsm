@@ -43,6 +43,11 @@ function injectController(doc, topic, data) {
     if (!window)
       return;
 
+    // Do not attempt to load the API into about: error pages
+    if (doc.documentURIObject.scheme == "about") {
+      return;
+    }
+
     var containingBrowser = window.QueryInterface(Ci.nsIInterfaceRequestor)
                                   .getInterface(Ci.nsIWebNavigation)
                                   .QueryInterface(Ci.nsIDocShell)
@@ -174,6 +179,39 @@ function attachToWindow(provider, targetWindow) {
     // set a timer which will fire after the unload events have all fired.
     schedule(function () { port.close(); });
   });
+  // We allow window.close() to close the panel, so add an event handler for
+  // this, then cancel the event (so the window itself doesn't die) and
+  // close the panel instead.
+  // However, this is typically affected by the dom.allow_scripts_to_close_windows
+  // preference, but we can avoid that check by setting a flag on the window.
+  let dwu = targetWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                        .getInterface(Ci.nsIDOMWindowUtils);
+  dwu.allowScriptsToClose();
+
+  targetWindow.addEventListener("DOMWindowClose", function _mozSocialDOMWindowClose(evt) {
+    let elt = targetWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                .getInterface(Ci.nsIWebNavigation)
+                .QueryInterface(Ci.nsIDocShell)
+                .chromeEventHandler;
+    while (elt) {
+      if (elt.nodeName == "panel") {
+        elt.hidePopup();
+        break;
+      } else if (elt.nodeName == "chatbox") {
+        elt.close();
+        break;
+      }
+      elt = elt.parentNode;
+    }
+    // preventDefault stops the default window.close() function being called,
+    // which doesn't actually close anything but causes things to get into
+    // a bad state (an internal 'closed' flag is set and debug builds start
+    // asserting as the window is used.).
+    // None of the windows we inject this API into are suitable for this
+    // default close behaviour, so even if we took no action above, we avoid
+    // the default close from doing anything.
+    evt.preventDefault();
+  }, true);
 }
 
 function schedule(callback) {

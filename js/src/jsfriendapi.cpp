@@ -382,20 +382,18 @@ js::NewFunctionWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsi
 {
     RootedObject parent(cx, parentArg);
     JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
-    JSAtom *atom;
 
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
 
-    if (!name) {
-        atom = NULL;
-    } else {
+    RootedAtom atom(cx);
+    if (name) {
         atom = Atomize(cx, name, strlen(name));
         if (!atom)
             return NULL;
     }
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parent, atom,
+    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom,
                           JSFunction::ExtendedFinalizeKind);
 }
 
@@ -409,7 +407,8 @@ js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, 
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parent, JSID_TO_ATOM(id),
+    RootedAtom atom(cx, JSID_TO_ATOM(id));
+    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom,
                           JSFunction::ExtendedFinalizeKind);
 }
 
@@ -531,6 +530,14 @@ js::VisitGrayWrapperTargets(JSCompartment *comp, GCThingCallback *callback, void
         if (thing->isMarked(gc::GRAY))
             callback(closure, thing);
     }
+}
+
+JS_FRIEND_API(JSObject *)
+js::GetWeakmapKeyDelegate(JSObject *key)
+{
+    if (JSWeakmapKeyDelegateOp op = key->getClass()->ext.weakmapKeyDelegateOp)
+        return op(key);
+    return NULL;
 }
 
 JS_FRIEND_API(void)

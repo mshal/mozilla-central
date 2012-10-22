@@ -31,10 +31,7 @@ struct StmtInfoPC : public StmtInfoBase {
 
     uint32_t        blockid;        /* for simplified dominance computation */
 
-    /* True if type == STMT_BLOCK and this block is a function body. */
-    bool            isFunctionBodyBlock;
-
-    StmtInfoPC(JSContext *cx) : StmtInfoBase(cx), isFunctionBodyBlock(false) {}
+    StmtInfoPC(JSContext *cx) : StmtInfoBase(cx) {}
 };
 
 typedef HashSet<JSAtom *> FuncStmtSet;
@@ -271,7 +268,7 @@ struct Parser : private AutoGCRooter
 
   public:
     Parser(JSContext *cx, const CompileOptions &options,
-           const jschar *chars, size_t length, bool foldConstants);
+           StableCharPtr chars, size_t length, bool foldConstants);
     ~Parser();
 
     friend void AutoGCRooter::trace(JSTracer *trc);
@@ -308,7 +305,7 @@ struct Parser : private AutoGCRooter
      * Create a new function object given parse context (pc) and a name (which
      * is optional if this is a function expression).
      */
-    JSFunction *newFunction(ParseContext *pc, JSAtom *atom, FunctionSyntaxKind kind);
+    JSFunction *newFunction(ParseContext *pc, HandleAtom atom, FunctionSyntaxKind kind);
 
     void trace(JSTracer *trc);
 

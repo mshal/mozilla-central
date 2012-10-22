@@ -34,6 +34,7 @@
 #include "nsIScriptContext.h"
 #include "nsJSEnvironment.h"
 #include "nsXMLHttpRequest.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla;
 using namespace js;
@@ -1403,10 +1404,7 @@ nsXPCComponents_Results::NewResolve(nsIXPConnectWrappedNative *wrapper,
         nsresult rv;
         while (nsXPCException::IterateNSResults(&rv, &rv_name, nullptr, &iter)) {
             if (!strcmp(name.ptr(), rv_name)) {
-                // The two casts below is required since nsresult is an enum,
-                // and it can be interpreted as a signed integer if we directly
-                // cast to a double.
-                jsval val = JS_NumberValue((double)(uint32_t)rv);
+                jsval val = JS_NumberValue((double)rv);
 
                 *objp = obj;
                 if (!JS_DefinePropertyById(cx, obj, id, val,
@@ -1879,7 +1877,7 @@ struct NS_STACK_CLASS ExceptionArgParser
     }
 
     bool parseResult(JS::Value &v) {
-        return JS_ValueToECMAInt32(cx, v, (int32_t*) &eResult);
+        return JS_ValueToECMAUint32(cx, v, (uint32_t*) &eResult);
     }
 
     bool parseStack(JS::Value &v) {
@@ -3056,15 +3054,6 @@ WrapForSandbox(JSContext *cx, bool wantXrays, jsval *vp)
            : xpc::WrapperFactory::WaiveXrayAndWrap(cx, vp);
 }
 
-// Needed to distinguish multiple compartments with the same origin from each
-// other. The only thing we need out of identity objects are unique addresses.
-class Identity MOZ_FINAL : public nsISupports
-{
-    NS_DECL_ISUPPORTS
-};
-
-NS_IMPL_ISUPPORTS0(Identity)
-
 xpc::SandboxProxyHandler xpc::sandboxProxyHandler;
 
 // A proxy handler that lets us wrap callables and invoke them with
@@ -3270,9 +3259,8 @@ xpc_CreateSandboxObject(JSContext *cx, jsval *vp, nsISupports *prinOrSop, Sandbo
     JSCompartment *compartment;
     JSObject *sandbox;
 
-    nsRefPtr<Identity> identity = new Identity();
-    rv = xpc_CreateGlobalObject(cx, &SandboxClass, principal, identity,
-                                options.wantXrays, &sandbox, &compartment);
+    rv = xpc::CreateGlobalObject(cx, &SandboxClass, principal,
+                                 options.wantXrays, &sandbox, &compartment);
     NS_ENSURE_SUCCESS(rv, rv);
 
     JS::AutoObjectRooter tvr(cx, sandbox);
@@ -3851,25 +3839,7 @@ xpc_EvalInSandbox(JSContext *cx, JSObject *sandbox, const nsAString& source,
 {
     JS_AbortIfWrongThread(JS_GetRuntime(cx));
 
-#ifdef DEBUG
-    // NB: The "unsafe" unwrap here is OK because we must be called from chrome.
-    {
-        nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();
-        if (ssm) {
-            JSStackFrame *fp;
-            nsIPrincipal *subjectPrincipal =
-                ssm->GetCxSubjectPrincipalAndFrame(cx, &fp);
-            bool system;
-            ssm->IsSystemPrincipal(subjectPrincipal, &system);
-            if (fp && !system) {
-                ssm->IsCapabilityEnabled("UniversalXPConnect", &system);
-                NS_ASSERTION(system, "Bad caller!");
-            }
-        }
-    }
-#endif
-
-    sandbox = XPCWrapper::UnsafeUnwrapSecurityWrapper(sandbox);
+    sandbox = js::UnwrapObjectChecked(cx, sandbox);
     if (!sandbox || js::GetObjectJSClass(sandbox) != &SandboxClass) {
         return NS_ERROR_INVALID_ARG;
     }
@@ -4453,7 +4423,6 @@ GENERATE_JSOPTION_GETTER_SETTER(Strict, JSOPTION_STRICT)
 GENERATE_JSOPTION_GETTER_SETTER(Werror, JSOPTION_WERROR)
 GENERATE_JSOPTION_GETTER_SETTER(Atline, JSOPTION_ATLINE)
 GENERATE_JSOPTION_GETTER_SETTER(Xml, JSOPTION_MOAR_XML)
-GENERATE_JSOPTION_GETTER_SETTER(Relimit, JSOPTION_RELIMIT)
 GENERATE_JSOPTION_GETTER_SETTER(Methodjit, JSOPTION_METHODJIT)
 GENERATE_JSOPTION_GETTER_SETTER(Methodjit_always, JSOPTION_METHODJIT_ALWAYS)
 GENERATE_JSOPTION_GETTER_SETTER(Strict_mode, JSOPTION_STRICT_MODE)
@@ -4743,10 +4712,7 @@ nsXPCComponents::GetProperty(nsIXPConnectWrappedNative *wrapper,
 
     nsresult rv = NS_OK;
     if (doResult) {
-        // The two casts below is required since nsresult is an enum,
-        // and it can be interpreted as a signed integer if we directly
-        // cast to a double.
-        *vp = JS_NumberValue((double)(uint32_t) res);
+        *vp = JS_NumberValue((double) res);
         rv = NS_SUCCESS_I_DID_SOMETHING;
     }
 
@@ -4780,6 +4746,36 @@ nsXPCComponents::SetProperty(nsIXPConnectWrappedNative *wrapper,
     return NS_ERROR_XPC_CANT_MODIFY_PROP_ON_WN;
 }
 
+static JSBool
+ContentComponentsGetterOp(JSContext *cx, JSHandleObject obj, JSHandleId id,
+                          JSMutableHandleValue vp)
+{
+    // If chrome is accessing the Components object of content, allow.
+    MOZ_ASSERT(nsContentUtils::GetCurrentJSContext() == cx);
+    if (nsContentUtils::IsCallerChrome())
+        return true;
+
+    // If the caller is XBL, this is ok.
+    if (AccessCheck::callerIsXBL(cx))
+        return true;
+
+    // Do Telemetry on how often this happens.
+    Telemetry::Accumulate(Telemetry::COMPONENTS_OBJECT_ACCESSED_BY_CONTENT, true);
+
+    // Warn once.
+    JSAutoCompartment ac(cx, obj);
+    nsCOMPtr<nsPIDOMWindow> win =
+        do_QueryInterface(nsJSUtils::GetStaticScriptGlobal(cx, obj));
+    if (win) {
+        nsCOMPtr<nsIDocument> doc =
+            do_QueryInterface(win->GetExtantDocument());
+        if (doc)
+            doc->WarnOnceAbout(nsIDocument::eComponents, /* asError = */ true);
+    }
+
+    return true;
+}
+
 // static
 JSBool
 nsXPCComponents::AttachComponentsObject(XPCCallContext& ccx,
@@ -4796,9 +4792,10 @@ nsXPCComponents::AttachComponentsObject(XPCCallContext& ccx,
         aTarget = global;
 
     jsid id = ccx.GetRuntime()->GetStringID(XPCJSRuntime::IDX_COMPONENTS);
+    JSPropertyOp getter = AccessCheck::isChrome(global) ? nullptr
+                                                        : &ContentComponentsGetterOp;
     return JS_DefinePropertyById(ccx, aTarget, id, js::ObjectValue(*components),
-                                 nullptr, nullptr,
-                                 JSPROP_PERMANENT | JSPROP_READONLY);
+                                 getter, nullptr, JSPROP_PERMANENT | JSPROP_READONLY);
 }
 
 /* void lookupMethod (); */

@@ -15,7 +15,6 @@
 
 #include "nsISimpleEnumerator.h"
 #include "nsIComponentManager.h"
-#include "prtypes.h"
 #include "prio.h"
 #include "private/pprio.h"  // To get PR_ImportFile
 #include "prprf.h"
@@ -2267,9 +2266,7 @@ nsLocalFile::GetLastModifiedTime(PRTime *aLastModifiedTime)
         return rv;
 
     // microseconds -> milliseconds
-    int64_t usecPerMsec;
-    LL_I2L(usecPerMsec, PR_USEC_PER_MSEC);
-    LL_DIV(*aLastModifiedTime, mFileInfo64.modifyTime, usecPerMsec);
+    *aLastModifiedTime = mFileInfo64.modifyTime / PR_USEC_PER_MSEC;
     return NS_OK;
 }
 
@@ -2291,9 +2288,7 @@ nsLocalFile::GetLastModifiedTimeOfLink(PRTime *aLastModifiedTime)
         return rv;
 
     // microseconds -> milliseconds
-    int64_t usecPerMsec;
-    LL_I2L(usecPerMsec, PR_USEC_PER_MSEC);
-    LL_DIV(*aLastModifiedTime, info.modifyTime, usecPerMsec);
+    *aLastModifiedTime = info.modifyTime / PR_USEC_PER_MSEC;
     return NS_OK;
 }
 

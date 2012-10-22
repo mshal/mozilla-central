@@ -388,10 +388,6 @@ protected:
                                bool      aGoForward,
                                bool      bNoBlockCrossing);
 
-  // Get nsIWidget interface
-  nsresult GetWidget(nsIWidget **aWidget);
-
-
   // install the event listeners for the editor 
   virtual nsresult InstallEventListeners();
 
@@ -585,11 +581,6 @@ public:
   /** returns true if aNode is an editable node */
   bool IsEditable(nsIDOMNode *aNode);
   virtual bool IsEditable(nsIContent *aNode);
-
-  /**
-   * aNode must be a non-null text node.
-   */
-  virtual bool IsTextInDirtyFrameVisible(nsIContent *aNode);
 
   /** returns true if aNode is a MozEditorBogus node */
   bool IsMozEditorBogusNode(nsIContent *aNode);

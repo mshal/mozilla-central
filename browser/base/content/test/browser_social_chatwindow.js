@@ -10,7 +10,7 @@ function test() {
     origin: "https://example.com",
     sidebarURL: "https://example.com/browser/browser/base/content/test/social_sidebar.html",
     workerURL: "https://example.com/browser/browser/base/content/test/social_worker.js",
-    iconURL: "chrome://branding/content/icon48.png"
+    iconURL: "https://example.com/browser/browser/base/content/test/moz.png"
   };
   runSocialTestWithProvider(manifest, function (finishcb) {
     runSocialTests(tests, undefined, undefined, function () {
@@ -104,6 +104,7 @@ var tests = {
         case "got-chatbox-message":
           ok(true, "got a chat window opened");
           let chats = document.getElementById("pinnedchats");
+          ok(chats.selectedChat.minimized, "chatbox from worker opened as minimized");
           while (chats.selectedChat) {
             chats.selectedChat.close();
           }
@@ -115,6 +116,62 @@ var tests = {
       }
     }
     port.postMessage({topic: "test-worker-chat", data: chatUrl});
+  },
+  testCloseSelf: function(next) {
+    let chats = document.getElementById("pinnedchats");
+    let port = Social.provider.getWorkerPort();
+    ok(port, "provider has a port");
+    port.onmessage = function (e) {
+      let topic = e.data.topic;
+      switch (topic) {
+        case "test-init-done":
+          port.postMessage({topic: "test-chatbox-open"});
+          break;
+        case "got-chatbox-visibility":
+          is(e.data.result, "shown", "chatbox shown");
+          port.close(); // don't want any more visibility messages.
+          let chat = chats.selectedChat;
+          ok(chat.parentNode, "chat has a parent node before it is closed");
+          // ask it to close itself.
+          let doc = chat.iframe.contentDocument;
+          let evt = doc.createEvent("CustomEvent");
+          evt.initCustomEvent("socialTest-CloseSelf", true, true, {});
+          doc.documentElement.dispatchEvent(evt);
+          ok(!chat.parentNode, "chat is now closed");
+          next();
+          break;
+      }
+    }
+    port.postMessage({topic: "test-init", data: { id: 1 }});
+  },
+  testSameChatCallbacks: function(next) {
+    let chats = document.getElementById("pinnedchats");
+    let port = Social.provider.getWorkerPort();
+    let seen_opened = false;
+    port.onmessage = function (e) {
+      let topic = e.data.topic;
+      switch (topic) {
+        case "test-init-done":
+          port.postMessage({topic: "test-chatbox-open"});
+          break;
+        case "chatbox-opened":
+          is(e.data.result, "ok", "the sidebar says it got a chatbox");
+          if (seen_opened) {
+            // This is the second time we've seen this message - there should
+            // be exactly 1 chat open.
+            let chats = document.getElementById("pinnedchats");
+            chats.selectedChat.close();
+            is(chats.selectedChat, null, "should only have been one chat open");
+            next();
+          } else {
+            // first time we got the opened message, so re-request the same
+            // chat to be opened - we should get the message again.
+            seen_opened = true;
+            port.postMessage({topic: "test-chatbox-open"});
+          }
+      }
+    }
+    port.postMessage({topic: "test-init", data: { id: 1 }});
   },
   testCloseOnLogout: function(next) {
     const chatUrl = "https://example.com/browser/browser/base/content/test/social_chat.html";

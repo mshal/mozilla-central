@@ -680,7 +680,8 @@ class IDLInterface(IDLObjectWithScope):
                 identifier = IDLUnresolvedIdentifier(self.location, "constructor",
                                                      allowForbidden=True)
 
-                method = IDLMethod(self.location, identifier, retType, args)
+                method = IDLMethod(self.location, identifier, retType, args,
+                                   static=True)
                 # Constructors are always Creators and are always
                 # assumed to be able to throw (since there's no way to
                 # indicate otherwise) and never have any other
@@ -963,15 +964,8 @@ class IDLType(IDLObject):
         assert False # Override me!
 
     def treatNonCallableAsNull(self):
-        if not (self.nullable() and self.tag() == IDLType.Tags.callback):
-            raise WebIDLError("Type %s cannot be TreatNonCallableAsNull" % self,
-                              [self.location])
-
-        return hasattr(self, "_treatNonCallableAsNull")
-
-    def markTreatNonCallableAsNull(self):
-        assert not self.treatNonCallableAsNull()
-        self._treatNonCallableAsNull = True
+        assert self.tag() == IDLType.Tags.callback
+        return self.nullable() and self.inner._treatNonCallableAsNull
 
     def addExtendedAttributes(self, attrs):
         assert len(attrs) == 0
@@ -1433,7 +1427,9 @@ class IDLTypedefType(IDLType, IDLObjectWithIdentifier):
 
     def finish(self, parentScope):
         # Maybe the IDLObjectWithIdentifier for the typedef should be
-        # a separate thing from the type?
+        # a separate thing from the type?  If that happens, we can
+        # remove some hackery around avoiding isInterface() in
+        # Configuration.py.
         self.complete(parentScope)
 
     def validate(self):
@@ -1997,7 +1993,8 @@ class IDLAttribute(IDLInterfaceMember):
     def handleExtendedAttribute(self, attr):
         identifier = attr.identifier()
         if identifier == "TreatNonCallableAsNull":
-            self.type.markTreatNonCallableAsNull();
+            raise WebIDLError("TreatNonCallableAsNull cannot be specified on attributes",
+                              [attr.location, self.location])
         elif identifier == "SetterInfallible" and self.readonly:
             raise WebIDLError("Readonly attributes must not be flagged as "
                               "[SetterInfallible]",
@@ -2112,6 +2109,8 @@ class IDLCallbackType(IDLType, IDLObjectWithScope):
             for argument in arguments:
                 argument.resolve(self)
 
+        self._treatNonCallableAsNull = False
+
     def isCallback(self):
         return True
 
@@ -2150,6 +2149,16 @@ class IDLCallbackType(IDLType, IDLObjectWithScope):
             return other.isDistinguishableFrom(self)
         return (other.isPrimitive() or other.isString() or other.isEnum() or
                 other.isNonCallbackInterface() or other.isDate())
+
+    def addExtendedAttributes(self, attrs):
+        unhandledAttrs = []
+        for attr in attrs:
+            if attr.identifier() == "TreatNonCallableAsNull":
+                self._treatNonCallableAsNull = True
+            else:
+                unhandledAttrs.append(attr)
+        if len(unhandledAttrs) != 0:
+            IDLType.addExtendedAttributes(self, unhandledAttrs)
 
 class IDLMethodOverload:
     """

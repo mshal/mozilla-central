@@ -182,7 +182,7 @@ public:
   static nsIntRect GetMaxRect() {
     // Try to avoid overflow errors dealing with this rect. It will
     // be intersected with some other reasonable-sized rect eventually.
-    return nsIntRect(PR_INT32_MIN/2, PR_INT32_MIN/2, PR_INT32_MAX, PR_INT32_MAX);
+    return nsIntRect(INT32_MIN/2, INT32_MIN/2, INT32_MAX, INT32_MAX);
   }
 
   operator nsISupports*() { return static_cast<nsIContent*>(this); }
@@ -251,7 +251,7 @@ public:
 
   NS_FORWARD_NSIDOMSVGELEMENT(nsSVGFEImageElementBase::)
 
-  NS_FORWARD_NSIDOMNODE(nsSVGFEImageElementBase::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
   NS_FORWARD_NSIDOMELEMENT(nsSVGFEImageElementBase::)
 
   // nsIContent
@@ -267,16 +267,7 @@ public:
   virtual void UnbindFromTree(bool aDeep, bool aNullParent);
   virtual nsEventStates IntrinsicState() const;
 
-  // imgIDecoderObserver
-  NS_IMETHOD OnStopDecode(imgIRequest *aRequest, nsresult status,
-                          const PRUnichar *statusArg);
-  // imgIContainerObserver
-  NS_IMETHOD FrameChanged(imgIRequest* aRequest,
-                          imgIContainer *aContainer,
-                          const nsIntRect *aDirtyRect);
-  // imgIContainerObserver
-  NS_IMETHOD OnStartContainer(imgIRequest *aRequest,
-                              imgIContainer *aContainer);
+  NS_IMETHODIMP Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData);
 
   void MaybeLoadSVGImage();
 

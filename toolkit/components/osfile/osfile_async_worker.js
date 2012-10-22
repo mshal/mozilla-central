@@ -15,7 +15,7 @@ if (this.Components) {
   // A simple flag used to control debugging messages.
   // FIXME: Once this library has been battle-tested, this flag will
   // either be removed or replaced with a pref.
-  const DEBUG = true;
+  const DEBUG = false;
 
    try {
      importScripts("resource://gre/modules/osfile.jsm");
@@ -181,10 +181,10 @@ if (this.Components) {
            exports.OS.File.stat(Type.path.fromMsg(path)));
        },
        getCurrentDirectory: function getCurrentDirectory() {
-         return exports.OS.Shared.Type.path.toMsg(exports.OS.File.curDir);
+         return exports.OS.Shared.Type.path.toMsg(File.getCurrentDirectory());
        },
        setCurrentDirectory: function setCurrentDirectory(path) {
-         exports.OS.File.curDir = exports.OS.Shared.Type.path.fromMsg(path);
+         File.setCurrentDirectory(exports.OS.Shared.Type.path.fromMsg(path));
        },
        copy: function copy(sourcePath, destPath, options) {
          return File.copy(Type.path.fromMsg(sourcePath),
@@ -200,9 +200,27 @@ if (this.Components) {
        removeEmptyDir: function removeEmptyDir(path, options) {
          return File.removeEmptyDir(Type.path.fromMsg(path), options);
        },
+       remove: function remove(path) {
+         return File.remove(Type.path.fromMsg(path));
+       },
        open: function open(path, mode, options) {
          let file = File.open(Type.path.fromMsg(path), mode, options);
          return OpenedFiles.add(file);
+       },
+       read: function read(path, bytes) {
+         return File.read(Type.path.fromMsg(path), bytes);
+       },
+       exists: function exists(path) {
+         return File.exists(Type.path.fromMsg(path));
+       },
+       writeAtomic: function writeAtomic(path, buffer, options) {
+         if (options.tmpPath) {
+           options.tmpPath = Type.path.fromMsg(options.tmpPath);
+         }
+         return File.writeAtomic(Type.path.fromMsg(path),
+                                 Type.voidptr_t.fromMsg(buffer),
+                                 options
+                                );
        },
        new_DirectoryIterator: function new_DirectoryIterator(path, options) {
          let iterator = new File.DirectoryIterator(Type.path.fromMsg(path), options);

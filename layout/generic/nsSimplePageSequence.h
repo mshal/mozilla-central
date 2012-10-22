@@ -91,6 +91,8 @@ public:
   // user's settings
   virtual bool HonorPrintBackgroundSettings() { return false; }
 
+  virtual bool HasTransformGetter() const MOZ_OVERRIDE { return true; }
+
   /**
    * Get the "type" of the frame
    *
@@ -98,10 +100,6 @@ public:
    */
   virtual nsIAtom* GetType() const;
 
-  virtual void InvalidateInternal(const nsRect& aDamageRect,
-                                  nscoord aX, nscoord aY,
-                                  nsIFrame* aForChild,
-                                  uint32_t aFlags);
 #ifdef DEBUG
   NS_IMETHOD  GetFrameName(nsAString& aResult) const;
 #endif

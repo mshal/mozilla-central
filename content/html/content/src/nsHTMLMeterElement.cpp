@@ -6,6 +6,7 @@
 #include "nsIDOMHTMLMeterElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsEventStateManager.h"
 #include "nsAlgorithm.h"
 
@@ -21,7 +22,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   /* nsIDOMNode */
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   /* nsIDOMElement */
   NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)

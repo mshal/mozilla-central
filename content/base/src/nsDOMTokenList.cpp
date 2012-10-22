@@ -12,7 +12,7 @@
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsGenericElement.h"
-#include "dombindings.h"
+#include "mozilla/dom/DOMTokenListBinding.h"
 #include "mozilla/ErrorResult.h"
 
 using namespace mozilla;
@@ -312,7 +312,6 @@ nsDOMTokenList::ToString(nsAString& aResult)
 JSObject*
 nsDOMTokenList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
 {
-  return mozilla::dom::oldproxybindings::DOMTokenList::create(cx, scope, this,
-                                                     triedToWrap);
+  return DOMTokenListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 

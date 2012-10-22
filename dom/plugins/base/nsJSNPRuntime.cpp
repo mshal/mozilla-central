@@ -23,7 +23,7 @@
 #include "nsIDOMElement.h"
 #include "prmem.h"
 #include "nsIContent.h"
-#include "nsIPluginInstanceOwner.h"
+#include "nsPluginInstanceOwner.h"
 #include "mozilla/HashFunctions.h"
 
 #define NPRUNTIME_JSCLASS_NAME "NPObject JS wrapper class"
@@ -322,8 +322,7 @@ GetJSContext(NPP npp)
   nsNPAPIPluginInstance *inst = (nsNPAPIPluginInstance *)npp->ndata;
   NS_ENSURE_TRUE(inst, nullptr);
 
-  nsCOMPtr<nsIPluginInstanceOwner> owner;
-  inst->GetOwner(getter_AddRefs(owner));
+  nsRefPtr<nsPluginInstanceOwner> owner = inst->GetOwner();
   NS_ENSURE_TRUE(owner, nullptr);
 
   nsCOMPtr<nsIDocument> doc;
@@ -1951,6 +1950,10 @@ NPObjWrapperPluginDestroyedCallback(PLDHashTable *table, PLDHashEntryHdr *hdr,
     ::JS_SetPrivate(entry->mJSObj, nullptr);
 
     table->ops = ops;    
+
+    if (sDelayedReleases && sDelayedReleases->RemoveElement(npobj)) {
+      OnWrapperDestroyed();
+    }
 
     return PL_DHASH_REMOVE;
   }

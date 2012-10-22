@@ -53,7 +53,7 @@ using namespace js::types;
 static const uint8_t ARRAYBUFFER_RESERVED_SLOTS = JSObject::MAX_FIXED_SLOTS - 1;
 
 static bool
-ValueIsLength(JSContext *cx, const Value &v, uint32_t *len)
+ValueIsLength(const Value &v, uint32_t *len)
 {
     if (v.isInt32()) {
         int32_t i = v.toInt32();
@@ -354,7 +354,7 @@ SetBufferLink(JSObject *view, JSObject *buffer)
 }
 
 void
-ArrayBufferObject::addView(JSContext *cx, RawObject view)
+ArrayBufferObject::addView(RawObject view)
 {
     // This view should never have been associated with a buffer before
     JS_ASSERT(BufferLink(view) == UNSET_BUFFER_LINK);
@@ -488,13 +488,13 @@ ArrayBufferObject::stealContents(JSContext *cx, JSObject *obj, void **contents)
     ArrayBufferObject::setElementsHeader(header, 0);
     *GetViewList(&buffer) = views;
     for (JSObject *view = views; view; view = NextView(view))
-        TypedArray::neuter(cx, view);
+        TypedArray::neuter(view);
 
     return true;
 }
 
 void
-ArrayBufferObject::obj_trace(JSTracer *trc, JSObject *obj)
+ArrayBufferObject::obj_trace(JSTracer *trc, RawObject obj)
 {
     /*
      * If this object changes, it will get marked via the private data barrier,
@@ -908,7 +908,7 @@ ArrayBufferObject::obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp en
  */
 
 inline bool
-TypedArray::isArrayIndex(JSContext *cx, JSObject *obj, jsid id, uint32_t *ip)
+TypedArray::isArrayIndex(JSObject *obj, jsid id, uint32_t *ip)
 {
     uint32_t index;
     if (js_IdIsIndex(id, &index) && index < length(obj)) {
@@ -928,7 +928,7 @@ js::IsDataView(JSObject* obj)
 }
 
 void
-TypedArray::neuter(JSContext *cx, RawObject tarray)
+TypedArray::neuter(RawObject tarray)
 {
     JS_ASSERT(tarray->isTypedArray());
     tarray->setSlot(LENGTH_SLOT, Int32Value(0));
@@ -943,7 +943,7 @@ TypedArray::obj_lookupGeneric(JSContext *cx, HandleObject tarray, HandleId id,
 {
     JS_ASSERT(tarray->isTypedArray());
 
-    if (isArrayIndex(cx, tarray, id)) {
+    if (isArrayIndex(tarray, id)) {
         MarkNonNativePropertyFound(tarray, propp);
         objp.set(tarray);
         return true;
@@ -1150,7 +1150,7 @@ class TypedArrayTemplate
     }
 
     static void
-    obj_trace(JSTracer *trc, JSObject *obj)
+    obj_trace(JSTracer *trc, RawObject obj)
     {
         MarkSlot(trc, &obj->getFixedSlotRef(BUFFER_SLOT), "typedarray.buffer");
     }
@@ -1175,7 +1175,7 @@ class TypedArrayTemplate
         JS_ASSERT(tarray->isTypedArray());
 
         if (index < length(tarray)) {
-            copyIndexToValue(cx, tarray, index, vp);
+            copyIndexToValue(tarray, index, vp);
             return true;
         }
 
@@ -1235,7 +1235,7 @@ class TypedArrayTemplate
         // Fast-path the common case of index < length
         if (index < length(tarray)) {
             // this inline function is specialized for each type
-            copyIndexToValue(cx, tarray, index, vp);
+            copyIndexToValue(tarray, index, vp);
             *present = true;
             return true;
         }
@@ -1322,7 +1322,7 @@ class TypedArrayTemplate
 
         uint32_t index;
         // We can't just chain to js_SetPropertyHelper, because we're not a normal object.
-        if (!isArrayIndex(cx, tarray, id, &index)) {
+        if (!isArrayIndex(tarray, id, &index)) {
             // Silent ignore is better than an exception here, because
             // at some point we may want to support other properties on
             // these objects.  This is especially true when these arrays
@@ -1533,7 +1533,7 @@ class TypedArrayTemplate
         JS_ASSERT(obj->numFixedSlots() == DATA_SLOT);
 #endif
 
-        buffer->addView(cx, obj);
+        buffer->addView(obj);
 
         return obj;
     }
@@ -1569,7 +1569,7 @@ class TypedArrayTemplate
 
         /* () or (number) */
         uint32_t len = 0;
-        if (argc == 0 || ValueIsLength(cx, argv[0], &len))
+        if (argc == 0 || ValueIsLength(argv[0], &len))
             return fromLength(cx, len);
 
         /* (not an object) */
@@ -1653,7 +1653,8 @@ class TypedArrayTemplate
         unsigned flags = JSPROP_SHARED | JSPROP_GETTER | JSPROP_PERMANENT;
 
         Rooted<GlobalObject*> global(cx, cx->compartment->maybeGlobal());
-        JSObject *getter = js_NewFunction(cx, NULL, Getter<ValueGetter>, 0, 0, global, NULL);
+        RawObject getter =
+            js_NewFunction(cx, NullPtr(), Getter<ValueGetter>, 0, 0, global, NullPtr());
         if (!getter)
             return false;
 
@@ -1989,8 +1990,7 @@ class TypedArrayTemplate
         *(static_cast<NativeType*>(viewData(obj)) + index) = val;
     }
 
-    static void copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
-                                 MutableHandleValue vp);
+    static void copyIndexToValue(JSObject *tarray, uint32_t index, MutableHandleValue vp);
 
     static JSObject *
     createSubarray(JSContext *cx, HandleObject tarray, uint32_t begin, uint32_t end)
@@ -2027,14 +2027,18 @@ class TypedArrayTemplate
         return NativeType(ToInt32(d));
     }
 
-    static NativeType
-    nativeFromValue(JSContext *cx, const Value &v)
+    static bool
+    nativeFromValue(JSContext *cx, const Value &v, NativeType *result)
     {
-        if (v.isInt32())
-            return NativeType(v.toInt32());
+        if (v.isInt32()) {
+            *result = v.toInt32();
+            return true;
+        }
 
-        if (v.isDouble())
-            return nativeFromDouble(v.toDouble());
+        if (v.isDouble()) {
+            *result = nativeFromDouble(v.toDouble());
+            return true;
+        }
 
         /*
          * The condition guarantees that holes and undefined values
@@ -2043,17 +2047,21 @@ class TypedArrayTemplate
         if (v.isPrimitive() && !v.isMagic() && !v.isUndefined()) {
             RootedValue primitive(cx, v);
             double dval;
-            JS_ALWAYS_TRUE(ToNumber(cx, primitive, &dval));
-            return nativeFromDouble(dval);
+            // ToNumber will only fail from OOM
+            if (!ToNumber(cx, primitive, &dval))
+                return false;
+            *result = nativeFromDouble(dval);
+            return true;
         }
 
-        return ArrayTypeIsFloatingPoint()
-               ? NativeType(js_NaN)
-               : NativeType(int32_t(0));
+        *result = ArrayTypeIsFloatingPoint()
+                  ? NativeType(js_NaN)
+                  : NativeType(int32_t(0));
+        return true;
     }
 
     static bool
-    copyFromArray(JSContext *cx, JSObject *thisTypedArrayObj,
+    copyFromArray(JSContext *cx, HandleObject thisTypedArrayObj,
                   HandleObject ar, uint32_t len, uint32_t offset = 0)
     {
         JS_ASSERT(thisTypedArrayObj->isTypedArray());
@@ -2062,28 +2070,36 @@ class TypedArrayTemplate
         if (ar->isTypedArray())
             return copyFromTypedArray(cx, thisTypedArrayObj, ar, offset);
 
+        const Value *src = NULL;
         NativeType *dest = static_cast<NativeType*>(viewData(thisTypedArrayObj)) + offset;
-        SkipRoot skip(cx, &dest);
+
+        // The only way the code below can GC is if nativeFromValue fails, but
+        // in that case we return false immediately, so we do not need to root
+        // |src| and |dest|. These SkipRoots are to protect from the
+        // unconditional MaybeCheckStackRoots done by ToNumber.
+        SkipRoot skipDest(cx, &dest);
+        SkipRoot skipSrc(cx, &src);
 
         if (ar->isDenseArray() && ar->getDenseArrayInitializedLength() >= len) {
             JS_ASSERT(ar->getArrayLength() == len);
 
-            const Value *src = ar->getDenseArrayElements();
-            SkipRoot skipSrc(cx, &src);
-
-            /*
-             * It is valid to skip the hole check here because nativeFromValue
-             * treats a hole as undefined.
-             */
-            for (unsigned i = 0; i < len; ++i)
-                *dest++ = nativeFromValue(cx, *src++);
+            src = ar->getDenseArrayElements();
+            for (uint32_t i = 0; i < len; ++i) {
+                NativeType n;
+                if (!nativeFromValue(cx, src[i], &n))
+                    return false;
+                dest[i] = n;
+            }
         } else {
             RootedValue v(cx);
 
-            for (unsigned i = 0; i < len; ++i) {
+            for (uint32_t i = 0; i < len; ++i) {
                 if (!JSObject::getElement(cx, ar, ar, i, &v))
                     return false;
-                *dest++ = nativeFromValue(cx, v);
+                NativeType n;
+                if (!nativeFromValue(cx, v, &n))
+                    return false;
+                dest[i] = n;
             }
         }
 
@@ -2346,7 +2362,7 @@ ArrayBufferObject::createTypedArrayFromBuffer(JSContext *cx, unsigned argc, Valu
 // less than 32-bits in size.
 template<typename NativeType>
 void
-TypedArrayTemplate<NativeType>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<NativeType>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                                  MutableHandleValue vp)
 {
     JS_STATIC_ASSERT(sizeof(NativeType) < 4);
@@ -2357,7 +2373,7 @@ TypedArrayTemplate<NativeType>::copyIndexToValue(JSContext *cx, JSObject *tarray
 // and we need to specialize for 32-bit integers and floats
 template<>
 void
-TypedArrayTemplate<int32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<int32_t>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                               MutableHandleValue vp)
 {
     int32_t val = getIndex(tarray, index);
@@ -2366,7 +2382,7 @@ TypedArrayTemplate<int32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, u
 
 template<>
 void
-TypedArrayTemplate<uint32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<uint32_t>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                                MutableHandleValue vp)
 {
     uint32_t val = getIndex(tarray, index);
@@ -2375,7 +2391,7 @@ TypedArrayTemplate<uint32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, 
 
 template<>
 void
-TypedArrayTemplate<float>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<float>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                             MutableHandleValue vp)
 {
     float val = getIndex(tarray, index);
@@ -2396,7 +2412,7 @@ TypedArrayTemplate<float>::copyIndexToValue(JSContext *cx, JSObject *tarray, uin
 
 template<>
 void
-TypedArrayTemplate<double>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<double>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                              MutableHandleValue vp)
 {
     double val = getIndex(tarray, index);
@@ -3294,11 +3310,11 @@ InitTypedArrayClass(JSContext *cx)
     if (!JS_DefineFunctions(cx, proto, ArrayType::jsfuncs))
         return NULL;
 
-    Rooted<JSFunction*> fun(cx);
+    RootedFunction fun(cx);
     fun =
-        js_NewFunction(cx, NULL,
+        js_NewFunction(cx, NullPtr(),
                        ArrayBufferObject::createTypedArrayFromBuffer<typename ArrayType::ThisType>,
-                       0, 0, global, NULL);
+                       0, 0, global, NullPtr());
     if (!fun)
         return NULL;
 
@@ -3362,7 +3378,8 @@ InitArrayBufferClass(JSContext *cx)
 
     RootedId byteLengthId(cx, NameToId(cx->names().byteLength));
     unsigned flags = JSPROP_SHARED | JSPROP_GETTER | JSPROP_PERMANENT;
-    JSObject *getter = js_NewFunction(cx, NULL, ArrayBufferObject::byteLengthGetter, 0, 0, global, NULL);
+    RawObject getter = js_NewFunction(cx, NullPtr(), ArrayBufferObject::byteLengthGetter, 0, 0,
+                                      global, NullPtr());
     if (!getter)
         return NULL;
 
@@ -3463,7 +3480,8 @@ DataViewObject::defineGetter(JSContext *cx, PropertyName *name, HandleObject pro
     unsigned flags = JSPROP_SHARED | JSPROP_GETTER | JSPROP_PERMANENT;
 
     Rooted<GlobalObject*> global(cx, cx->compartment->maybeGlobal());
-    JSObject *getter = js_NewFunction(cx, NULL, DataViewObject::getter<ValueGetter>, 0, 0, global, NULL);
+    JSObject *getter = js_NewFunction(cx, NullPtr(), DataViewObject::getter<ValueGetter>, 0, 0,
+                                      global, NullPtr());
     if (!getter)
         return false;
 
@@ -3506,8 +3524,8 @@ DataViewObject::initClass(JSContext *cx)
      * |new DataView(new otherWindow.ArrayBuffer())|, and install it in the
      * global for use by the DataView constructor.
      */
-    Rooted<JSFunction*> fun(cx);
-    fun = js_NewFunction(cx, NULL, ArrayBufferObject::createDataViewForThis, 0, 0, global, NULL);
+    RootedFunction fun(cx, js_NewFunction(cx, NullPtr(), ArrayBufferObject::createDataViewForThis,
+                                          0, 0, global, NullPtr()));
     if (!fun)
         return NULL;
 

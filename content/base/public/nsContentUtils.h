@@ -37,10 +37,12 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "gfxContext.h"
 #include "gfxFont.h"
+#include "nsContentList.h"
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Assertions.h"
 
 struct nsNativeKeyEvent; // Don't include nsINativeKeyBindings.h here: it will force strange compilation error!
 
@@ -63,7 +65,7 @@ class nsIParserService;
 class nsIIOService;
 class nsIURI;
 class imgIContainer;
-class imgIDecoderObserver;
+class imgINotificationObserver;
 class imgIRequest;
 class imgILoader;
 class imgICache;
@@ -199,14 +201,6 @@ public:
    */
   static JSContext* GetContextFromDocument(nsIDocument *aDocument);
 
-  /**
-   * When a document's scope changes (e.g., from document.open(), call this
-   * function to move all content wrappers from the old scope to the new one.
-   */
-  static nsresult ReparentContentWrappersInScope(JSContext *cx,
-                                                 nsIScriptGlobalObject *aOldScope,
-                                                 nsIScriptGlobalObject *aNewScope);
-
   static bool     IsCallerChrome();
 
   static bool     IsCallerTrustedForRead();
@@ -288,10 +282,9 @@ public:
    * Returns true if aNode1 is before aNode2 in the same connected
    * tree.
    */
-  static bool PositionIsBefore(nsINode* aNode1,
-                                 nsINode* aNode2)
+  static bool PositionIsBefore(nsINode* aNode1, nsINode* aNode2)
   {
-    return (aNode2->CompareDocPosition(aNode1) &
+    return (aNode2->CompareDocumentPosition(*aNode1) &
       (nsIDOMNode::DOCUMENT_POSITION_PRECEDING |
        nsIDOMNode::DOCUMENT_POSITION_DISCONNECTED)) ==
       nsIDOMNode::DOCUMENT_POSITION_PRECEDING;
@@ -491,6 +484,10 @@ public:
     return sSecurityManager;
   }
 
+  // Returns the subject principal. Guaranteed to return non-null. May only
+  // be called when nsContentUtils is initialized.
+  static nsIPrincipal* GetSubjectPrincipal();
+
   static nsresult GenerateStateKey(nsIContent* aContent,
                                    const nsIDocument* aDocument,
                                    nsIStatefulFrame::SpecialStateID aID,
@@ -660,7 +657,7 @@ public:
                             nsIDocument* aLoadingDocument,
                             nsIPrincipal* aLoadingPrincipal,
                             nsIURI* aReferrer,
-                            imgIDecoderObserver* aObserver,
+                            imgINotificationObserver* aObserver,
                             int32_t aLoadFlags,
                             imgIRequest** aRequest);
 
@@ -1294,25 +1291,38 @@ public:
 #ifdef DEBUG
   static bool AreJSObjectsHeld(void* aScriptObjectHolder); 
 
-  static void CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
-                                      nsWrapperCache* aCache);
+  static void CheckCCWrapperTraversal(void* aScriptObjectHolder,
+                                      nsWrapperCache* aCache,
+                                      nsScriptObjectTracer* aTracer);
 #endif
 
   static void PreserveWrapper(nsISupports* aScriptObjectHolder,
                               nsWrapperCache* aCache)
   {
     if (!aCache->PreservingWrapper()) {
+      nsISupports *ccISupports;
+      aScriptObjectHolder->QueryInterface(NS_GET_IID(nsCycleCollectionISupports),
+                                          reinterpret_cast<void**>(&ccISupports));
+      MOZ_ASSERT(ccISupports);
       nsXPCOMCycleCollectionParticipant* participant;
-      CallQueryInterface(aScriptObjectHolder, &participant);
-      HoldJSObjects(aScriptObjectHolder, participant);
+      CallQueryInterface(ccISupports, &participant);
+      PreserveWrapper(ccISupports, aCache, participant);
+    }
+  }
+  static void PreserveWrapper(void* aScriptObjectHolder,
+                              nsWrapperCache* aCache,
+                              nsScriptObjectTracer* aTracer)
+  {
+    if (!aCache->PreservingWrapper()) {
+      HoldJSObjects(aScriptObjectHolder, aTracer);
       aCache->SetPreservingWrapper(true);
 #ifdef DEBUG
       // Make sure the cycle collector will be able to traverse to the wrapper.
-      CheckCCWrapperTraversal(aScriptObjectHolder, aCache);
+      CheckCCWrapperTraversal(aScriptObjectHolder, aCache, aTracer);
 #endif
     }
   }
-  static void ReleaseWrapper(nsISupports* aScriptObjectHolder,
+  static void ReleaseWrapper(void* aScriptObjectHolder,
                              nsWrapperCache* aCache);
   static void TraceWrapper(nsWrapperCache* aCache, TraceCallback aCallback,
                            void *aClosure);
@@ -1566,6 +1576,13 @@ public:
                                       uint32_t aDisplayHeight);
 
   /**
+   * Constrain the viewport calculations from the GetViewportInfo() function
+   * in order to always return sane minimum/maximum values. This modifies the
+   * ViewportInfo struct passed as an input parameter, in place.
+   */
+  static void ConstrainViewportValues(ViewportInfo& aViewInfo);
+
+  /**
    * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.
    */
   static double GetDevicePixelsPerMetaViewportPixel(nsIWidget* aWidget);
@@ -1765,6 +1782,10 @@ public:
   static nsresult CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
                                     JSObject** aResult);
 
+  static nsresult CreateBlobBuffer(JSContext* aCx,
+                                   const nsACString& aData,
+                                   jsval& aBlob);
+
   static void StripNullChars(const nsAString& aInStr, nsAString& aOutStr);
 
   /**
@@ -1793,16 +1814,34 @@ public:
    * Utility method for getElementsByClassName.  aRootNode is the node (either
    * document or element), which getElementsByClassName was called on.
    */
-  static nsresult GetElementsByClassName(nsINode* aRootNode,
-                                         const nsAString& aClasses,
-                                         nsIDOMNodeList** aReturn);
+  static already_AddRefed<nsContentList>
+  GetElementsByClassName(nsINode* aRootNode, const nsAString& aClasses)
+  {
+    NS_PRECONDITION(aRootNode, "Must have root node");
+
+    return NS_GetFuncStringHTMLCollection(aRootNode, MatchClassNames,
+                                          DestroyClassNameArray,
+                                          AllocClassMatchingInfo,
+                                          aClasses);
+  }
+
+  /**
+   * Returns a presshell for this document, if there is one. This will be
+   * aDoc's direct presshell if there is one, otherwise we'll look at all
+   * ancestor documents to try to find a presshell, so for example this can
+   * still find a presshell for documents in display:none frames that have
+   * no presentation. So you have to be careful how you use this presshell ---
+   * getting generic data like a device context or widget from it is OK, but it
+   * might not be this document's actual presentation.
+   */
+  static nsIPresShell* FindPresShellForDocument(nsIDocument* aDoc);
 
   /**
    * Returns the widget for this document if there is one. Looks at all ancestor
    * documents to try to find a widget, so for example this can still find a
    * widget for documents in display:none frames that have no presentation.
    */
-  static nsIWidget *WidgetForDocument(nsIDocument *aDoc);
+  static nsIWidget* WidgetForDocument(nsIDocument* aDoc);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -2110,6 +2149,18 @@ public:
   static bool GetSVGGlyphExtents(Element *aElement, const gfxMatrix& aSVGToAppSpace,
                                  gfxRect *aResult);
 
+  /**
+   * Check whether a spec feature/version is supported.
+   * @param aObject the object, which should support the feature,
+   *        for example nsIDOMNode or nsIDOMDOMImplementation
+   * @param aFeature the feature ("Views", "Core", "HTML", "Range" ...)
+   * @param aVersion the version ("1.0", "2.0", ...)
+   * @return whether the feature is supported or not
+   */
+  static bool InternalIsSupported(nsISupports* aObject,
+                                  const nsAString& aFeature,
+                                  const nsAString& aVersion);
+
 private:
   static bool InitializeEventTable();
 
@@ -2135,6 +2186,12 @@ private:
   static void InitializeModifierStrings();
 
   static void DropFragmentParsers();
+
+  static bool MatchClassNames(nsIContent* aContent, int32_t aNamespaceID,
+                              nsIAtom* aAtom, void* aData);
+  static void DestroyClassNameArray(void* aData);
+  static void* AllocClassMatchingInfo(nsINode* aRootNode,
+                                      const nsString* aClasses);
 
   static nsIDOMScriptObjectFactory *sDOMScriptObjectFactory;
 

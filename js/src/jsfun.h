@@ -132,7 +132,7 @@ struct JSFunction : public JSObject
     static inline size_t offsetOfEnvironment() { return offsetof(JSFunction, u.i.env_); }
     static inline size_t offsetOfAtom() { return offsetof(JSFunction, atom_); }
 
-    JS::HandleScript script() const {
+    js::Return<JSScript*> script() const {
         JS_ASSERT(isInterpreted());
         return JS::HandleScript::fromMarkedLocation(&u.i.script_);
     }
@@ -145,7 +145,7 @@ struct JSFunction : public JSObject
     inline void setScript(JSScript *script_);
     inline void initScript(JSScript *script_);
 
-    JS::HandleScript maybeScript() const {
+    js::Return<JSScript*> maybeScript() const {
         return isInterpreted() ? script() : JS::NullPtr();
     }
 
@@ -236,11 +236,11 @@ JSObject::toFunction() const
 }
 
 extern JSString *
-fun_toStringHelper(JSContext *cx, JSObject *obj, unsigned indent);
+fun_toStringHelper(JSContext *cx, js::HandleObject obj, unsigned indent);
 
 extern JSFunction *
-js_NewFunction(JSContext *cx, JSObject *funobj, JSNative native, unsigned nargs,
-               unsigned flags, js::HandleObject parent, JSAtom *atom,
+js_NewFunction(JSContext *cx, js::HandleObject funobj, JSNative native, unsigned nargs,
+               unsigned flags, js::HandleObject parent, js::HandleAtom atom,
                js::gc::AllocKind kind = JSFunction::FinalizeKind);
 
 extern JSFunction * JS_FASTCALL

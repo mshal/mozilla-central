@@ -429,6 +429,7 @@ JSObject *NewInitObject(JSContext *cx, HandleObject templateObject);
 bool ArrayPopDense(JSContext *cx, HandleObject obj, MutableHandleValue rval);
 bool ArrayPushDense(JSContext *cx, HandleObject obj, HandleValue v, uint32_t *length);
 bool ArrayShiftDense(JSContext *cx, HandleObject obj, MutableHandleValue rval);
+JSObject *ArrayConcatDense(JSContext *cx, HandleObject obj1, HandleObject obj2, HandleObject res);
 
 JSFlatString *StringFromCharCode(JSContext *cx, int32_t code);
 
@@ -439,10 +440,12 @@ bool InterruptCheck(JSContext *cx);
 
 HeapSlot *NewSlots(JSRuntime *rt, unsigned nslots);
 JSObject *NewCallObject(JSContext *cx, HandleShape shape, HandleTypeObject type, HeapSlot *slots);
+JSObject *NewStringObject(JSContext *cx, HandleString str);
 
 bool SPSEnter(JSContext *cx, HandleScript script);
 bool SPSExit(JSContext *cx, HandleScript script);
 
+bool OperatorIn(JSContext *cx, HandleValue key, HandleObject obj, JSBool *out);
 
 } // namespace ion
 } // namespace js

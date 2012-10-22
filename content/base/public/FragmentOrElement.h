@@ -30,7 +30,7 @@ class nsDOMTokenList;
 class nsIControllers;
 class nsICSSDeclaration;
 class nsIDocument;
-class nsIDOMDOMStringMap;
+class nsDOMStringMap;
 class nsIDOMNamedNodeMap;
 class nsINodeInfo;
 class nsIURI;
@@ -62,6 +62,7 @@ public:
 
   // nsINodeList interface
   virtual int32_t IndexOf(nsIContent* aContent);
+  virtual nsIContent* Item(uint32_t aIndex);
 
   void DropReference()
   {
@@ -187,12 +188,13 @@ public:
   virtual uint32_t GetChildCount() const;
   virtual nsIContent *GetChildAt(uint32_t aIndex) const;
   virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
-  virtual int32_t IndexOf(nsINode* aPossibleChild) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
   virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
-  NS_IMETHOD GetTextContent(nsAString &aTextContent);
-  NS_IMETHOD SetTextContent(const nsAString& aTextContent);
+  virtual void GetTextContentInternal(nsAString& aTextContent);
+  virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError);
 
   // nsIContent interface methods
   virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter);
@@ -219,62 +221,6 @@ public:
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker);
 
 public:
-  // nsIDOMNode method implementation
-  NS_IMETHOD GetNodeName(nsAString& aNodeName);
-  NS_IMETHOD GetLocalName(nsAString& aLocalName);
-  NS_IMETHOD GetNodeValue(nsAString& aNodeValue);
-  NS_IMETHOD SetNodeValue(const nsAString& aNodeValue);
-  NS_IMETHOD GetNodeType(uint16_t* aNodeType);
-  NS_IMETHOD GetAttributes(nsIDOMNamedNodeMap** aAttributes);
-  NS_IMETHOD GetNamespaceURI(nsAString& aNamespaceURI);
-  NS_IMETHOD GetPrefix(nsAString& aPrefix);
-  NS_IMETHOD IsSupported(const nsAString& aFeature,
-                         const nsAString& aVersion, bool* aReturn);
-  NS_IMETHOD HasAttributes(bool* aHasAttributes);
-  NS_IMETHOD HasChildNodes(bool* aHasChildNodes);
-  nsresult InsertBefore(nsIDOMNode* aNewChild, nsIDOMNode* aRefChild,
-                        nsIDOMNode** aReturn)
-  {
-    return ReplaceOrInsertBefore(false, aNewChild, aRefChild, aReturn);
-  }
-  nsresult ReplaceChild(nsIDOMNode* aNewChild, nsIDOMNode* aOldChild,
-                        nsIDOMNode** aReturn)
-  {
-    return ReplaceOrInsertBefore(true, aNewChild, aOldChild, aReturn);
-  }
-  nsresult RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aReturn)
-  {
-    return nsINode::RemoveChild(aOldChild, aReturn);
-  }
-  nsresult AppendChild(nsIDOMNode* aNewChild, nsIDOMNode** aReturn)
-  {
-    return InsertBefore(aNewChild, nullptr, aReturn);
-  }
-
-  nsresult CloneNode(bool aDeep, uint8_t aOptionalArgc, nsIDOMNode **aResult)
-  {
-    if (!aOptionalArgc) {
-      aDeep = true;
-    }
-    
-    return nsNodeUtils::CloneNodeImpl(this, aDeep, true, aResult);
-  }
-
-  //----------------------------------------
-
-  /**
-   * Check whether a spec feature/version is supported.
-   * @param aObject the object, which should support the feature,
-   *        for example nsIDOMNode or nsIDOMDOMImplementation
-   * @param aFeature the feature ("Views", "Core", "HTML", "Range" ...)
-   * @param aVersion the version ("1.0", "2.0", ...)
-   * @param aReturn whether the feature is supported or not [OUT]
-   */
-  static nsresult InternalIsSupported(nsISupports* aObject,
-                                      const nsAString& aFeature,
-                                      const nsAString& aVersion,
-                                      bool* aReturn);
-
   /**
    * If there are listeners for DOMNodeInserted event, fires the event on all
    * aNodes
@@ -348,6 +294,8 @@ public:
     void Traverse(nsCycleCollectionTraversalCallback &cb, bool aIsXUL);
     void Unlink(bool aIsXUL);
 
+    size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
     /**
      * The .style attribute (an interface that forwards to the actual
      * style rules)
@@ -359,7 +307,7 @@ public:
      * The .dataset attribute.
      * @see nsGenericHTMLElement::GetDataset
      */
-    nsIDOMDOMStringMap* mDataset; // [Weak]
+    nsDOMStringMap* mDataset; // [Weak]
 
     /**
      * SMIL Overridde style rules (for SMIL animation of CSS properties)
@@ -408,7 +356,7 @@ protected:
 
   nsDOMSlots *DOMSlots()
   {
-    return static_cast<nsDOMSlots*>(GetSlots());
+    return static_cast<nsDOMSlots*>(Slots());
   }
 
   nsDOMSlots *GetExistingDOMSlots() const

@@ -51,6 +51,13 @@
 #ifdef XP_WIN
 #include <windows.h>
 #include <shlobj.h>
+
+// we want a wmain entry point
+#define XRE_DONT_PROTECT_DLL_LOAD
+#define XRE_WANT_ENVIRON
+#include "nsWindowsWMain.cpp"
+#define snprintf _snprintf
+#define strcasecmp _stricmp
 #endif
 
 #ifdef ANDROID
@@ -679,7 +686,6 @@ static const struct JSOption {
     uint32_t    flag;
 } js_options[] = {
     {"atline",          JSOPTION_ATLINE},
-    {"relimit",         JSOPTION_RELIMIT},
     {"strict",          JSOPTION_STRICT},
     {"werror",          JSOPTION_WERROR},
     {"allow_xml",       JSOPTION_ALLOW_XML},
@@ -1501,13 +1507,6 @@ FullTrustSecMan::GetCxSubjectPrincipal(JSContext *cx)
     return mSystemPrincipal;
 }
 
-NS_IMETHODIMP_(nsIPrincipal *)
-FullTrustSecMan::GetCxSubjectPrincipalAndFrame(JSContext *cx, JSStackFrame **fp)
-{
-    *fp = nullptr;
-    return mSystemPrincipal;
-}
-
 NS_IMETHODIMP
 FullTrustSecMan::GetExtendedOrigin(nsIURI* aURI, uint32_t aAppId,
                                    bool aInMozBrowser,
@@ -1583,19 +1582,13 @@ nsXPCFunctionThisTranslator::~nsXPCFunctionThisTranslator()
 #endif
 }
 
-/* nsISupports TranslateThis (in nsISupports aInitialThis, in nsIInterfaceInfo aInterfaceInfo, in uint16_t aMethodIndex, out bool aHideFirstParamFromJS, out nsIIDPtr aIIDOfResult); */
+/* nsISupports TranslateThis (in nsISupports aInitialThis); */
 NS_IMETHODIMP
 nsXPCFunctionThisTranslator::TranslateThis(nsISupports *aInitialThis,
-                                           nsIInterfaceInfo *aInterfaceInfo,
-                                           uint16_t aMethodIndex,
-                                           bool *aHideFirstParamFromJS,
-                                           nsIID * *aIIDOfResult,
                                            nsISupports **_retval)
 {
     NS_IF_ADDREF(aInitialThis);
     *_retval = aInitialThis;
-    *aHideFirstParamFromJS = false;
-    *aIIDOfResult = nullptr;
     return NS_OK;
 }
 
@@ -1838,7 +1831,7 @@ main(int argc, char **argv, char **envp)
 #ifdef TEST_TranslateThis
         nsCOMPtr<nsIXPCFunctionThisTranslator>
             translator(new nsXPCFunctionThisTranslator);
-        xpc->SetFunctionThisTranslator(NS_GET_IID(nsITestXPCFunctionCallback), translator, nullptr);
+        xpc->SetFunctionThisTranslator(NS_GET_IID(nsITestXPCFunctionCallback), translator);
 #endif
 
         nsCOMPtr<nsIJSContextStack> cxstack = do_GetService("@mozilla.org/js/xpc/ContextStack;1");
@@ -1856,7 +1849,7 @@ main(int argc, char **argv, char **envp)
         nsresult rv = rtsvc->GetBackstagePass(getter_AddRefs(backstagePass));
         if (NS_FAILED(rv)) {
             fprintf(gErrFile, "+++ Failed to get backstage pass from rtsvc: %8x\n",
-                    rv);
+                    static_cast<uint32_t>(rv));
             return 1;
         }
 

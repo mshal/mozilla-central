@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "NSPRFormatTime.h" // must be before anything that includes prtime.h
 #include "nsFTPDirListingConv.h"
 #include "nsMemory.h"
 #include "plstr.h"
@@ -90,7 +91,7 @@ nsFTPDirListingConv::OnDataAvailable(nsIRequest* request, nsISupports *ctxt,
     uint64_t streamLen64;
     rv = inStr->Available(&streamLen64);
     NS_ENSURE_SUCCESS(rv, rv);
-    streamLen = (uint32_t)NS_MIN(streamLen64, uint64_t(PR_UINT32_MAX - 1));
+    streamLen = (uint32_t)NS_MIN(streamLen64, uint64_t(UINT32_MAX - 1));
 
     nsAutoArrayPtr<char> buffer(new char[streamLen + 1]);
     NS_ENSURE_TRUE(buffer, NS_ERROR_OUT_OF_MEMORY);

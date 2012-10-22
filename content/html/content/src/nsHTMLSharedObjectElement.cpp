@@ -38,30 +38,14 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
   NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT_BASIC(nsGenericHTMLElement::)
-  NS_IMETHOD Click() {
-    return nsGenericHTMLElement::Click();
-  }
-  NS_IMETHOD GetTabIndex(int32_t* aTabIndex);
-  NS_IMETHOD SetTabIndex(int32_t aTabIndex);
-  NS_IMETHOD Focus() {
-    return nsGenericHTMLElement::Focus();
-  }
-  NS_IMETHOD GetDraggable(bool* aDraggable) {
-    return nsGenericHTMLElement::GetDraggable(aDraggable);
-  }
-  NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML) {
-    return nsGenericHTMLElement::GetInnerHTML(aInnerHTML);
-  }
-  NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) {
-    return nsGenericHTMLElement::SetInnerHTML(aInnerHTML);
-  }
+  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  virtual int32_t TabIndexDefault() MOZ_OVERRIDE;
 
   // nsIDOMHTMLAppletElement
   NS_DECL_NSIDOMHTMLAPPLETELEMENT
@@ -250,9 +234,8 @@ NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLSharedObjectElement)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIRequestObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIStreamListener)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIFrameLoaderOwner)
-    NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, imgIContainerObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIObjectLoadingContent)
-    NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, imgIDecoderObserver)
+    NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, imgINotificationObserver)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIImageLoadingContent)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, imgIOnloadBlocker)
     NS_INTERFACE_TABLE_ENTRY(nsHTMLSharedObjectElement, nsIInterfaceRequestor)
@@ -369,10 +352,15 @@ NS_IMPL_INT_ATTR(nsHTMLSharedObjectElement, Hspace, hspace)
 NS_IMPL_STRING_ATTR(nsHTMLSharedObjectElement, Name, name)
 NS_IMPL_URI_ATTR_WITH_BASE(nsHTMLSharedObjectElement, Object, object, codebase)
 NS_IMPL_URI_ATTR(nsHTMLSharedObjectElement, Src, src)
-NS_IMPL_INT_ATTR_DEFAULT_VALUE(nsHTMLSharedObjectElement, TabIndex, tabindex, -1)
 NS_IMPL_STRING_ATTR(nsHTMLSharedObjectElement, Type, type)
 NS_IMPL_INT_ATTR(nsHTMLSharedObjectElement, Vspace, vspace)
 NS_IMPL_STRING_ATTR(nsHTMLSharedObjectElement, Width, width)
+
+int32_t
+nsHTMLSharedObjectElement::TabIndexDefault()
+{
+  return -1; 
+}
 
 NS_IMETHODIMP
 nsHTMLSharedObjectElement::GetSVGDocument(nsIDOMDocument **aResult)

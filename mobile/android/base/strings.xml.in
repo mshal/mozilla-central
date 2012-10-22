@@ -11,7 +11,8 @@
 ]>
 #includesubst @BOOKMARKSPATH@
 <resources>
-#include ../sync/strings.xml.in
+  <string name="moz_app_displayname">@MOZ_APP_DISPLAYNAME@</string>
+#include ../services/strings.xml.in
   <string name="splash_settingup">&splash_settingup;</string>
   <string name="splash_bookmarks_history">&splash_bookmarks_history;</string>
   <string name="no_space_to_start_error">&no_space_to_start_error;</string>
@@ -20,7 +21,6 @@
   <string name="awesomebar_all_pages_title">&awesomebar_all_pages_title;</string>
   <string name="awesomebar_bookmarks_title">&awesomebar_bookmarks_title;</string>
   <string name="awesomebar_history_title">&awesomebar_history_title;</string>
-  <string name="awesomebar_search_engine">&awesomebar_search_engine;</string>
 
   <string name="crash_reporter_title">&crash_reporter_title;</string>
   <string name="crash_message">&crash_message;</string>
@@ -95,6 +95,8 @@
   <string name="pref_font_size_set">&pref_font_size_set;</string>
   <string name="pref_font_size_adjust_char">&pref_font_size_adjust_char;</string>
   <string name="pref_font_size_preview_text">&pref_font_size_preview_text;</string>
+  <string name="pref_reflow_on_zoom">&pref_reflow_on_zoom2;</string>
+  <string name="pref_show_product_announcements">&pref_show_product_announcements;</string>
   <string name="pref_sync">&pref_sync;</string>
   <string name="pref_search_suggestions">&pref_search_suggestions;</string>
   <string name="pref_private_data_history">&pref_private_data_history;</string>
@@ -105,6 +107,10 @@
   <string name="pref_private_data_offlineApps">&pref_private_data_offlineApps;</string>
   <string name="pref_private_data_siteSettings">&pref_private_data_siteSettings;</string>
   <string name="pref_import_android">&pref_import_android;</string>
+  <string name="pref_update_autodownload">&pref_update_autodownload;</string>
+  <string name="pref_update_autodownload_wifi">&pref_update_autodownload_wifi;</string>
+  <string name="pref_update_autodownload_disabled">&pref_update_autodownload_disabled;</string>
+  <string name="pref_update_autodownload_enabled">&pref_update_autodownload_enabled;</string>
 
   <string name="go">&go;</string>
   <string name="search">&search;</string>
@@ -123,6 +129,7 @@
   <string name="downloads">&downloads;</string>
   <string name="apps">&apps;</string>
   <string name="char_encoding">&char_encoding;</string>
+  <string name="new_pb_tab">&new_pb_tab;</string>
   <!-- This string only appears in developer builds, which
        is why it is not localizable. -->
   <string name="toggle_profiling">Toggle Profiling</string>
@@ -167,17 +174,18 @@
   <string name="button_clear_data">&button_clear_data;</string>
   <string name="button_set">&button_set;</string>
   <string name="button_clear">&button_clear;</string>
+  <string name="button_yes">&button_yes;</string>
+  <string name="button_no">&button_no;</string>
 
   <string name="abouthome_addons_title">&abouthome_addons_title;</string>
   <string name="abouthome_addons_browse">&abouthome_addons_browse;</string>
   <string name="abouthome_last_tabs_title">&abouthome_last_tabs_title;</string>
   <string name="abouthome_last_tabs_open">&abouthome_last_tabs_open;</string>
   <string name="abouthome_top_sites_title">&abouthome_top_sites_title;</string>
-  <string name="abouthome_top_sites_browse">&abouthome_top_sites_browse;</string>
   <string name="abouthome_about_sync">&abouthome_about_sync3;</string>
-  <string name="abouthome_about_apps">&abouthome_about_apps2;</string>
+  <string name="abouthome_about_apps">&abouthome_about_apps3;</string>
   <string name="abouthome_sync_bold_name">&abouthome_sync_bold_name;</string>
-  <string name="abouthome_apps_bold_name">&abouthome_apps_bold_name;</string>
+  <string name="abouthome_apps_bold_name">&abouthome_apps_bold_name2;</string>
 
   <string name="filepicker_title">&filepicker_title;</string>
   <string name="filepicker_audio_title">&filepicker_audio_title;</string>
@@ -215,20 +223,21 @@
 
   <string name="webapp_generic_name">&webapp_generic_name;</string>
 
-  <!-- Updater notifications -->
-  <string name="updater_start_title">&updater_start_title;</string>
-  <string name="updater_start_ticker">&updater_start_ticker;</string>
-  <string name="updater_start_select">&updater_start_select;</string>
+  <string name="searchable_description">&searchable_description;</string>
 
-  <string name="updater_downloading_title">&updater_downloading_title;</string>
-  <string name="updater_downloading_ticker">&updater_downloading_ticker;</string>
-  <string name="updater_downloading_ticker_failed">&updater_downloading_ticker_failed;</string>
-  <string name="updater_downloading_select">&updater_downloading_select;</string>
-  <string name="updater_downloading_retry">&updater_downloading_retry;</string>
-  <string name="updater_downloading_willapply">&updater_downloading_willapply;</string>
-  
-  <string name="updater_apply_title">&updater_apply_title;</string>
-  <string name="updater_apply_ticker">&updater_apply_ticker;</string>
-  <string name="updater_apply_select">&updater_apply_select;</string>
+  <!-- Updater notifications -->
+  <string name="updater_start_title">&updater_start_title2;</string>
+  <string name="updater_start_select">&updater_start_select2;</string>
+ 
+  <string name="updater_downloading_title">&updater_downloading_title2;</string>
+  <string name="updater_downloading_title_failed">&updater_downloading_title_failed2;</string>
+  <string name="updater_downloading_select">&updater_downloading_select2;</string>
+  <string name="updater_downloading_retry">&updater_downloading_retry2;</string>
+   
+  <string name="updater_apply_title">&updater_apply_title2;</string>
+  <string name="updater_apply_select">&updater_apply_select2;</string>
+
+  <!-- Search suggestions opt-in -->
+  <string name="suggestions_prompt">&suggestions_prompt;</string>
 
 </resources>

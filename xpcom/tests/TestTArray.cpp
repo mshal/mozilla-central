@@ -95,9 +95,9 @@ static bool test_basic_array(ElementType *data,
     return false;
   if (ary[index] != extra)
     return false;
-  if (ary.IndexOf(extra) == PR_UINT32_MAX)
+  if (ary.IndexOf(extra) == UINT32_MAX)
     return false;
-  if (ary.LastIndexOf(extra) == PR_UINT32_MAX)
+  if (ary.LastIndexOf(extra) == UINT32_MAX)
     return false;
   // ensure proper searching
   if (ary.IndexOf(extra) > ary.LastIndexOf(extra))
@@ -118,6 +118,12 @@ static bool test_basic_array(ElementType *data,
   ary.RemoveElementsAt(copy.Length(), copy.Length());
   ary.Compact();
   if (ary.Capacity() == cap)
+    return false;
+
+  ary.Clear();
+  if (ary.IndexOf(extra) != UINT32_MAX)
+    return false;
+  if (ary.LastIndexOf(extra) != UINT32_MAX)
     return false;
 
   ary.Clear();
@@ -715,11 +721,11 @@ static bool test_swap() {
 
   // Swap two big auto arrays.
   {
-    const int size = 8192;
-    nsAutoTArray<int, size> a;
-    nsAutoTArray<int, size> b;
+    const unsigned size = 8192;
+    nsAutoTArray<unsigned, size> a;
+    nsAutoTArray<unsigned, size> b;
 
-    for (int i = 0; i < size; i++) {
+    for (unsigned i = 0; i < size; i++) {
       a.AppendElement(i);
       b.AppendElement(i + 1);
     }
@@ -735,7 +741,7 @@ static bool test_swap() {
     CHECK_EQ_INT(a.Length(), size);
     CHECK_EQ_INT(b.Length(), size);
 
-    for (int i = 0; i < size; i++) {
+    for (unsigned i = 0; i < size; i++) {
       CHECK_EQ_INT(a[i], i + 1);
       CHECK_EQ_INT(b[i], i);
     }

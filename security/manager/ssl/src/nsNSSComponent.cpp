@@ -36,7 +36,6 @@
 #include "nsIDOMSmartCardEvent.h"
 #include "nsIDOMCrypto.h"
 #include "nsThreadUtils.h"
-#include "nsAutoPtr.h"
 #include "nsCRT.h"
 #include "nsCRLInfo.h"
 #include "nsCertOverrideService.h"
@@ -78,10 +77,8 @@
 #include "nsILocalFileWin.h"
 #endif
 
-extern "C" {
 #include "pkcs12.h"
 #include "p12plcy.h"
-}
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -322,7 +319,7 @@ nsNSSComponent::nsNSSComponent()
    mNSSInitialized(false),
    mCrlTimerLock("nsNSSComponent.mCrlTimerLock"),
    mThreadList(nullptr),
-   mCertVerificationThread(NULL)
+   mCertVerificationThread(nullptr)
 {
 #ifdef PR_LOGGING
   if (!gPIPNSSLog)
@@ -360,7 +357,7 @@ nsNSSComponent::deleteBackgroundThreads()
 void
 nsNSSComponent::createBackgroundThreads()
 {
-  NS_ASSERTION(mCertVerificationThread == nullptr,
+  NS_ASSERTION(!mCertVerificationThread,
                "Cert verification thread already created.");
 
   mCertVerificationThread = new nsCertVerificationThread;
@@ -387,7 +384,7 @@ nsNSSComponent::~nsNSSComponent()
       }
       crlDownloadTimerOn = false;
     }
-    if(crlsScheduledForDownload != nullptr){
+    if (crlsScheduledForDownload) {
       crlsScheduledForDownload->Reset();
       delete crlsScheduledForDownload;
     }
@@ -416,9 +413,6 @@ nsNSSComponent::PostEvent(const nsAString &eventType,
 {
   nsCOMPtr<nsIRunnable> runnable = 
                                new nsTokenEventRunnable(eventType, tokenName);
-  if (!runnable) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   return NS_DispatchToMainThread(runnable);
 }
@@ -514,7 +508,7 @@ nsNSSComponent::DispatchEventToWindow(nsIDOMWindow *domWin,
   // find the document
   nsCOMPtr<nsIDOMDocument> doc;
   rv = domWin->GetDocument(getter_AddRefs(doc));
-  if (doc == nullptr) {
+  if (!doc) {
     return NS_FAILED(rv) ? rv : NS_ERROR_FAILURE;
   }
 
@@ -533,10 +527,6 @@ nsNSSComponent::DispatchEventToWindow(nsIDOMWindow *domWin,
                                           new nsSmartCardEvent(tokenName);
   // init the smart card event, fail here if we can't complete the 
   // initialization.
-  if (!smartCardEvent) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
   rv = smartCardEvent->Init(event);
   if (NS_FAILED(rv)) {
     return rv;
@@ -663,16 +653,10 @@ nsNSSComponent::LaunchSmartCardThread(SECMODModule *module)
 {
   SmartCardMonitoringThread *newThread;
   if (SECMOD_HasRemovableSlots(module)) {
-    if (mThreadList == nullptr) {
+    if (!mThreadList) {
       mThreadList = new SmartCardThreadList();
-      if (!mThreadList) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
     }
     newThread = new SmartCardMonitoringThread(module);
-    if (!newThread) {
-	return NS_ERROR_OUT_OF_MEMORY;
-    }
     // newThread is adopted by the add.
     return mThreadList->Add(newThread);
   }
@@ -712,8 +696,8 @@ nss_addEscape(const char *string, char quote)
     }
 
     newString = (char*)PORT_ZAlloc(escapes+size+1);
-    if (newString == NULL) {
-        return NULL;
+    if (!newString) {
+        return nullptr;
     }
 
     for (src=string, dest=newString; *src; src++,dest++) {
@@ -1054,7 +1038,7 @@ static CipherPref CipherPrefs[] = {
  {"security.ssl3.rsa_null_sha", SSL_RSA_WITH_NULL_SHA}, // No encryption with RSA authentication and a SHA1 MAC
  {"security.ssl3.rsa_null_md5", SSL_RSA_WITH_NULL_MD5}, // No encryption with RSA authentication and an MD5 MAC
  {"security.ssl3.rsa_seed_sha", TLS_RSA_WITH_SEED_CBC_SHA}, // SEED encryption with RSA and a SHA1 MAC
- {NULL, 0} /* end marker */
+ {nullptr, 0} /* end marker */
 };
 
 static void
@@ -1142,7 +1126,7 @@ void nsNSSComponent::setValidationOptions(nsIPrefBranch * pref)
                            ocspMode_FailureIsVerificationFailure
                            : ocspMode_FailureIsNotAVerificationFailure);
 
-  nsRefPtr<nsCERTValInParamWrapper> newCVIN = new nsCERTValInParamWrapper;
+  RefPtr<nsCERTValInParamWrapper> newCVIN(new nsCERTValInParamWrapper);
   if (NS_SUCCEEDED(newCVIN->Construct(
       aiaDownloadEnabled ? 
         nsCERTValInParamWrapper::missing_cert_download_on : nsCERTValInParamWrapper::missing_cert_download_off,
@@ -1201,8 +1185,6 @@ nsNSSComponent::PostCRLImportEvent(const nsCSubstring &urlString,
 {
   //Create the event
   nsCOMPtr<nsIRunnable> event = new CRLDownloadEvent(urlString, listener);
-  if (!event)
-    return NS_ERROR_OUT_OF_MEMORY;
 
   //Get a handle to the ui thread
   return NS_DispatchToMainThread(event);
@@ -1227,8 +1209,8 @@ nsresult nsNSSComponent::DownloadCrlSilently()
   crlsScheduledForDownload->Put(&hashKey,(void *)nullptr);
     
   //Set up the download handler
-  nsRefPtr<PSMContentDownloader> psmDownloader =
-      new PSMContentDownloader(PSMContentDownloader::PKCS7_CRL);
+  RefPtr<PSMContentDownloader> psmDownloader(
+      new PSMContentDownloader(PSMContentDownloader::PKCS7_CRL));
   psmDownloader->setSilentDownload(true);
   psmDownloader->setCrlAutodownloadKey(mCrlUpdateKey);
   
@@ -1385,7 +1367,6 @@ nsNSSComponent::DefineNextTimer()
 {
   PRTime nextFiring;
   PRTime now = PR_Now();
-  uint64_t diff;
   uint32_t interval;
   uint32_t primaryDelay = CRL_AUTOUPDATE_DEFAULT_DELAY;
   nsresult rv;
@@ -1416,8 +1397,7 @@ nsNSSComponent::DefineNextTimer()
      
   //Define the firing interval, from NOW
   if ( now < nextFiring) {
-    LL_SUB(diff,nextFiring,now);
-    LL_L2UI(interval, diff);
+    interval = uint32_t(nextFiring - now);
     //Now, we are doing 32 operations - so, don't need LL_ functions...
     interval = interval/PR_USEC_PER_MSEC;
   }else {
@@ -1441,7 +1421,7 @@ nsNSSComponent::StopCRLUpdateTimer()
   
   //If it is at all running. 
   if (mUpdateTimerInitialized) {
-    if(crlsScheduledForDownload != nullptr){
+    if (crlsScheduledForDownload) {
       crlsScheduledForDownload->Reset();
       delete crlsScheduledForDownload;
       crlsScheduledForDownload = nullptr;
@@ -1647,7 +1627,7 @@ nsNSSComponent::InitializeNSS(bool showWarningBox)
     if (NS_FAILED(rv)) {
       PR_LOG(gPIPNSSLog, PR_LOG_ERROR, ("Unable to get profile directory\n"));
       ConfigureInternalPKCS11Token();
-      SECStatus init_rv = NSS_NoDB_Init(NULL);
+      SECStatus init_rv = NSS_NoDB_Init(nullptr);
       if (init_rv != SECSuccess) {
         nsPSMInitPanic::SetPanic();
         return NS_ERROR_NOT_AVAILABLE;
@@ -2066,7 +2046,7 @@ static PRBool DecryptionAllowedCallback(SECAlgorithmID *algid,
 
 static void * GetPasswordKeyCallback(void *arg, void *handle)
 {
-  return NULL;
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -2641,7 +2621,7 @@ nsNSSComponent::IsNSSInitialized(bool *initialized)
 }
 
 NS_IMETHODIMP
-nsNSSComponent::GetDefaultCERTValInParam(nsRefPtr<nsCERTValInParamWrapper> &out)
+nsNSSComponent::GetDefaultCERTValInParam(RefPtr<nsCERTValInParamWrapper> &out)
 {
   MutexAutoLock lock(mutex);
   if (!mNSSInitialized)
@@ -2651,7 +2631,7 @@ nsNSSComponent::GetDefaultCERTValInParam(nsRefPtr<nsCERTValInParamWrapper> &out)
 }
 
 NS_IMETHODIMP
-nsNSSComponent::GetDefaultCERTValInParamLocalOnly(nsRefPtr<nsCERTValInParamWrapper> &out)
+nsNSSComponent::GetDefaultCERTValInParamLocalOnly(RefPtr<nsCERTValInParamWrapper> &out)
 {
   MutexAutoLock lock(mutex);
   if (!mNSSInitialized)
@@ -2778,11 +2758,11 @@ nsCryptoHash::UpdateFromStream(nsIInputStream *data, uint32_t aLen)
   if (NS_FAILED(rv))
     return rv;
 
-  // if the user has passed PR_UINT32_MAX, then read
+  // if the user has passed UINT32_MAX, then read
   // everything in the stream
 
   uint64_t len = aLen;
-  if (aLen == PR_UINT32_MAX)
+  if (aLen == UINT32_MAX)
     len = n;
 
   // So, if the stream has NO data available for the hash,
@@ -2971,11 +2951,11 @@ NS_IMETHODIMP nsCryptoHMAC::UpdateFromStream(nsIInputStream *aStream, uint32_t a
   if (NS_FAILED(rv))
     return rv;
 
-  // if the user has passed PR_UINT32_MAX, then read
+  // if the user has passed UINT32_MAX, then read
   // everything in the stream
 
   uint64_t len = aLen;
-  if (aLen == PR_UINT32_MAX)
+  if (aLen == UINT32_MAX)
     len = n;
 
   // So, if the stream has NO data available for the hash,
@@ -3195,7 +3175,7 @@ PSMContentDownloader::OnDataAvailable(nsIRequest* request,
       size_t newSize = (mBufferOffset + aLength) *2; // grow some more than needed
       char *newBuffer;
       newBuffer = (char*)nsMemory::Realloc(mByteData, newSize);
-      if (newBuffer == nullptr) {
+      if (!newBuffer) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
       mByteData = newBuffer;

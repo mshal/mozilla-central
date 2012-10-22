@@ -11,68 +11,50 @@ Implementing mach Commands
 
 The *mach* driver follows the convention of popular tools like Git,
 Subversion, and Mercurial and provides a common driver for multiple
-sub-commands.
+subcommands.
 
-Modules inside *mach* typically contain 1 or more classes which
-inherit from *mach.base.ArgumentProvider*. Modules that inherit from
-this class are hooked up to the *mach* CLI driver. So, to add a new
-sub-command/action to *mach*, one simply needs to create a new class in
-the *mach* package which inherits from *ArgumentProvider*.
+Subcommands are implemented by decorating a class inheritting from
+mozbuild.base.MozbuildObject and by decorating methods that act as
+subcommand handlers.
 
-Currently, you also need to hook up some plumbing in
-*mach.main.Mach*. In the future, we hope to have automatic detection
-of submodules.
+Relevant decorators are defined in the *mach.base* module. There are
+the *Command* and *CommandArgument* decorators, which should be used
+on methods to denote that a specific method represents a handler for
+a mach subcommand. There is also the *CommandProvider* decorator,
+which is applied to a class to denote that it contains mach subcommands.
 
-Your command class performs the role of configuring the *mach* frontend
-argument parser as well as providing the methods invoked if a command is
-requested. These methods will take the user-supplied input, do something
-(likely by calling a backend function in a separate module), then format
-output to the terminal.
+Here is a complete example:
 
-The plumbing to hook up the arguments to the *mach* driver involves
-light magic. At *mach* invocation time, the driver creates a new
-*argparse* instance. For each registered class that provides commands,
-it calls the *populate_argparse* static method, passing it the parser
-instance.
+    from mozbuild.base import MozbuildObject
 
-Your class's *populate_argparse* function should register sub-commands
-with the parser.
+    from mach.base import CommandArgument
+    from mach.base import CommandProvider
+    from mach.base import Command
 
-For example, say you want to provide the *doitall* command. e.g. *mach
-doitall*. You would create the module *mach.doitall* and this
-module would contain the following class:
+    @CommandProvider
+    class MyClass(MozbuildObject):
 
-    from mach.base import ArgumentProvider
+        @Command('doit', help='Do ALL OF THE THINGS.')
+        @CommandArgument('--force', '-f', action='store_true',
+            help='Force doing it.')
+        def doit(self, force=False):
+            # Do stuff here.
 
-    class DoItAll(ArgumentProvider):
-        def run(self, more=False):
-            print 'I did it!'
 
-        @staticmethod
-        def populate_argparse(parser):
-            # Create the parser to handle the sub-command.
-            p = parser.add_parser('doitall', help='Do it all!')
+When the module is loaded, the decorators tell mach about all handlers.
+When mach runs, it takes the assembled metadata from these handlers and
+hooks it up to the command line driver. Under the hood, arguments passed
+to the decorators are being used as arguments to
+*argparse.ArgumentParser.add_parser()* and
+*argparse.ArgumentParser.add_argument()*. See the documentation in the
+*mach.base* module for more.
 
-            p.add_argument('more', action='store_true', default=False,
-                help='Do more!')
-
-            # Tell driver that the handler for this sub-command is the
-            # method *run* on the class *DoItAll*.
-            p.set_defaults(cls=DoItAll, method='run')
-
-The most important line here is the call to *set_defaults*.
-Specifically, the *cls* and *method* parameters, which tell the driver
-which class to instantiate and which method to execute if this command
-is requested.
-
-The specified method will receive all arguments parsed from the command.
-It is important that you use named - not positional - arguments for your
-handler functions or things will blow up. This is because the mach driver
-is using the ``**kwargs`` notation to call the defined method.
-
-In the future, we may provide additional syntactical sugar to make all
-this easier. For example, we may provide decorators on methods to hook
-up commands and handlers.
+The Python modules defining mach commands do not need to live inside the
+main mach source tree. If a path on *sys.path* contains a *mach/commands*
+directory, modules will be loaded automatically by mach and any classes
+containing the decorators described above will be detected and loaded
+automatically by mach. So, to add a new subcommand to mach, you just need
+to ensure your Python module is present on *sys.path*.
 
 Minimizing Code in Mach
 -----------------------
@@ -101,3 +83,94 @@ the mach CLI driver starts. Therefore, there is potential for *import bloat*.
 We want the CLI driver to load quickly. So, please delay load external modules
 until they are actually required. In other words, don't use a global
 *import* when you can import from inside a specific command's handler.
+
+Structured Logging
+==================
+
+One of the features of mach is structured logging. Instead of conventional
+logging where simple strings are logged, the internal logging mechanism logs
+all events with the following pieces of information:
+
+* A string *action*
+* A dict of log message fields
+* A formatting string
+
+Essentially, instead of assembling a human-readable string at
+logging-time, you create an object holding all the pieces of data that
+will constitute your logged event. For each unique type of logged event,
+you assign an *action* name.
+
+Depending on how logging is configured, your logged event could get
+written a couple of different ways.
+
+JSON Logging
+------------
+
+Where machines are the intended target of the logging data, a JSON
+logger is configured. The JSON logger assembles an array consisting of
+the following elements:
+
+* Decimal wall clock time in seconds since UNIX epoch
+* String *action* of message
+* Object with structured message data
+
+The JSON-serialized array is written to a configured file handle.
+Consumers of this logging stream can just perform a readline() then feed
+that into a JSON deserializer to reconstruct the original logged
+message. They can key off the *action* element to determine how to
+process individual events. There is no need to invent a parser.
+Convenient, isn't it?
+
+Logging for Humans
+------------------
+
+Where humans are the intended consumer of a log message, the structured
+log message are converted to more human-friendly form. This is done by
+utilizing the *formatting* string provided at log time. The logger
+simply calls the *format* method of the formatting string, passing the
+dict containing the message's fields.
+
+When *mach* is used in a terminal that supports it, the logging facility
+also supports terminal features such as colorization. This is done
+automatically in the logging layer - there is no need to control this at
+logging time.
+
+In addition, messages intended for humans typically prepends every line
+with the time passed since the application started.
+
+Logging HOWTO
+-------------
+
+Structured logging piggybacks on top of Python's built-in logging
+infrastructure provided by the *logging* package. We accomplish this by
+taking advantage of *logging.Logger.log()*'s *extra* argument. To this
+argument, we pass a dict with the fields *action* and *params*. These
+are the string *action* and dict of message fields, respectively. The
+formatting string is passed as the *msg* argument, like normal.
+
+If you were logging to a logger directly, you would do something like:
+
+    logger.log(logging.INFO, 'My name is {name}',
+        extra={'action': 'my_name', 'params': {'name': 'Gregory'}})
+
+The JSON logging would produce something like:
+
+    [1339985554.306338, "my_name", {"name": "Gregory"}]
+
+Human logging would produce something like:
+
+     0.52 My name is Gregory
+
+Since there is a lot of complexity using logger.log directly, it is
+recommended to go through a wrapping layer that hides part of the
+complexity for you. The easiest way to do this is by utilizing the
+LoggingMixin:
+
+    import logging
+    from mach.mixin.logging import LoggingMixin
+
+    class MyClass(LoggingMixin):
+        def foo(self):
+             self.log(logging.INFO, 'foo_start', {'bar': True},
+                 'Foo performed. Bar: {bar}')
+

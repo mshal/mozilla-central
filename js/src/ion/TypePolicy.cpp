@@ -223,56 +223,18 @@ BitwisePolicy::adjustInputs(MInstruction *ins)
 }
 
 bool
-TableSwitchPolicy::adjustInputs(MInstruction *ins)
-{
-    MDefinition *in = ins->getOperand(0);
-    MInstruction *replace;
-
-    // Tableswitch can consume all types, except:
-    // - Value: unbox to int32
-    switch (in->type()) {
-      case MIRType_Value:
-        replace = MUnbox::New(in, MIRType_Int32, MUnbox::Fallible);
-        break;
-      default:
-        return true;
-    }
-    
-    ins->block()->insertBefore(ins, replace);
-    ins->replaceOperand(0, replace);
-
-    return true;
-}
-
-bool
 PowPolicy::adjustInputs(MInstruction *ins)
 {
     JS_ASSERT(specialization_ == MIRType_Int32 || specialization_ == MIRType_Double);
 
-    MDefinition *input = ins->getOperand(0);
-    MDefinition *power = ins->getOperand(1);
-
     // Input must be a double.
-    if (input->type() != MIRType_Double) {
-        MToDouble *replace = MToDouble::New(input);
-        ins->block()->insertBefore(ins, replace);
-        ins->replaceOperand(0, replace);
-    }
+    if (!DoublePolicy<0>::staticAdjustInputs(ins))
+        return false;
 
     // Power may be an int32 or a double. Integers receive a faster path.
-    if (power->type() != specialization_) {
-        if (specialization_ == MIRType_Double) {
-            MToDouble *replace = MToDouble::New(power);
-            ins->block()->insertBefore(ins, replace);
-            ins->replaceOperand(1, replace);
-        } else {
-            MUnbox *replace = MUnbox::New(power, MIRType_Int32, MUnbox::Fallible);
-            ins->block()->insertBefore(ins, replace);
-            ins->replaceOperand(1, replace);
-        }
-    }
-
-    return true;
+    if (specialization_ == MIRType_Double)
+        return DoublePolicy<1>::staticAdjustInputs(ins);
+    return IntPolicy<1>::staticAdjustInputs(ins);
 }
 
 bool
@@ -282,7 +244,15 @@ StringPolicy::staticAdjustInputs(MInstruction *def)
     if (in->type() == MIRType_String)
         return true;
 
-    MUnbox *replace = MUnbox::New(in, MIRType_String, MUnbox::Fallible);
+    MInstruction *replace;
+    if (in->type() == MIRType_Int32) {
+        replace = MToString::New(in);
+    } else {
+        if (in->type() != MIRType_Value)
+            in = boxAt(def, in);
+        replace = MUnbox::New(in, MIRType_String, MUnbox::Fallible);
+    }
+
     def->block()->insertBefore(def, replace);
     def->replaceOperand(0, replace);
     return true;
@@ -312,6 +282,17 @@ DoublePolicy<Op>::staticAdjustInputs(MInstruction *def)
     MDefinition *in = def->getOperand(Op);
     if (in->type() == MIRType_Double)
         return true;
+
+    // Force a bailout. Objects may be effectful; strings are currently unhandled.
+    if (in->type() == MIRType_Object || in->type() == MIRType_String) {
+        MBox *box = MBox::New(in);
+        def->block()->insertBefore(def, box);
+
+        MUnbox *unbox = MUnbox::New(box, MIRType_Double, MUnbox::Fallible);
+        def->block()->insertBefore(def, unbox);
+        def->replaceOperand(Op, unbox);
+        return true;
+    }
 
     MToDouble *replace = MToDouble::New(in);
     def->block()->insertBefore(def, replace);

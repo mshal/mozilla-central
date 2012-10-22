@@ -1162,7 +1162,7 @@ SuppressDeletedPropertyHelper(JSContext *cx, HandleObject obj, StringPredicate p
 class SingleStringPredicate {
     Handle<JSFlatString*> str;
 public:
-    SingleStringPredicate(JSContext *cx, Handle<JSFlatString*> str) : str(str) {}
+    SingleStringPredicate(Handle<JSFlatString*> str) : str(str) {}
 
     bool operator()(JSFlatString *str) { return EqualStrings(str, this->str); }
     bool matchesAtMostOne() { return true; }
@@ -1174,7 +1174,7 @@ js_SuppressDeletedProperty(JSContext *cx, HandleObject obj, jsid id)
     Rooted<JSFlatString*> str(cx, IdToString(cx, id));
     if (!str)
         return false;
-    return SuppressDeletedPropertyHelper(cx, obj, SingleStringPredicate(cx, str));
+    return SuppressDeletedPropertyHelper(cx, obj, SingleStringPredicate(str));
 }
 
 bool
@@ -1503,6 +1503,8 @@ static JSBool
 SendToGenerator(JSContext *cx, JSGeneratorOp op, HandleObject obj,
                 JSGenerator *gen, const Value &arg)
 {
+    AssertCanGC();
+
     if (gen->state == JSGEN_RUNNING || gen->state == JSGEN_CLOSING) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_NESTING_GENERATOR);
         return JS_FALSE;
@@ -1562,7 +1564,8 @@ SendToGenerator(JSContext *cx, JSGeneratorOp op, HandleObject obj,
         PropertyIteratorObject *enumerators = cx->enumerators;
         cx->enumerators = gen->enumerators;
 
-        ok = RunScript(cx, fp->script(), fp);
+        RootedScript script(cx, fp->script());
+        ok = RunScript(cx, script, fp);
 
         gen->enumerators = cx->enumerators;
         cx->enumerators = enumerators;

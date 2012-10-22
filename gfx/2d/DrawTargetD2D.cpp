@@ -954,7 +954,7 @@ DrawTargetD2D::Mask(const Pattern &aSource,
                                       1.0f, maskBrush),
                 layer);
 
-  Rect rect(0, 0, mSize.width, mSize.height);
+  Rect rect(0, 0, (Float)mSize.width, (Float)mSize.height);
   Matrix mat = mTransform;
   mat.Invert();
   
@@ -993,16 +993,7 @@ DrawTargetD2D::PushClip(const Path *aPath)
   mTransformDirty = true;
 
   if (mClipsArePushed) {
-    D2D1_LAYER_OPTIONS options = D2D1_LAYER_OPTIONS_NONE;
-
-    if (mFormat == FORMAT_B8G8R8X8) {
-      options = D2D1_LAYER_OPTIONS_INITIALIZE_FOR_CLEARTYPE;
-    }
-
-    mRT->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), pathD2D->mGeometry,
-                                         D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                         clip.mTransform, 1.0f, nullptr,
-                                         options), clip.mLayer);
+    PushD2DLayer(mRT, pathD2D->mGeometry, clip.mLayer, clip.mTransform);
   }
 }
 
@@ -1678,7 +1669,7 @@ DrawTargetD2D::GetClippedGeometry(IntRect *aClipBounds)
     // Do nothing but add it to the current clip bounds.
     if (!iter->mPath && iter->mIsPixelAligned) {
       mCurrentClipBounds.IntersectRect(mCurrentClipBounds,
-        IntRect(iter->mBounds.left, iter->mBounds.top,
+        IntRect(int32_t(iter->mBounds.left), int32_t(iter->mBounds.top),
                 int32_t(iter->mBounds.right - iter->mBounds.left),
                 int32_t(iter->mBounds.bottom - iter->mBounds.top)));
       continue;
@@ -1687,7 +1678,7 @@ DrawTargetD2D::GetClippedGeometry(IntRect *aClipBounds)
     if (!pathGeom) {
       if (pathRectIsAxisAligned) {
         mCurrentClipBounds.IntersectRect(mCurrentClipBounds,
-          IntRect(pathRect.left, pathRect.top,
+          IntRect(int32_t(pathRect.left), int32_t(pathRect.top),
                   int32_t(pathRect.right - pathRect.left),
                   int32_t(pathRect.bottom - pathRect.top)));
       }
@@ -1826,16 +1817,7 @@ DrawTargetD2D::PushClipsToRT(ID2D1RenderTarget *aRT)
   for (std::vector<PushedClip>::iterator iter = mPushedClips.begin();
         iter != mPushedClips.end(); iter++) {
     if (iter->mLayer) {
-      D2D1_LAYER_OPTIONS options = D2D1_LAYER_OPTIONS_NONE;
-
-      if (mFormat == FORMAT_B8G8R8X8) {
-        options = D2D1_LAYER_OPTIONS_INITIALIZE_FOR_CLEARTYPE;
-      }
-
-      aRT->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), iter->mPath->mGeometry,
-                                            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                            iter->mTransform, 1.0f, nullptr,
-                                            options), iter->mLayer);
+      PushD2DLayer(aRT, iter->mPath->mGeometry, iter->mLayer, iter->mTransform);
     } else {
       aRT->PushAxisAlignedClip(iter->mBounds, iter->mIsPixelAligned ? D2D1_ANTIALIAS_MODE_ALIASED : D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     }
@@ -2027,9 +2009,10 @@ DrawTargetD2D::FillGlyphsManual(ScaledFontDWrite *aFont,
     RefPtr<ID2D1Geometry> geom = GetClippedGeometry(clipBounds);
 
     RefPtr<ID2D1RectangleGeometry> rectGeom;
-    factory()->CreateRectangleGeometry(D2D1::RectF(rectBounds.x, rectBounds.y,
-                                                   rectBounds.width + rectBounds.x,
-                                                   rectBounds.height + rectBounds.y),
+    factory()->CreateRectangleGeometry(D2D1::RectF(Float(rectBounds.x),
+                                                   Float(rectBounds.y),
+                                                   Float(rectBounds.width + rectBounds.x),
+                                                   Float(rectBounds.height + rectBounds.y)),
                                        byRef(rectGeom));
 
     D2D1_GEOMETRY_RELATION relation;
@@ -2432,7 +2415,7 @@ DrawTargetD2D::CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix
     return nullptr;
   }
 
-  Rect rect(0, 0, mSize.width, mSize.height);
+  Rect rect(0, 0, Float(mSize.width), Float(mSize.height));
 
   // Calculate the rectangle of the source mapped to our surface.
   rect = invTransform.TransformBounds(rect);
@@ -2440,7 +2423,7 @@ DrawTargetD2D::CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix
 
   IntSize size = aSurface->GetSize();
 
-  Rect uploadRect(0, 0, size.width, size.height);
+  Rect uploadRect(0, 0, Float(size.width), Float(size.height));
 
   // Limit the uploadRect as much as possible without supporting discontiguous uploads 
   //
@@ -2503,15 +2486,17 @@ DrawTargetD2D::CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix
     ImageHalfScaler scaler(aSurface->GetData(), stride, size);
 
     // Calculate the maximum width/height of the image post transform.
-    Point topRight = transform * Point(size.width, 0);
+    Point topRight = transform * Point(Float(size.width), 0);
     Point topLeft = transform * Point(0, 0);
-    Point bottomRight = transform * Point(size.width, size.height);
-    Point bottomLeft = transform * Point(0, size.height);
+    Point bottomRight = transform * Point(Float(size.width), Float(size.height));
+    Point bottomLeft = transform * Point(0, Float(size.height));
     
     IntSize scaleSize;
 
-    scaleSize.width = max(Distance(topRight, topLeft), Distance(bottomRight, bottomLeft));
-    scaleSize.height = max(Distance(topRight, bottomRight), Distance(topLeft, bottomLeft));
+    scaleSize.width = int32_t(max(Distance(topRight, topLeft),
+                                  Distance(bottomRight, bottomLeft)));
+    scaleSize.height = int32_t(max(Distance(topRight, bottomRight),
+                                   Distance(topLeft, bottomLeft)));
 
     if (unsigned(scaleSize.width) > mRT->GetMaximumBitmapSize()) {
       // Ok, in this case we'd really want a downscale of a part of the bitmap,
@@ -2532,7 +2517,8 @@ DrawTargetD2D::CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix
                       D2D1::BitmapProperties(D2DPixelFormat(aSurface->GetFormat())),
                       byRef(bitmap));
 
-    aMatrix.Scale(size.width / newSize.width, size.height / newSize.height);
+    aMatrix.Scale(Float(size.width / newSize.width),
+                  Float(size.height / newSize.height));
     return bitmap;
   }
 }
@@ -2707,11 +2693,38 @@ DrawTargetD2D::SetScissorToRect(IntRect *aRect)
     rect.top = aRect->y;
     rect.bottom = aRect->YMost();
   } else {
-    rect.left = rect.left = INT32_MIN;
-    rect.right = rect.top = INT32_MAX;
+    rect.left = rect.top = INT32_MIN;
+    rect.right = rect.bottom = INT32_MAX;
   }
 
   mDevice->RSSetScissorRects(1, &rect);
+}
+
+void
+DrawTargetD2D::PushD2DLayer(ID2D1RenderTarget *aRT, ID2D1Geometry *aGeometry, ID2D1Layer *aLayer, const D2D1_MATRIX_3X2_F &aTransform)
+{
+  D2D1_LAYER_OPTIONS options = D2D1_LAYER_OPTIONS_NONE;
+  D2D1_LAYER_OPTIONS1 options1 =  D2D1_LAYER_OPTIONS1_NONE;
+
+  if (mFormat == FORMAT_B8G8R8X8) {
+    options = D2D1_LAYER_OPTIONS_INITIALIZE_FOR_CLEARTYPE;
+    options1 = D2D1_LAYER_OPTIONS1_IGNORE_ALPHA | D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND;
+  }
+
+	RefPtr<ID2D1DeviceContext> dc;
+	HRESULT hr = aRT->QueryInterface(IID_ID2D1DeviceContext, (void**)((ID2D1DeviceContext**)byRef(dc)));
+
+	if (FAILED(hr)) {
+	    aRT->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), aGeometry,
+				                                   D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, aTransform,
+				                                   1.0, nullptr, options),
+				             aLayer);
+	} else {
+	    dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), aGeometry,
+				                                   D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, aTransform,
+				                                   1.0, nullptr, options1),
+				            aLayer);
+	}
 }
 
 }

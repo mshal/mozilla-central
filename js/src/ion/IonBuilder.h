@@ -265,7 +265,7 @@ class IonBuilder : public MIRGenerator
     bool initScopeChain();
     bool pushConstant(const Value &v);
     bool pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual, types::StackTypeSet *observed);
-    void monitorResult(MInstruction *ins, types::TypeSet *types);
+    void monitorResult(MInstruction *ins, types::TypeSet *barrier, types::TypeSet *types);
 
     JSObject *getSingletonPrototype(JSFunction *target);
 
@@ -287,6 +287,21 @@ class IonBuilder : public MIRGenerator
 
     bool loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType);
     bool storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool needsBarrier);
+
+    // jsop_getprop() helpers.
+    bool getPropTryArgumentsLength(bool *emitted);
+    bool getPropTryConstant(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                            types::StackTypeSet *types, TypeOracle::UnaryTypes unaryTypes);
+    bool getPropTryDefiniteSlot(bool *emitted, HandlePropertyName name,
+                            types::StackTypeSet *barrier, types::StackTypeSet *types,
+                            TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes);
+    bool getPropTryCommonGetter(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                                types::StackTypeSet *types, TypeOracle::UnaryTypes unaryTypes);
+    bool getPropTryMonomorphic(bool *emitted, HandleId id, types::StackTypeSet *barrier,
+                               TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes);
+    bool getPropTryPolymorphic(bool *emitted, HandlePropertyName name, HandleId id,
+                               types::StackTypeSet *barrier, types::StackTypeSet *types,
+                               TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes);
 
     bool jsop_add(MDefinition *left, MDefinition *right);
     bool jsop_bitnot();
@@ -345,6 +360,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_iternext();
     bool jsop_itermore();
     bool jsop_iterend();
+    bool jsop_in();
     bool jsop_instanceof();
     bool jsop_getaliasedvar(ScopeCoordinate sc);
     bool jsop_setaliasedvar(ScopeCoordinate sc);
@@ -370,6 +386,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineArray(uint32 argc, bool constructing);
     InliningStatus inlineArrayPopShift(MArrayPopShift::Mode mode, uint32 argc, bool constructing);
     InliningStatus inlineArrayPush(uint32 argc, bool constructing);
+    InliningStatus inlineArrayConcat(uint32 argc, bool constructing);
 
     // Math natives.
     InliningStatus inlineMathAbs(uint32 argc, bool constructing);
@@ -378,13 +395,18 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineMathSqrt(uint32 argc, bool constructing);
     InliningStatus inlineMathMinMax(bool max, uint32 argc, bool constructing);
     InliningStatus inlineMathPow(uint32 argc, bool constructing);
+    InliningStatus inlineMathRandom(uint32 argc, bool constructing);
     InliningStatus inlineMathFunction(MMathFunction::Function function, uint32 argc,
                                       bool constructing);
 
     // String natives.
+    InliningStatus inlineStringObject(uint32 argc, bool constructing);
     InliningStatus inlineStrCharCodeAt(uint32 argc, bool constructing);
     InliningStatus inlineStrFromCharCode(uint32 argc, bool constructing);
     InliningStatus inlineStrCharAt(uint32 argc, bool constructing);
+
+    // RegExp natives.
+    InliningStatus inlineRegExpTest(uint32 argc, bool constructing);
 
     InliningStatus inlineNativeCall(JSNative native, uint32 argc, bool constructing);
 
@@ -393,7 +415,7 @@ class IonBuilder : public MIRGenerator
                           Vector<MDefinition *, 8, IonAllocPolicy> &retvalDefns);
     bool inlineScriptedCall(AutoObjectVector &targets, uint32 argc, bool constructing,
                             types::StackTypeSet *types, types::StackTypeSet *barrier);
-    bool makeInliningDecision(AutoObjectVector &targets);
+    bool makeInliningDecision(AutoObjectVector &targets, uint32 argc);
 
     MCall *makeCallHelper(HandleFunction target, uint32 argc, bool constructing);
     bool makeCallBarrier(HandleFunction target, uint32 argc, bool constructing,
@@ -423,11 +445,11 @@ class IonBuilder : public MIRGenerator
     types::RecompileInfo const recompileInfo;
 
     // If off thread compilation is successful, final LIR is attached here.
-    LIRGraph *lir;
+    LIRGraph *backgroundCompiledLir;
 
     void clearForBackEnd();
 
-    JSScript *script() const { return script_; }
+    Return<JSScript*> script() const { return script_; }
 
   private:
     JSContext *cx;
