@@ -134,8 +134,8 @@ TiledThebesLayerOGL::PaintedTiledLayerBuffer(const BasicTiledLayerBuffer* mTiled
   mMainMemoryTiledBuffer = *mTiledBuffer;
   // TODO: Remove me once Bug 747811 lands.
   delete mTiledBuffer;
-  mRegionToUpload.Or(mRegionToUpload, mMainMemoryTiledBuffer.GetLastPaintRegion());
-
+  mRegionToUpload.Or(mRegionToUpload, mMainMemoryTiledBuffer.GetPaintedRegion());
+  mMainMemoryTiledBuffer.ClearPaintedRegion();
 }
 
 void
@@ -197,12 +197,12 @@ TiledThebesLayerOGL::ProcessUploadQueue()
 }
 
 void
-TiledThebesLayerOGL::RenderTile(TiledTexture aTile,
+TiledThebesLayerOGL::RenderTile(const TiledTexture& aTile,
                                 const gfx3DMatrix& aTransform,
                                 const nsIntPoint& aOffset,
-                                nsIntRegion aScreenRegion,
-                                nsIntPoint aTextureOffset,
-                                nsIntSize aTextureBounds,
+                                const nsIntRegion& aScreenRegion,
+                                const nsIntPoint& aTextureOffset,
+                                const nsIntSize& aTextureBounds,
                                 Layer* aMaskLayer)
 {
     gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, aTile.mTextureHandle);
@@ -284,7 +284,6 @@ TiledThebesLayerOGL::RenderLayer(int aPreviousFrameBuffer, const nsIntPoint& aOf
     tileX++;
     x += w;
   }
-
 }
 
 } // mozilla

@@ -1319,7 +1319,7 @@ toolbar[mode="icons"] #zoom-in-button {
 }
 
 .urlbar-icon {
-  padding: 2px 3px;
+  padding: 0 3px;
 }
 
 .urlbar-icon[open="true"],
@@ -1637,8 +1637,8 @@ window[tabsontop="false"] richlistitem[type~="action"][actiontype="switchtab"][s
 /* social recommending panel */
 
 #share-button {
-  width: 16px;
-  height: 16px;
+  -moz-image-region: rect(0, 16px, 16px, 0);
+  -moz-margin-end: 3px;
 }
 
 #socialUserPortrait {
@@ -2052,7 +2052,7 @@ sidebarheader {
 }
 
 #appcontent ~ .sidebar-splitter {
-  -moz-border-start: 1px solid #404040;
+  -moz-border-start: 1px solid #ccc;
   -moz-border-end: none;
   -moz-margin-start: 0;
   -moz-margin-end: -3px;
@@ -4044,8 +4044,17 @@ html|*#gcli-output-frame {
   -moz-box-orient: horizontal;
 }
 
-#social-toolbar-item > .toolbarbutton-1 {
-  margin: 0px;
+#social-toolbar-item > .toolbarbutton-1:not(:first-child):not(:last-child) {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+#social-toolbar-item > .toolbarbutton-1:first-child {
+  -moz-margin-end: 0;
+}
+
+#social-toolbar-item > .toolbarbutton-1:last-child {
+  -moz-margin-start: 0;
 }
 
 .social-notification-icon-hbox {
@@ -4151,11 +4160,13 @@ html|*#gcli-output-frame {
 .chat-title {
   font-weight: bold;
   color: -moz-dialogtext;
+  text-shadow: none;
   cursor: inherit;
 }
 
 .chat-titlebar {
   background-color: #d9d9d9;
+  background-image: linear-gradient(rgba(255,255,255,.43), rgba(255,255,255,0));
   height: 20px;
   min-height: 20px;
   width: 100%;
@@ -4163,7 +4174,7 @@ html|*#gcli-output-frame {
   padding: 2px;
   -moz-padding-start: 6px;
   border: none;
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid #ccc;
   cursor: pointer;
 }
 
@@ -4172,7 +4183,10 @@ html|*#gcli-output-frame {
 }
 
 .chat-titlebar[activity] {
-  background-color: #ceeaff;
+  background-image: radial-gradient(ellipse closest-side at center, rgb(255,255,255), rgba(255,255,255,0));
+  background-repeat: no-repeat;
+  background-size: 100% 20px;
+  background-position: 0 -10px;
 }
 
 .chat-titlebar[selected] {
@@ -4193,12 +4207,19 @@ html|*#gcli-output-frame {
   padding: 2px;
   height: 21px;
   width: 21px;
-  border-top: 1px solid #404040;
-  -moz-border-end: 1px solid #404040;
+  border-top: 1px solid #ccc;
+  -moz-border-end: 1px solid #ccc;
 }
 
-.chatbar-button[open="true"],
-.chatbar-button:active:hover {
+.chatbar-button > .toolbarbutton-icon {
+  opacity: .6;
+}
+.chatbar-button:hover > .toolbarbutton-icon,
+.chatbar-button[open="true"] > .toolbarbutton-icon {
+  opacity: 1;
+}
+
+.chatbar-button[open="true"] {
   background-color: #f0f0f0;
   box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
 }
@@ -4209,16 +4230,23 @@ html|*#gcli-output-frame {
 }
 
 .chatbar-button[activity] {
-  background-color: #ceeaff;
+  background-image: radial-gradient(circle farthest-corner at center 2px, rgb(254,254,255) 3%, rgba(210,235,255,0.9) 12%, rgba(148,205,253,0.6) 30%, rgba(148,205,253,0.2) 70%);
 }
 
 .chatbar-button > menupopup > menuitem[activity] {
   font-weight: bold;
 }
 
+.chatbar-button > menupopup > .menuitem-iconic > .menu-iconic-left > .menu-iconic-icon {
+  width: auto;
+  height: auto;
+  max-height: 16px;
+  max-width: 16px;
+}
+
 .chatbar-innerbox {
   background: transparent;
-  margin: -285px -1px 0 -1px;
+  margin: -285px 0 0;
   overflow: hidden;
 }
 
@@ -4231,8 +4259,10 @@ chatbox {
   width: 260px;
   -moz-margin-start: 4px;
   background-color: white;
-  border: 1px solid #404040;
+  border: 1px solid #ccc;
   border-bottom: none;
+  border-top-left-radius: @toolbarbuttonCornerRadius@;
+  border-top-right-radius: @toolbarbuttonCornerRadius@;
 }
 
 chatbox[minimized="true"] {

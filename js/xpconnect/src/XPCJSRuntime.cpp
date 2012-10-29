@@ -24,6 +24,7 @@
 #include "nsLayoutStatics.h"
 #include "nsContentUtils.h"
 #include "nsCCUncollectableMarker.h"
+#include "nsScriptLoader.h"
 #include "jsfriendapi.h"
 #include "js/MemoryMetrics.h"
 #include "mozilla/dom/DOMJSClass.h"
@@ -212,9 +213,25 @@ ContextCallback(JSContext *cx, unsigned operation)
     return true;
 }
 
-xpc::CompartmentPrivate::~CompartmentPrivate()
+namespace xpc {
+
+CompartmentPrivate::~CompartmentPrivate()
 {
     MOZ_COUNT_DTOR(xpc::CompartmentPrivate);
+}
+
+CompartmentPrivate*
+EnsureCompartmentPrivate(JSObject *obj)
+{
+    JSCompartment *c = js::GetObjectCompartment(obj);
+    CompartmentPrivate *priv = GetCompartmentPrivate(c);
+    if (priv)
+        return priv;
+    priv = new CompartmentPrivate();
+    JS_SetCompartmentPrivate(c, priv);
+    return priv;
+}
+
 }
 
 static void
@@ -223,26 +240,11 @@ CompartmentDestroyedCallback(JSFreeOp *fop, JSCompartment *compartment)
     XPCJSRuntime* self = nsXPConnect::GetRuntimeInstance();
     if (!self)
         return;
-    XPCCompartmentSet &set = self->GetCompartmentSet();
 
     // Get the current compartment private into an AutoPtr (which will do the
     // cleanup for us), and null out the private (which may already be null).
     nsAutoPtr<CompartmentPrivate> priv(GetCompartmentPrivate(compartment));
     JS_SetCompartmentPrivate(compartment, nullptr);
-
-    // JSD creates compartments in our runtime without going through our creation
-    // code. This means that those compartments aren't in our set, and don't have
-    // compartment privates. JSD is on the way out, so let's just handle that
-    // case for now.
-    if (!priv) {
-        MOZ_ASSERT(!set.has(compartment));
-        return;
-    }
-
-    // Remove the compartment from the set.
-    MOZ_ASSERT(set.has(compartment));
-    set.remove(compartment);
-    return;
 }
 
 nsresult
@@ -310,7 +312,7 @@ static void
 TraceJSObject(void *aScriptThing, const char *name, void *aClosure)
 {
     JS_CALL_TRACER(static_cast<JSTracer*>(aClosure), aScriptThing,
-                   js_GetGCThingTraceKind(aScriptThing), name);
+                   js::GCThingTraceKind(aScriptThing), name);
 }
 
 static PLDHashOperator
@@ -318,14 +320,6 @@ TraceJSHolder(void *holder, nsScriptObjectTracer *&tracer, void *arg)
 {
     tracer->Trace(holder, TraceJSObject, arg);
 
-    return PL_DHASH_NEXT;
-}
-
-static PLDHashOperator
-TraceDOMExpandos(nsPtrHashKey<JSObject> *expando, void *aClosure)
-{
-    JS_CALL_OBJECT_TRACER(static_cast<JSTracer *>(aClosure), expando->GetKey(),
-                          "DOM expando object");
     return PL_DHASH_NEXT;
 }
 
@@ -349,14 +343,6 @@ void XPCJSRuntime::TraceXPConnectRoots(JSTracer *trc)
         static_cast<nsXPCWrappedJS*>(e)->TraceJS(trc);
 
     mJSHolders.Enumerate(TraceJSHolder, trc);
-
-    // Trace compartments.
-    XPCCompartmentSet &set = GetCompartmentSet();
-    for (XPCCompartmentRange r = set.all(); !r.empty(); r.popFront()) {
-        CompartmentPrivate *priv = GetCompartmentPrivate(r.front());
-        if (priv->domExpandoMap)
-            priv->domExpandoMap->EnumerateEntries(TraceDOMExpandos, trc);
-    }
 }
 
 struct Closure
@@ -373,7 +359,7 @@ CheckParticipatesInCycleCollection(void *aThing, const char *name, void *aClosur
     if (closure->cycleCollectionEnabled)
         return;
 
-    if (AddToCCKind(js_GetGCThingTraceKind(aThing)) &&
+    if (AddToCCKind(js::GCThingTraceKind(aThing)) &&
         xpc_IsGrayGCThing(aThing))
     {
         closure->cycleCollectionEnabled = true;
@@ -410,19 +396,6 @@ XPCJSRuntime::SuspectWrappedNative(XPCWrappedNative *wrapper,
     JSObject* obj = wrapper->GetFlatJSObjectPreserveColor();
     if (xpc_IsGrayGCThing(obj) || cb.WantAllTraces())
         cb.NoteJSRoot(obj);
-}
-
-static PLDHashOperator
-SuspectDOMExpandos(nsPtrHashKey<JSObject> *key, void *arg)
-{
-    Closure *closure = static_cast<Closure*>(arg);
-    JSObject* obj = key->GetKey();
-    const dom::DOMClass* clasp;
-    dom::DOMObjectSlot slot = GetDOMClass(obj, clasp);
-    MOZ_ASSERT(slot != dom::eNonDOMObject && clasp->mDOMObjectIsISupports);
-    nsISupports* native = dom::UnwrapDOMObject<nsISupports>(obj, slot);
-    closure->cb->NoteXPCOMRoot(native);
-    return PL_DHASH_NEXT;
 }
 
 bool
@@ -496,14 +469,6 @@ XPCJSRuntime::AddXPConnectRoots(nsCycleCollectionTraversalCallback &cb)
 
     Closure closure = { true, &cb };
     mJSHolders.Enumerate(NoteJSHolder, &closure);
-
-    // Suspect objects with expando objects.
-    XPCCompartmentSet &set = GetCompartmentSet();
-    for (XPCCompartmentRange r = set.all(); !r.empty(); r.popFront()) {
-        CompartmentPrivate *priv = GetCompartmentPrivate(r.front());
-        if (priv->domExpandoMap)
-            priv->domExpandoMap->EnumerateEntries(SuspectDOMExpandos, &closure);
-    }
 }
 
 static PLDHashOperator
@@ -796,14 +761,6 @@ XPCJSRuntime::FinalizeCallback(JSFreeOp *fop, JSFinalizeStatus status, JSBool is
 
             // Find dying scopes.
             XPCWrappedNativeScope::StartFinalizationPhaseOfGC(fop, self);
-
-            // Sweep compartments.
-            XPCCompartmentSet &set = self->GetCompartmentSet();
-            for (XPCCompartmentRange r = set.all(); !r.empty(); r.popFront()) {
-                CompartmentPrivate *priv = GetCompartmentPrivate(r.front());
-                if (priv->waiverWrapperMap)
-                    priv->waiverWrapperMap->Sweep();
-            }
 
             self->mDoingFinalization = true;
             break;
@@ -2232,7 +2189,6 @@ CompartmentNameCallback(JSRuntime *rt, JSCompartment *comp,
     memcpy(buf, name.get(), name.Length() + 1);
 }
 
-bool XPCJSRuntime::gNewDOMBindingsEnabled;
 bool XPCJSRuntime::gExperimentalBindingsEnabled;
 
 bool PreserveWrapper(JSContext *cx, JSObject *obj)
@@ -2247,6 +2203,103 @@ bool PreserveWrapper(JSContext *cx, JSObject *obj)
         return false;
     nsContentUtils::PreserveWrapper(native, node);
     return true;
+}
+
+static nsresult
+ReadSourceFromFilename(JSContext *cx, const char *filename, jschar **src, uint32_t *len)
+{
+  nsresult rv;
+
+  // mozJSSubScriptLoader prefixes the filenames of the scripts it loads with
+  // the filename of its caller. Axe that if present.
+  const char *arrow;
+  while ((arrow = strstr(filename, " -> ")))
+    filename = arrow + strlen(" -> ");
+
+  // Get the URI.
+  nsCOMPtr<nsIURI> uri;
+  rv = NS_NewURI(getter_AddRefs(uri), filename);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIChannel> scriptChannel;
+  rv = NS_NewChannel(getter_AddRefs(scriptChannel), uri);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Only allow local reading.
+  nsCOMPtr<nsIURI> actualUri;
+  rv = scriptChannel->GetURI(getter_AddRefs(actualUri));
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsCString scheme;
+  rv = actualUri->GetScheme(scheme);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!scheme.EqualsLiteral("file") && !scheme.EqualsLiteral("jar"))
+    return NS_OK;
+
+  nsCOMPtr<nsIInputStream> scriptStream;
+  rv = scriptChannel->Open(getter_AddRefs(scriptStream));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint64_t rawLen;
+  rv = scriptStream->Available(&rawLen);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!rawLen)
+    return NS_ERROR_FAILURE;
+  if (rawLen > UINT32_MAX)
+    return NS_ERROR_FILE_TOO_BIG;
+
+  // Allocate an internal buf the size of the file.
+  nsAutoArrayPtr<unsigned char> buf(new unsigned char[rawLen]);
+  if (!buf)
+    return NS_ERROR_OUT_OF_MEMORY;
+
+  unsigned char *ptr = buf, *end = ptr + rawLen;
+  while (ptr < end) {
+    uint32_t bytesRead;
+    rv = scriptStream->Read(reinterpret_cast<char *>(ptr), end - ptr, &bytesRead);
+    if (NS_FAILED(rv))
+      return rv;
+    NS_ASSERTION(bytesRead > 0, "stream promised more bytes before EOF");
+    ptr += bytesRead;
+  }
+
+  nsString decoded;
+  rv = nsScriptLoader::ConvertToUTF16(scriptChannel, buf, rawLen, EmptyString(), NULL, decoded);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Copy to JS engine.
+  *len = decoded.Length();
+  *src = static_cast<jschar *>(JS_malloc(cx, decoded.Length()*sizeof(jschar)));
+  if (!*src)
+    return NS_ERROR_FAILURE;
+  memcpy(*src, decoded.get(), decoded.Length()*sizeof(jschar));
+
+  return NS_OK;
+}
+
+/*
+  The JS engine calls this function when it needs the source for a chrome JS
+  function. See the comment in the XPCJSRuntime constructor.
+*/
+static bool
+SourceHook(JSContext *cx, JSScript *script, jschar **src, uint32_t *length)
+{
+  *src = NULL;
+  *length = 0;
+
+  if (!nsContentUtils::IsCallerChrome())
+    return true;
+
+  const char *filename = JS_GetScriptFilename(cx, script);
+  if (!filename)
+    return true;
+
+  nsresult rv = ReadSourceFromFilename(cx, filename, src, length);
+  if (NS_FAILED(rv)) {
+    xpc::Throw(cx, rv);
+    return false;
+  }
+
+  return true;
 }
 
 XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
@@ -2290,8 +2343,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
 #endif
 
     DOM_InitInterfaces();
-    Preferences::AddBoolVarCache(&gNewDOMBindingsEnabled, "dom.new_bindings",
-                                 false);
     Preferences::AddBoolVarCache(&gExperimentalBindingsEnabled,
                                  "dom.experimental_bindings",
                                  false);
@@ -2339,15 +2390,31 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
 #endif
     JS_SetAccumulateTelemetryCallback(mJSRuntime, AccumulateTelemetryCallback);
     js::SetActivityCallback(mJSRuntime, ActivityCallback, this);
-        
+
+    // The JS engine needs to keep the source code around in order to implement
+    // Function.prototype.toSource(). It'd be nice to not have to do this for
+    // chrome code and simply stub out requests for source on it. Life is not so
+    // easy, unfortunately. Nobody relies on chrome toSource() working in core
+    // browser code, but chrome tests use it. The worst offenders are addons,
+    // which like to monkeypatch chrome functions by calling toSource() on them
+    // and using regular expressions to modify them. We avoid keeping most browser
+    // JS source code in memory by setting LAZY_SOURCE on JS::CompileOptions when
+    // compiling some chrome code. This causes the JS engine not save the source
+    // code in memory. When the JS engine is asked to provide the source for a
+    // function compiled with LAZY_SOURCE, it calls SourceHook to load it.
+    ///
+    // Note we do have to retain the source code in memory for scripts compiled in
+    // compileAndGo mode and compiled function bodies (from
+    // JS_CompileFunction*). In practice, this means content scripts and event
+    // handlers.
+    JS_SetSourceHook(mJSRuntime, SourceHook);
+
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSGCHeap));
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSSystemCompartmentCount));
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSUserCompartmentCount));
     NS_RegisterMemoryMultiReporter(new JSCompartmentsMultiReporter);
 
     mJSHolders.Init(512);
-
-    mCompartmentSet.init();
 
     // Install a JavaScript 'debugger' keyword handler in debug builds only
 #ifdef DEBUG
@@ -2392,7 +2459,6 @@ XPCJSRuntime::newXPCJSRuntime(nsXPConnect* aXPConnect)
         self->GetNativeScriptableSharedMap()    &&
         self->GetDyingWrappedNativeProtoMap()   &&
         self->GetMapLock()                      &&
-        self->GetCompartmentSet().initialized() &&
         self->mWatchdogThread) {
         return self;
     }

@@ -179,7 +179,6 @@
 
 #ifdef MOZ_B2G_RIL
 #include "nsIWifi.h"
-#include "nsIWifiEventInits.h"
 #endif
 
 // includes needed for the prototype chain interfaces
@@ -409,8 +408,6 @@
 #include "nsIDOMSVGZoomAndPan.h"
 #include "nsIDOMSVGZoomEvent.h"
 
-#include "nsICanvasRenderingContextInternal.h"
-
 #include "nsIImageDocument.h"
 
 // Storage includes
@@ -541,6 +538,8 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIOpenWindowEventDetail.h"
 #include "nsIDOMGlobalObjectConstructor.h"
 
+#include "nsIDOMCanvasRenderingContext2D.h"
+
 #include "DOMFileHandle.h"
 #include "FileRequest.h"
 #include "LockedFile.h"
@@ -552,7 +551,6 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMDataChannel.h"
 #endif
 
-#include "nsICanvasRenderingContextInternal.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
 
@@ -563,6 +561,12 @@ static NS_DEFINE_CID(kDOMSOF_CID, NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 
 static const char kDOMStringBundleURL[] =
   "chrome://global/locale/dom/dom.properties";
+
+#ifdef MOZ_DISABLE_DOMCRYPTO
+  static const bool domCryptoEnabled = false;
+#else
+  static const bool domCryptoEnabled = true;
+#endif
 
 // NOTE: DEFAULT_SCRIPTABLE_FLAGS and DOM_DEFAULT_SCRIPTABLE_FLAGS
 //       are defined in nsIDOMClassInfo.h.
@@ -718,9 +722,6 @@ public:
 };
 
 } // anonymous namespace
-
-typedef nsNewDOMBindingSH<nsICanvasRenderingContextInternal>
-  nsCanvasRenderingContextSH;
 
 
 // This list of NS_DEFINE_CLASSINFO_DATA macros is what gives the DOM
@@ -1340,16 +1341,11 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   NS_DEFINE_CLASSINFO_DATA(HTMLCanvasElement, nsElementSH,
                            ELEMENT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(CanvasRenderingContext2D,
-                           nsCanvasRenderingContextSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CanvasGradient, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CanvasPattern, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(TextMetrics, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(ImageData, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozCanvasPrintState, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1528,6 +1524,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MediaStream, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(LocalMediaStream, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
 
   NS_DEFINE_CLASSINFO_DATA(XMLHttpRequestUpload, nsEventTargetSH,
@@ -1628,10 +1626,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
 #ifdef MOZ_B2G_RIL
-  NS_DEFINE_CLASSINFO_DATA(MozWifiStatusChangeEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozWifiConnectionInfoEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(Telephony, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(TelephonyCall, nsEventTargetSH,
@@ -1742,10 +1736,6 @@ NS_DEFINE_EVENT_CTOR(Event)
 NS_DEFINE_EVENT_CTOR(UIEvent)
 NS_DEFINE_EVENT_CTOR(MouseEvent)
 NS_DEFINE_EVENT_CTOR(WheelEvent)
-#ifdef MOZ_B2G_RIL
-NS_DEFINE_EVENT_CTOR(MozWifiStatusChangeEvent)
-NS_DEFINE_EVENT_CTOR(MozWifiConnectionInfoEvent)
-#endif
 
 #define MOZ_GENERATED_EVENT_LIST
 #define MOZ_GENERATED_EVENT(_event_interface) \
@@ -2386,7 +2376,8 @@ nsDOMClassInfo::RegisterExternalClasses()
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMWindowPerformance,                 \
                                       nsGlobalWindow::HasPerformanceSupport()) \
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,                   \
-                                      nsDOMTouchEvent::PrefEnabled())
+                                      nsDOMTouchEvent::PrefEnabled())          \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIWindowCrypto, domCryptoEnabled)
 
 nsresult
 nsDOMClassInfo::Init()
@@ -3866,10 +3857,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_GENERIC_HTML_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(CanvasRenderingContext2D, nsIDOMCanvasRenderingContext2D)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCanvasRenderingContext2D)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(CanvasGradient, nsIDOMCanvasGradient)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMCanvasGradient)
   DOM_CLASSINFO_MAP_END
@@ -3880,10 +3867,6 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(TextMetrics, nsIDOMTextMetrics)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMTextMetrics)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(ImageData, nsIDOMImageData)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMImageData)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(MozCanvasPrintState, nsIDOMMozCanvasPrintState)
@@ -4153,6 +4136,10 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(MediaStream, nsIDOMMediaStream)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMediaStream)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(LocalMediaStream, nsIDOMLocalMediaStream)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMLocalMediaStream)
   DOM_CLASSINFO_MAP_END
 #endif
 
@@ -7722,15 +7709,6 @@ nsNodeSH::PostCreatePrototype(JSContext * cx, JSObject * proto)
   return rv;
 }
 
-bool
-nsNodeSH::IsCapabilityEnabled(const char* aCapability)
-{
-  bool enabled;
-  return sSecMan &&
-    NS_SUCCEEDED(sSecMan->IsCapabilityEnabled(aCapability, &enabled)) &&
-    enabled;
-}
-
 NS_IMETHODIMP
 nsNodeSH::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj,
                     JSObject **parentObj)
@@ -7766,7 +7744,7 @@ nsNodeSH::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj,
   bool hasHadScriptHandlingObject = false;
   NS_ENSURE_STATE(doc->GetScriptHandlingObject(hasHadScriptHandlingObject) ||
                   hasHadScriptHandlingObject ||
-                  IsPrivilegedScript());
+                  nsContentUtils::IsCallerChrome());
 
   nsINode *native_parent;
 

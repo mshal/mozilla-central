@@ -170,6 +170,7 @@
 #include "imgILoader.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsSandboxFlags.h"
+#include "nsIAppsService.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -2276,6 +2277,22 @@ nsDocument::InitCSP(nsIChannel* aChannel)
       NS_SUCCEEDED(principal->GetAppStatus(&appStatus))) {
     applyAppDefaultCSP = ( appStatus == nsIPrincipal::APP_STATUS_PRIVILEGED ||
                            appStatus == nsIPrincipal::APP_STATUS_CERTIFIED);
+
+    // Bug 773981. Allow a per-app policy from the manifest.
+    // Just read the CSP from the manifest into cspHeaderValue.
+    // That way we don't have to change the rest of the function logic
+    if (applyAppDefaultCSP || appStatus == nsIPrincipal::APP_STATUS_INSTALLED) {
+      nsCOMPtr<nsIAppsService> appsService =
+        do_GetService(APPS_SERVICE_CONTRACTID);
+
+      if (appsService)  {
+        uint32_t appId;
+
+        if ( NS_SUCCEEDED(principal->GetAppId(&appId)) ) {
+          appsService->GetCSPByLocalId(appId, cspHeaderValue);
+        }
+      }
+    }
   }
 #ifdef PR_LOGGING
   else
@@ -4733,7 +4750,6 @@ NS_IMETHODIMP
 nsDocument::GetCharacterSet(nsAString& aCharacterSet)
 {
   CopyASCIItoUTF16(GetDocumentCharacterSet(), aCharacterSet);
-  ToLowerCase(aCharacterSet);
   return NS_OK;
 }
 
@@ -6371,7 +6387,7 @@ void
 nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
 {
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  PRTime modDate = LL_ZERO;
+  PRTime modDate = 0;
   nsresult rv;
 
   if (httpChannel) {
@@ -6450,7 +6466,7 @@ nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
   }
 
   mLastModified.Truncate();
-  if (modDate != LL_ZERO) {
+  if (modDate != 0) {
     PRExplodedTime prtime;
     PR_ExplodeTime(modDate, PR_LocalTimeParameters, &prtime);
     // "MM/DD/YYYY hh:mm:ss"
