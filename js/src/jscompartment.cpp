@@ -29,16 +29,19 @@
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
 #include "jsscopeinlines.h"
+#ifdef JS_ION
 #include "ion/IonCompartment.h"
 #include "ion/Ion.h"
+#endif
 
 #if ENABLE_YARR_JIT
 #include "assembler/jit/ExecutableAllocator.h"
 #endif
 
-using namespace mozilla;
 using namespace js;
 using namespace js::gc;
+
+using mozilla::DebugOnly;
 
 JSCompartment::JSCompartment(JSRuntime *rt)
   : rt(rt),
@@ -63,6 +66,8 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     typeLifoAlloc(LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     data(NULL),
     active(false),
+    scheduledForDestruction(false),
+    maybeAlive(true),
     lastAnimationTime(0),
     regExps(rt),
     propertyTree(thisForCtor()),
@@ -152,6 +157,29 @@ JSCompartment::setNeedsBarrier(bool needs, ShouldUpdateIon updateIon)
 }
 
 #ifdef JS_ION
+ion::IonRuntime *
+JSRuntime::createIonRuntime(JSContext *cx)
+{
+    ionRuntime_ = cx->new_<ion::IonRuntime>();
+
+    if (!ionRuntime_)
+        return NULL;
+
+    if (!ionRuntime_->initialize(cx)) {
+        js_delete(ionRuntime_);
+        ionRuntime_ = NULL;
+
+        if (cx->runtime->atomsCompartment->ionCompartment_) {
+            js_delete(cx->runtime->atomsCompartment->ionCompartment_);
+            cx->runtime->atomsCompartment->ionCompartment_ = NULL;
+        }
+
+        return NULL;
+    }
+
+    return ionRuntime_;
+}
+
 bool
 JSCompartment::ensureIonCompartmentExists(JSContext *cx)
 {
@@ -159,15 +187,15 @@ JSCompartment::ensureIonCompartmentExists(JSContext *cx)
     if (ionCompartment_)
         return true;
 
-    /* Set the compartment early, so linking works. */
-    ionCompartment_ = cx->new_<IonCompartment>();
-
-    if (!ionCompartment_ || !ionCompartment_->initialize(cx)) {
-        if (ionCompartment_)
-            delete ionCompartment_;
-        ionCompartment_ = NULL;
+    IonRuntime *ionRuntime = cx->runtime->getIonRuntime(cx);
+    if (!ionRuntime)
         return false;
-    }
+
+    /* Set the compartment early, so linking works. */
+    ionCompartment_ = cx->new_<IonCompartment>(ionRuntime);
+
+    if (!ionCompartment_)
+        return false;
 
     return true;
 }
@@ -190,13 +218,16 @@ WrapForSameCompartment(JSContext *cx, HandleObject obj, Value *vp)
 }
 
 bool
-JSCompartment::wrap(JSContext *cx, Value *vp)
+JSCompartment::wrap(JSContext *cx, Value *vp, JSObject *existing)
 {
     JS_ASSERT(cx->compartment == this);
+    JS_ASSERT_IF(existing, existing->compartment() == cx->compartment);
+    JS_ASSERT_IF(existing, vp->isObject());
+    JS_ASSERT_IF(existing, IsDeadProxyObject(existing));
 
     unsigned flags = 0;
 
-    JS_CHECK_RECURSION(cx, return false);
+    JS_CHECK_CHROME_RECURSION(cx, return false);
 
 #ifdef DEBUG
     struct AutoDisableProxyCheck {
@@ -302,13 +333,24 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     RootedObject obj(cx, &vp->toObject());
 
     JSObject *proto = Proxy::LazyProto;
+    if (existing) {
+        /* Is it possible to reuse |existing|? */
+        if (!existing->getTaggedProto().isLazy() ||
+            existing->getClass() != &ObjectProxyClass ||
+            existing->getParent() != global ||
+            obj->isCallable())
+        {
+            existing = NULL;
+        }
+    }
 
     /*
      * We hand in the original wrapped object into the wrap hook to allow
      * the wrap hook to reason over what wrappers are currently applied
      * to the object.
      */
-    RootedObject wrapper(cx, cx->runtime->wrapObjectCallback(cx, obj, proto, global, flags));
+    RootedObject wrapper(cx);
+    wrapper = cx->runtime->wrapObjectCallback(cx, existing, obj, proto, global, flags);
     if (!wrapper)
         return false;
 
@@ -345,12 +387,12 @@ JSCompartment::wrap(JSContext *cx, HeapPtrString *strp)
 }
 
 bool
-JSCompartment::wrap(JSContext *cx, JSObject **objp)
+JSCompartment::wrap(JSContext *cx, JSObject **objp, JSObject *existing)
 {
     if (!*objp)
         return true;
     RootedValue value(cx, ObjectValue(**objp));
-    if (!wrap(cx, value.address()))
+    if (!wrap(cx, value.address(), existing))
         return false;
     *objp = &value.get().toObject();
     return true;

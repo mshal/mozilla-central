@@ -400,12 +400,18 @@ protected:
     eParseDeclaration_InBraces       = 1 << 0,
     eParseDeclaration_AllowImportant = 1 << 1
   };
+  enum nsCSSContextType {
+    eCSSContext_General,
+    eCSSContext_Page
+  };
 
-  css::Declaration* ParseDeclarationBlock(uint32_t aFlags);
+  css::Declaration* ParseDeclarationBlock(uint32_t aFlags,
+                                          nsCSSContextType aContext = eCSSContext_General);
   bool ParseDeclaration(css::Declaration* aDeclaration,
                         uint32_t aFlags,
                         bool aMustCallValueAppended,
-                        bool* aChanged);
+                        bool* aChanged,
+                        nsCSSContextType aContext = eCSSContext_General);
 
   bool ParseProperty(nsCSSProperty aPropID);
   bool ParsePropertyByFunction(nsCSSProperty aPropID);
@@ -2261,13 +2267,6 @@ CSSParserImpl::ParseFontDescriptor(nsCSSFontFaceRule* aRule)
 
 
 bool
-CSSParserImpl::ParsePageRule(RuleAppendFunc aAppendFunc, void* aData)
-{
-  // XXX not yet implemented
-  return false;
-}
-
-bool
 CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
 {
   if (!GetToken(true)) {
@@ -2303,6 +2302,26 @@ CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
   return true;
 }
 
+bool
+CSSParserImpl::ParsePageRule(RuleAppendFunc aAppendFunc, void* aData)
+{
+  // TODO: There can be page selectors after @page such as ":first", ":left".
+  uint32_t parseFlags = eParseDeclaration_InBraces |
+                        eParseDeclaration_AllowImportant;
+  nsAutoPtr<css::Declaration> declaration(
+                                ParseDeclarationBlock(parseFlags,
+                                                      eCSSContext_Page));
+  if (!declaration) {
+    return false;
+  }
+
+  // Takes ownership of declaration.
+  nsRefPtr<nsCSSPageRule> rule = new nsCSSPageRule(declaration);
+
+  (*aAppendFunc)(rule, aData);
+  return true;
+}
+
 already_AddRefed<nsCSSKeyframeRule>
 CSSParserImpl::ParseKeyframeRule()
 {
@@ -2316,7 +2335,6 @@ CSSParserImpl::ParseKeyframeRule()
   uint32_t parseFlags = eParseDeclaration_InBraces;
   nsAutoPtr<css::Declaration> declaration(ParseDeclarationBlock(parseFlags));
   if (!declaration) {
-    REPORT_UNEXPECTED(PEBadSelectorKeyframeRuleIgnored);
     return nullptr;
   }
 
@@ -3892,7 +3910,7 @@ CSSParserImpl::ParseSelector(nsCSSSelectorList* aList,
 }
 
 css::Declaration*
-CSSParserImpl::ParseDeclarationBlock(uint32_t aFlags)
+CSSParserImpl::ParseDeclarationBlock(uint32_t aFlags, nsCSSContextType aContext)
 {
   bool checkForBraces = (aFlags & eParseDeclaration_InBraces) != 0;
 
@@ -3908,7 +3926,7 @@ CSSParserImpl::ParseDeclarationBlock(uint32_t aFlags)
   if (declaration) {
     for (;;) {
       bool changed;
-      if (!ParseDeclaration(declaration, aFlags, true, &changed)) {
+      if (!ParseDeclaration(declaration, aFlags, true, &changed, aContext)) {
         if (!SkipDeclaration(checkForBraces)) {
           break;
         }
@@ -4299,8 +4317,12 @@ bool
 CSSParserImpl::ParseDeclaration(css::Declaration* aDeclaration,
                                 uint32_t aFlags,
                                 bool aMustCallValueAppended,
-                                bool* aChanged)
+                                bool* aChanged,
+                                nsCSSContextType aContext)
 {
+  NS_PRECONDITION(aContext == eCSSContext_General ||
+                  aContext == eCSSContext_Page,
+                  "Must be page or general context");
   bool checkForBraces = (aFlags & eParseDeclaration_InBraces) != 0;
 
   mTempData.AssertInitialState();
@@ -4344,7 +4366,9 @@ CSSParserImpl::ParseDeclaration(css::Declaration* aDeclaration,
   // Map property name to its ID and then parse the property
   nsCSSProperty propID = nsCSSProps::LookupProperty(propertyName,
                                                     nsCSSProps::eEnabled);
-  if (eCSSProperty_UNKNOWN == propID) { // unknown property
+  if (eCSSProperty_UNKNOWN == propID ||
+     (aContext == nsCSSContextType::eCSSContext_Page &&
+      !nsCSSProps::PropHasFlags(propID, CSS_PROPERTY_APPLIES_TO_PAGE_RULE))) { // unknown property
     if (!NonMozillaVendorIdentifier(propertyName)) {
       const PRUnichar *params[] = {
         propertyName.get()
@@ -5197,16 +5221,21 @@ CSSParserImpl::ParseFlex()
   //
   // More details in each section below.
 
-  // (a) Parse first component. It's either 'flex-basis' or 'flex-grow', so
-  // we allow anything that would be legal to specify for the 'flex-basis'
-  // property (except for "inherit") and we also allow VARIANT_NUMBER so that
-  // we'll accept 'flex-grow' values (and importantly, so that we'll treat
-  // unitless 0 as a number instead of a length, since the flexbox spec
-  // disallows unitless 0 as a flex-basis value in the shorthand).
-  uint32_t variantMask = VARIANT_NUMBER |
+  uint32_t flexBasisVariantMask =
     (nsCSSProps::ParserVariant(eCSSProperty_flex_basis) & ~(VARIANT_INHERIT));
 
-  if (!ParseNonNegativeVariant(tmpVal, variantMask, nsCSSProps::kWidthKTable)) {
+  // (a) Parse first component. It can be either be a 'flex-basis' value or a
+  // 'flex-grow' value, so we use the flex-basis-specific variant mask, along
+  //  with VARIANT_NUMBER to accept 'flex-grow' values.
+  //
+  // NOTE: if we encounter unitless 0 here, we *must* interpret it as a
+  // 'flex-grow' value (a number), *not* as a 'flex-basis' value (a length).
+  // Conveniently, that's the behavior this combined variant-mask gives us --
+  // it'll treat unitless 0 as a number. The flexbox spec requires this:
+  // "a unitless zero that is not already preceded by two flex factors must be
+  //  interpreted as a flex factor.
+  if (!ParseNonNegativeVariant(tmpVal, flexBasisVariantMask | VARIANT_NUMBER,
+                               nsCSSProps::kWidthKTable)) {
     // First component was not a valid flex-basis or flex-grow value. Fail.
     return false;
   }
@@ -5237,20 +5266,24 @@ CSSParserImpl::ParseFlex()
     // d) Finally: If we didn't get flex-basis at the beginning, try to parse
     //    it now, at the end.
     //
-    // NOTE: Even though we're looking for a (length-ish) flex-basis value, we
-    // *do* need to pass VARIANT_NUMBER as part of |variantMask| here.  This
-    // ensures that we'll parse unitless '0' as a number, rather than as a
-    // length, so that we can reject it (along with any other number) below.
-    // (The flexbox spec disallows unitless '0' as a flex-basis value in the
-    // 'flex' shorthand.)
+    // NOTE: If we encounter unitless 0 in this final position, we'll parse it
+    // as a 'flex-basis' value.  That's OK, because we know it must have
+    // been "preceded by 2 flex factors" (justification below), which gets us
+    // out of the spec's requirement of otherwise having to treat unitless 0
+    // as a flex factor.
+    //
+    // JUSTIFICATION: How do we know that a unitless 0 here must have been
+    // preceded by 2 flex factors? Well, suppose we had a unitless 0 that
+    // was preceded by only 1 flex factor.  Then, we would have already
+    // accepted this unitless 0 as the 'flex-shrink' value, up above (since
+    // it's a valid flex-shrink value), and we'd have moved on to the next
+    // token (if any). And of course, if we instead had a unitless 0 preceded
+    // by *no* flex factors (if it were the first token), we would've already
+    // parsed it in our very first call to ParseNonNegativeVariant().  So, any
+    // unitless 0 encountered here *must* have been preceded by 2 flex factors.
     if (!wasFirstComponentFlexBasis &&
-        ParseNonNegativeVariant(tmpVal, variantMask,
+        ParseNonNegativeVariant(tmpVal, flexBasisVariantMask,
                                 nsCSSProps::kWidthKTable)) {
-      if (tmpVal.GetUnit() == eCSSUnit_Number) {
-        // This is where we reject "0 0 0" (which the spec says is invalid,
-        // because we must reject unitless 0 as a flex-basis value).
-        return false;
-      }
       flexBasis = tmpVal;
     }
   }

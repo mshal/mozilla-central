@@ -566,8 +566,8 @@ this.DOMApplicationRegistry = {
   removeMessageListener: function(aMsgNames, aMm) {
     if (aMsgNames.length === 1 &&
         aMsgNames[0] === "Webapps:Internal:AllMessages") {
-      for (let i = this.children.length - 1; i >= 0; i -= 1) {
-        let msg = this.children[i];
+      for (let msgName in this.children) {
+        let msg = this.children[msgName];
 
         for (let mmI = msg.length - 1; mmI >= 0; mmI -= 1) {
           let mmRef = msg[mmI];
@@ -577,7 +577,7 @@ this.DOMApplicationRegistry = {
         }
 
         if (msg.length === 0) {
-          this.children.splice(i, 1);
+          delete this.children[msgName];
         }
       }
       return;
@@ -874,7 +874,7 @@ this.DOMApplicationRegistry = {
                             .getService(Ci.nsIOfflineCacheUpdateService);
       let docURI = Services.io.newURI(aManifest.fullLaunchPath(), null, null);
       let cacheUpdate = aProfileDir ? updateService.scheduleCustomProfileUpdate(appcacheURI, docURI, aProfileDir)
-                                    : updateService.scheduleUpdate(appcacheURI, docURI, null);
+                                    : updateService.scheduleAppUpdate(appcacheURI, docURI, aApp.localId, false);
       cacheUpdate.addObserver(new AppcacheObserver(aApp), false);
       if (aOfflineCacheObserver) {
         cacheUpdate.addObserver(aOfflineCacheObserver, false);
@@ -1300,6 +1300,7 @@ this.DOMApplicationRegistry = {
     let id = this._appIdForManifestURL(aApp.manifestURL);
     let app = this.webapps[id];
 
+    let self = this;
     // Removes the directory we created, and sends an error to the DOM side.
     function cleanup(aError) {
       debug("Cleanup: " + aError);
@@ -1307,10 +1308,10 @@ this.DOMApplicationRegistry = {
       try {
         dir.remove(true);
       } catch (e) { }
-        this.broadcastMessage("Webapps:PackageEvent",
+        self.broadcastMessage("Webapps:PackageEvent",
                               { type: "error",
                                 manifestURL:  aApp.manifestURL,
-                                error: aError});
+                                error: aError });
     }
 
     function getInferedStatus() {
@@ -1335,94 +1336,119 @@ this.DOMApplicationRegistry = {
       return (AppsUtils.getAppManifestStatus(aManifest) <= getInferedStatus());
     }
 
-    debug("About to download " + aManifest.fullPackagePath());
+    function download() {
+      debug("About to download " + aManifest.fullPackagePath());
 
-    let requestChannel = NetUtil.newChannel(aManifest.fullPackagePath())
-                                .QueryInterface(Ci.nsIHttpChannel);
-    this.downloads[aApp.manifestURL] =
-      { channel:requestChannel,
-        appId: id,
-        previousState: aIsUpdate ? "installed" : "pending"
-      };
-    requestChannel.notificationCallbacks = {
-      QueryInterface: function notifQI(aIID) {
-        if (aIID.equals(Ci.nsISupports)          ||
-            aIID.equals(Ci.nsIProgressEventSink))
-          return this;
+      let requestChannel = NetUtil.newChannel(aManifest.fullPackagePath())
+                                  .QueryInterface(Ci.nsIHttpChannel);
+      self.downloads[aApp.manifestURL] =
+        { channel:requestChannel,
+          appId: id,
+          previousState: aIsUpdate ? "installed" : "pending"
+        };
+      requestChannel.notificationCallbacks = {
+        QueryInterface: function notifQI(aIID) {
+          if (aIID.equals(Ci.nsISupports)          ||
+              aIID.equals(Ci.nsIProgressEventSink))
+            return this;
 
-        throw Cr.NS_ERROR_NO_INTERFACE;
-      },
-      getInterface: function notifGI(aIID) {
-        return this.QueryInterface(aIID);
-      },
-      onProgress: function notifProgress(aRequest, aContext,
-                                         aProgress, aProgressMax) {
-        debug("onProgress: " + aProgress + "/" + aProgressMax);
-        app.progress = aProgress;
-        DOMApplicationRegistry.broadcastMessage("Webapps:PackageEvent",
-                                                { type: "progress",
-                                                  manifestURL: aApp.manifestURL,
-                                                  progress: aProgress });
-      },
-      onStatus: function notifStatus(aRequest, aContext, aStatus, aStatusArg) { }
-    }
-
-    NetUtil.asyncFetch(requestChannel,
-    function(aInput, aResult, aRequest) {
-      if (!Components.isSuccessCode(aResult)) {
-        // We failed to fetch the zip.
-        cleanup("NETWORK_ERROR");
-        return;
+          throw Cr.NS_ERROR_NO_INTERFACE;
+        },
+        getInterface: function notifGI(aIID) {
+          return this.QueryInterface(aIID);
+        },
+        onProgress: function notifProgress(aRequest, aContext,
+                                           aProgress, aProgressMax) {
+          debug("onProgress: " + aProgress + "/" + aProgressMax);
+          app.progress = aProgress;
+          self.broadcastMessage("Webapps:PackageEvent",
+                                { type: "progress",
+                                  manifestURL: aApp.manifestURL,
+                                  progress: aProgress });
+        },
+        onStatus: function notifStatus(aRequest, aContext, aStatus, aStatusArg) { }
       }
-      // Copy the zip on disk.
-      let zipFile = FileUtils.getFile("TmpD",
-                                      ["webapps", id, "application.zip"], true);
-      let ostream = FileUtils.openSafeFileOutputStream(zipFile);
-      NetUtil.asyncCopy(aInput, ostream, function (aResult) {
+      NetUtil.asyncFetch(requestChannel,
+      function(aInput, aResult, aRequest) {
         if (!Components.isSuccessCode(aResult)) {
-          // We failed to save the zip.
-          cleanup("DOWNLOAD_ERROR");
+          // We failed to fetch the zip.
+          cleanup("NETWORK_ERROR");
           return;
         }
-
-        let zipReader = Cc["@mozilla.org/libjar/zip-reader;1"]
-                        .createInstance(Ci.nsIZipReader);
-        try {
-          zipReader.open(zipFile);
-          if (!zipReader.hasEntry("manifest.webapp")) {
-            throw "No manifest.webapp found.";
+        // Copy the zip on disk.
+        let zipFile = FileUtils.getFile("TmpD",
+                                        ["webapps", id, "application.zip"], true);
+        let ostream = FileUtils.openSafeFileOutputStream(zipFile);
+        NetUtil.asyncCopy(aInput, ostream, function (aResult) {
+          if (!Components.isSuccessCode(aResult)) {
+            // We failed to save the zip.
+            cleanup("DOWNLOAD_ERROR");
+            return;
           }
 
-          let istream = zipReader.getInputStream("manifest.webapp");
+          let zipReader = Cc["@mozilla.org/libjar/zip-reader;1"]
+                          .createInstance(Ci.nsIZipReader);
+          try {
+            zipReader.open(zipFile);
+            if (!zipReader.hasEntry("manifest.webapp")) {
+              throw "No manifest.webapp found.";
+            }
 
-          // Obtain a converter to read from a UTF-8 encoded input stream.
-          let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                          .createInstance(Ci.nsIScriptableUnicodeConverter);
-          converter.charset = "UTF-8";
+            let istream = zipReader.getInputStream("manifest.webapp");
 
-          let manifest = JSON.parse(converter.ConvertToUnicode(NetUtil.readInputStreamToString(istream,
-                                                               istream.available()) || ""));
+            // Obtain a converter to read from a UTF-8 encoded input stream.
+            let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                            .createInstance(Ci.nsIScriptableUnicodeConverter);
+            converter.charset = "UTF-8";
 
-          if (!AppsUtils.checkManifest(manifest, aApp.installOrigin)) {
-            throw "INVALID_MANIFEST";
+            let manifest = JSON.parse(converter.ConvertToUnicode(NetUtil.readInputStreamToString(istream,
+                                                                 istream.available()) || ""));
+
+            if (!AppsUtils.checkManifest(manifest, aApp.installOrigin)) {
+              throw "INVALID_MANIFEST";
+            }
+
+            if (!checkAppStatus(manifest)) {
+              throw "INVALID_SECURITY_LEVEL";
+            }
+
+            if (aOnSuccess) {
+              aOnSuccess(id, manifest);
+            }
+            delete self.downloads[aApp.manifestURL];
+          } catch (e) {
+            // XXX we may need new error messages.
+            cleanup(e);
+          } finally {
+            zipReader.close();
           }
-
-          if (!checkAppStatus(manifest)) {
-            throw "INVALID_SECURITY_LEVEL";
-          }
-
-          if (aOnSuccess) {
-            aOnSuccess(id, manifest);
-          }
-          delete DOMApplicationRegistry.downloads[aApp.manifestURL];
-        } catch (e) {
-          // XXX we may need new error messages.
-          cleanup(e);
-        } finally {
-          zipReader.close();
-        }
+        });
       });
-    });
+    };
+
+    let browser = Services.wm.getMostRecentWindow("navigator:browser");
+    let deviceStorage = browser.getContentWindow().navigator
+                               .getDeviceStorage("apps");
+    let req = deviceStorage.stat();
+    req.onsuccess = req.onerror = function statResult(e) {
+      // Even if we could not retrieve the device storage free space, we try
+      // to download the package.
+      if (!e.target.result) {
+        download();
+        return;
+      }
+
+      let freeBytes = e.target.result.freeBytes;
+      if (freeBytes) {
+        debug("Free storage: " + freeBytes + ". Download size: " +
+              aApp.downloadSize);
+        if (freeBytes <= aApp.downloadSize) {
+          cleanup("INSUFFICIENT_STORAGE");
+          return;
+        }
+      }
+      download();
+    }
   },
 
   uninstall: function(aData, aMm) {
@@ -1834,10 +1860,6 @@ this.DOMApplicationRegistry = {
     switch (message.name) {
       case "Webapps:ClearBrowserData":
         this._clearPrivateData(appId, true);
-        // XXXbent This is a hack until bug 802366 is fixed. Currently all data
-        //         loaded in mozbrowser frames within an app believe that their
-        //         appId is 0.
-        this._clearPrivateData(0, true);
         break;
     }
   },

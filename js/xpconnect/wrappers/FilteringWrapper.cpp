@@ -45,6 +45,39 @@ Filter(JSContext *cx, JSObject *wrapper, AutoIdVector &props)
     return true;
 }
 
+template <typename Policy>
+static bool
+FilterSetter(JSContext *cx, JSObject *wrapper, jsid id, js::PropertyDescriptor *desc)
+{
+    bool setAllowed = Policy::check(cx, wrapper, id, Wrapper::SET);
+    if (!setAllowed) {
+        if (JS_IsExceptionPending(cx))
+            return false;
+        desc->setter = nullptr;
+    }
+    return true;
+}
+
+template <typename Base, typename Policy>
+bool
+FilteringWrapper<Base, Policy>::getPropertyDescriptor(JSContext *cx, JSObject *wrapper, jsid id,
+                                                      bool set, js::PropertyDescriptor *desc)
+{
+    if (!Base::getPropertyDescriptor(cx, wrapper, id, set, desc))
+        return false;
+    return FilterSetter<Policy>(cx, wrapper, id, desc);
+}
+
+template <typename Base, typename Policy>
+bool
+FilteringWrapper<Base, Policy>::getOwnPropertyDescriptor(JSContext *cx, JSObject *wrapper, jsid id,
+                                                         bool set, js::PropertyDescriptor *desc)
+{
+    if (!Base::getOwnPropertyDescriptor(cx, wrapper, id, set, desc))
+        return false;
+    return FilterSetter<Policy>(cx, wrapper, id, desc);
+}
+
 template <typename Base, typename Policy>
 bool
 FilteringWrapper<Base, Policy>::getOwnPropertyNames(JSContext *cx, JSObject *wrapper, AutoIdVector &props)
@@ -76,7 +109,7 @@ FilteringWrapper<Base, Policy>::iterate(JSContext *cx, JSObject *wrapper, unsign
     // We refuse to trigger the iterator hook across chrome wrappers because
     // we don't know how to censor custom iterator objects. Instead we trigger
     // the default proxy iterate trap, which will ask enumerate() for the list
-    // of (consored) ids.
+    // of (censored) ids.
     return js::BaseProxyHandler::iterate(cx, wrapper, flags, vp);
 }
 
@@ -100,20 +133,13 @@ FilteringWrapper<Base, Policy>::enter(JSContext *cx, JSObject *wrapper, jsid id,
 
 #define SOW FilteringWrapper<CrossCompartmentSecurityWrapper, OnlyIfSubjectIsSystem>
 #define SCSOW FilteringWrapper<SameCompartmentSecurityWrapper, OnlyIfSubjectIsSystem>
-#define XOW FilteringWrapper<XrayWrapper<CrossCompartmentSecurityWrapper>, \
-                             CrossOriginAccessiblePropertiesOnly>
-#define DXOW   FilteringWrapper<XrayDOM, \
-                                CrossOriginAccessiblePropertiesOnly>
-#define NNXOW FilteringWrapper<CrossCompartmentSecurityWrapper, \
-                               CrossOriginAccessiblePropertiesOnly>
-#define LW    FilteringWrapper<XrayWrapper<SameCompartmentSecurityWrapper>, \
-                               LocationPolicy>
-#define XLW   FilteringWrapper<XrayWrapper<CrossCompartmentSecurityWrapper>, \
-                               LocationPolicy>
-#define CW FilteringWrapper<SameCompartmentSecurityWrapper, \
-                            ComponentsObjectPolicy>
-#define XCW FilteringWrapper<CrossCompartmentSecurityWrapper, \
-                            ComponentsObjectPolicy>
+#define XOW FilteringWrapper<SecurityXrayXPCWN, CrossOriginAccessiblePropertiesOnly>
+#define DXOW   FilteringWrapper<SecurityXrayDOM, CrossOriginAccessiblePropertiesOnly>
+#define NNXOW FilteringWrapper<CrossCompartmentSecurityWrapper, CrossOriginAccessiblePropertiesOnly>
+#define LW    FilteringWrapper<SCSecurityXrayXPCWN, LocationPolicy>
+#define XLW   FilteringWrapper<SecurityXrayXPCWN, LocationPolicy>
+#define CW FilteringWrapper<SameCompartmentSecurityWrapper, ComponentsObjectPolicy>
+#define XCW FilteringWrapper<CrossCompartmentSecurityWrapper, ComponentsObjectPolicy>
 template<> SOW SOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |
                               WrapperFactory::SOW_FLAG);
 template<> SCSOW SCSOW::singleton(WrapperFactory::SCRIPT_ACCESS_ONLY_FLAG |

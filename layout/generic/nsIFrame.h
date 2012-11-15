@@ -31,6 +31,7 @@
 #include "nsAlgorithm.h"
 #include "mozilla/layout/FrameChildList.h"
 #include "FramePropertyTable.h"
+#include "mozilla/Attributes.h"
 
 #ifdef ACCESSIBILITY
 #include "mozilla/a11y/AccTypes.h"
@@ -511,10 +512,10 @@ void NS_MergeReflowStatusInto(nsReflowStatus* aPrimary,
 /**
  * DidReflow status values.
  */
-typedef bool nsDidReflowStatus;
-
-#define NS_FRAME_REFLOW_NOT_FINISHED false
-#define NS_FRAME_REFLOW_FINISHED     true
+MOZ_BEGIN_ENUM_CLASS(nsDidReflowStatus, uint32_t)
+  NOT_FINISHED,
+  FINISHED
+MOZ_END_ENUM_CLASS(nsDidReflowStatus)
 
 /**
  * When there is no scrollable overflow rect, the visual overflow rect

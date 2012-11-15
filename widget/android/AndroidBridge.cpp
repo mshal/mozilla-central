@@ -32,6 +32,7 @@
 #include "nsIDOMWindowUtils.h"
 #include "nsIDOMClientRect.h"
 #include "StrongPointer.h"
+#include "mozilla/ClearOnShutdown.h"
 
 #ifdef DEBUG
 #define ALOG_BRIDGE(args...) ALOG(args)
@@ -58,6 +59,8 @@ class AndroidRefable {
 
 // This isn't in AndroidBridge.h because including StrongPointer.h there is gross
 static android::sp<AndroidRefable> (*android_SurfaceTexture_getNativeWindow)(JNIEnv* env, jobject surfaceTexture) = nullptr;
+
+/* static */ StaticAutoPtr<nsTArray<nsCOMPtr<nsISmsRequest> > > AndroidBridge::sSmsRequests;
 
 void
 AndroidBridge::ConstructBridge(JNIEnv *jEnv,
@@ -155,12 +158,12 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jMarkUriVisited = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "markUriVisited", "(Ljava/lang/String;)V");
 
     jNumberOfMessages = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getNumberOfMessagesForText", "(Ljava/lang/String;)I");
-    jSendMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "sendMessage", "(Ljava/lang/String;Ljava/lang/String;IJ)V");
+    jSendMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "sendMessage", "(Ljava/lang/String;Ljava/lang/String;I)V");
     jSaveSentMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "saveSentMessage", "(Ljava/lang/String;Ljava/lang/String;J)I");
-    jGetMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getMessage", "(IIJ)V");
-    jDeleteMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "deleteMessage", "(IIJ)V");
-    jCreateMessageList = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "createMessageList", "(JJ[Ljava/lang/String;IIZIJ)V");
-    jGetNextMessageinList = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getNextMessageInList", "(IIJ)V");
+    jGetMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getMessage", "(II)V");
+    jDeleteMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "deleteMessage", "(II)V");
+    jCreateMessageList = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "createMessageList", "(JJ[Ljava/lang/String;IIZI)V");
+    jGetNextMessageinList = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getNextMessageInList", "(II)V");
     jClearMessageList = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "clearMessageList", "(I)V");
 
     jGetCurrentNetworkInformation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getCurrentNetworkInformation", "()[D");
@@ -199,6 +202,7 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jNotifyWakeLockChanged = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyWakeLockChanged", "(Ljava/lang/String;Ljava/lang/String;)V");
 
     jGetGfxInfoData = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getGfxInfoData", "()Ljava/lang/String;");
+    jGetProxyForURI = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getProxyForURI", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;");
     jRegisterSurfaceTextureFrameListener = jEnv->GetStaticMethodID(jGeckoAppShellClass, "registerSurfaceTextureFrameListener", "(Ljava/lang/Object;I)V");
     jUnregisterSurfaceTextureFrameListener = jEnv->GetStaticMethodID(jGeckoAppShellClass, "unregisterSurfaceTextureFrameListener", "(Ljava/lang/Object;)V");
 
@@ -1694,7 +1698,7 @@ AndroidBridge::GetNumberOfMessagesForText(const nsAString& aText)
 }
 
 void
-AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, int32_t aRequestId, uint64_t aProcessId)
+AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, nsISmsRequest* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::SendMessage");
 
@@ -1702,11 +1706,14 @@ AndroidBridge::SendMessage(const nsAString& aNumber, const nsAString& aMessage, 
     if (!env)
         return;
 
+    int32_t requestId = QueueSmsRequest(aRequest);
+    NS_ENSURE_TRUE_VOID(requestId >= 0);
+
     AutoLocalJNIFrame jniFrame(env);
     jstring jNumber = NewJavaString(&jniFrame, PromiseFlatString(aNumber).get(), aNumber.Length());
     jstring jMessage = NewJavaString(&jniFrame, PromiseFlatString(aMessage).get(), aMessage.Length());
 
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jSendMessage, jNumber, jMessage, aRequestId, aProcessId);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jSendMessage, jNumber, jMessage, requestId);
 }
 
 int32_t
@@ -1730,7 +1737,7 @@ AndroidBridge::SaveSentMessage(const nsAString& aRecipient,
 }
 
 void
-AndroidBridge::GetMessage(int32_t aMessageId, int32_t aRequestId, uint64_t aProcessId)
+AndroidBridge::GetMessage(int32_t aMessageId, nsISmsRequest* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::GetMessage");
 
@@ -1738,12 +1745,15 @@ AndroidBridge::GetMessage(int32_t aMessageId, int32_t aRequestId, uint64_t aProc
     if (!env)
         return;
 
+    int32_t requestId = QueueSmsRequest(aRequest);
+    NS_ENSURE_TRUE_VOID(requestId >= 0);
+
     AutoLocalJNIFrame jniFrame(env, 0);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jGetMessage, aMessageId, aRequestId, aProcessId);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jGetMessage, aMessageId, requestId);
 }
 
 void
-AndroidBridge::DeleteMessage(int32_t aMessageId, int32_t aRequestId, uint64_t aProcessId)
+AndroidBridge::DeleteMessage(int32_t aMessageId, nsISmsRequest* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::DeleteMessage");
 
@@ -1751,19 +1761,25 @@ AndroidBridge::DeleteMessage(int32_t aMessageId, int32_t aRequestId, uint64_t aP
     if (!env)
         return;
 
+    int32_t requestId = QueueSmsRequest(aRequest);
+    NS_ENSURE_TRUE_VOID(requestId >= 0);
+
     AutoLocalJNIFrame jniFrame(env, 0);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jDeleteMessage, aMessageId, aRequestId, aProcessId);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jDeleteMessage, aMessageId, requestId);
 }
 
 void
 AndroidBridge::CreateMessageList(const dom::sms::SmsFilterData& aFilter, bool aReverse,
-                                 int32_t aRequestId, uint64_t aProcessId)
+                                 nsISmsRequest* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::CreateMessageList");
 
     JNIEnv *env = GetJNIEnv();
     if (!env)
         return;
+
+    int32_t requestId = QueueSmsRequest(aRequest);
+    NS_ENSURE_TRUE_VOID(requestId >= 0);
 
     AutoLocalJNIFrame jniFrame(env);
 
@@ -1780,12 +1796,11 @@ AndroidBridge::CreateMessageList(const dom::sms::SmsFilterData& aFilter, bool aR
     env->CallStaticVoidMethod(mGeckoAppShellClass, jCreateMessageList,
                               aFilter.startDate(), aFilter.endDate(),
                               numbers, aFilter.numbers().Length(),
-                              aFilter.delivery(), aReverse, aRequestId,
-                              aProcessId);
+                              aFilter.delivery(), aReverse, requestId);
 }
 
 void
-AndroidBridge::GetNextMessageInList(int32_t aListId, int32_t aRequestId, uint64_t aProcessId)
+AndroidBridge::GetNextMessageInList(int32_t aListId, nsISmsRequest* aRequest)
 {
     ALOG_BRIDGE("AndroidBridge::GetNextMessageInList");
 
@@ -1793,8 +1808,11 @@ AndroidBridge::GetNextMessageInList(int32_t aListId, int32_t aRequestId, uint64_
     if (!env)
         return;
 
+    int32_t requestId = QueueSmsRequest(aRequest);
+    NS_ENSURE_TRUE_VOID(requestId >= 0);
+
     AutoLocalJNIFrame jniFrame(env, 0);
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jGetNextMessageinList, aListId, aRequestId, aProcessId);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jGetNextMessageinList, aListId, requestId);
 }
 
 void
@@ -1808,6 +1826,44 @@ AndroidBridge::ClearMessageList(int32_t aListId)
 
     AutoLocalJNIFrame jniFrame(env, 0);
     env->CallStaticVoidMethod(mGeckoAppShellClass, jClearMessageList, aListId);
+}
+
+int32_t
+AndroidBridge::QueueSmsRequest(nsISmsRequest* aRequest)
+{
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
+    // XXX: This method will always fail on Android because we do not
+    // init sSmsRequests. See bug 775997 and Bug 809459.
+
+    if (!sSmsRequests) {
+        // Probably shutting down.
+        return -1;
+    }
+
+    uint32_t length = sSmsRequests->Length();
+    for (int32_t i = 0; i < length; i++) {
+        if (!(*sSmsRequests)[i]) {
+            (*sSmsRequests)[i] = aRequest;
+            return i;
+        }
+    }
+
+    sSmsRequests->AppendElement(aRequest);
+
+    return length;
+}
+
+already_AddRefed<nsISmsRequest>
+AndroidBridge::DequeueSmsRequest(int32_t aRequestId)
+{
+    NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
+    if (!sSmsRequests || (aRequestId >= sSmsRequests->Length())) {
+        return nullptr;
+    }
+
+    return (*sSmsRequests)[aRequestId].forget();
 }
 
 void
@@ -2343,6 +2399,36 @@ AndroidBridge::GetGfxInfoData(nsACString& aRet)
     nsJNIString jniStr(jstrRet, env);
     CopyUTF16toUTF8(jniStr, aRet);
 }
+
+#define CREATE_JAVA_STRING(name) jstring j##name = NewJavaStringUTF(&jniFrame, nsPromiseFlatCString(a##name).get())
+
+nsresult
+AndroidBridge::GetProxyForURI(const nsACString & aSpec,
+                              const nsACString & aScheme,
+                              const nsACString & aHost,
+                              const int32_t      aPort,
+                              nsACString & aResult)
+{
+    JNIEnv* env = GetJNIEnv();
+    if (!env)
+        return NS_ERROR_FAILURE;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    CREATE_JAVA_STRING(Spec);
+    CREATE_JAVA_STRING(Scheme);
+    CREATE_JAVA_STRING(Host);
+    jstring jstrRet = static_cast<jstring>
+        (env->CallStaticObjectMethod(mGeckoAppShellClass, jGetProxyForURI, jSpec, jScheme, jHost, aPort));
+
+    if (jniFrame.CheckForException())
+        return NS_ERROR_FAILURE;
+
+    nsJNIString jniStr(jstrRet, env);
+    CopyUTF16toUTF8(jniStr, aResult);
+    return NS_OK;
+}
+
 
 /* attribute nsIAndroidBrowserApp browserApp; */
 NS_IMETHODIMP nsAndroidBridge::GetBrowserApp(nsIAndroidBrowserApp * *aBrowserApp)

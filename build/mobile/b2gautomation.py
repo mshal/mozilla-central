@@ -7,14 +7,12 @@ import threading
 import os
 import Queue
 import re
-import socket
 import shutil
-import sys
 import tempfile
 import time
 
 from automation import Automation
-from devicemanager import DeviceManager, NetworkTools
+from devicemanager import NetworkTools
 from mozprocess import ProcessHandlerMixin
 
 
@@ -261,26 +259,18 @@ class B2GRemoteAutomation(Automation):
                 Services.io.offline = false;
                 """)
 
-            if not self.context_chrome:
-                self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
-
-        elif self.context_chrome:
+        if self.context_chrome:
             self.marionette.set_context(self.marionette.CONTEXT_CHROME)
+        else:
+            self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
 
-        # start the tests
-        if hasattr(self, 'testURL'):
-            # Start the tests by navigating to the mochitest url, by setting it
-            # as the 'src' attribute to the homescreen mozbrowser element
-            # provided by B2G's shell.js.
-            self.marionette.execute_script("document.getElementById('homescreen').src='%s';" % self.testURL)
         # run the script that starts the tests
-        elif self.test_script:
+        if self.test_script:
             if os.path.isfile(self.test_script):
                 script = open(self.test_script, 'r')
                 self.marionette.execute_script(script.read(), script_args=self.test_script_args)
                 script.close()
-            else:
-                # assume test_script is a string
+            elif isinstance(self.test_script, basestring):
                 self.marionette.execute_script(self.test_script, script_args=self.test_script_args)
         else:
             # assumes the tests are started on startup automatically
@@ -304,9 +294,9 @@ class B2GRemoteAutomation(Automation):
             # into a queue.  The lines in this queue are
             # retrieved and returned by accessing the stdout property of
             # this class.
-            cmd = [self.dm.adbPath]
-            if self.dm.deviceSerial:
-                cmd.extend(['-s', self.dm.deviceSerial])
+            cmd = [self.dm._adbPath]
+            if self.dm._deviceSerial:
+                cmd.extend(['-s', self.dm._deviceSerial])
             cmd.append('shell')
             cmd.append('/system/bin/b2g.sh')
             proc = threading.Thread(target=self._save_stdout_proc, args=(cmd, self.queue))

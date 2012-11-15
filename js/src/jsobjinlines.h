@@ -1204,11 +1204,13 @@ JSObject::isWrapper() const
 inline js::GlobalObject &
 JSObject::global() const
 {
+#ifdef DEBUG
     JSObject *obj = const_cast<JSObject *>(this);
     while (JSObject *parent = obj->getParent())
         obj = parent;
     JS_ASSERT(&obj->asGlobal() == compartment()->maybeGlobal());
-    return obj->asGlobal();
+#endif
+    return *compartment()->maybeGlobal();
 }
 
 static inline bool
@@ -1314,7 +1316,7 @@ inline bool
 IsInternalFunctionObject(JSObject *funobj)
 {
     JSFunction *fun = funobj->toFunction();
-    return (fun->flags & JSFUN_LAMBDA) && !funobj->getParent();
+    return fun->isLambda() && !funobj->getParent();
 }
 
 class AutoPropDescArrayRooter : private AutoGCRooter

@@ -533,6 +533,11 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
         psrldq(Imm32(4), src);
         movd(src, dest.typeReg());
     }
+    void boxNonDouble(JSValueType type, const Register &src, const ValueOperand &dest) {
+        if (src != dest.payloadReg())
+            movl(src, dest.payloadReg());
+        movl(ImmType(type), dest.typeReg());
+    }
     void unboxInt32(const ValueOperand &src, const Register &dest) {
         movl(src.payloadReg(), dest);
     }
@@ -727,7 +732,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared
 
     void callWithExitFrame(IonCode *target, Register dynStack) {
         addPtr(Imm32(framePushed()), dynStack);
-        makeFrameDescriptor(dynStack, IonFrame_JS);
+        makeFrameDescriptor(dynStack, IonFrame_OptimizedJS);
         Push(dynStack);
         call(target);
     }

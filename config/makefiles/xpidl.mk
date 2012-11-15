@@ -167,14 +167,21 @@ $(XPIDL_GEN_DIR)/%.xpt: %.idl $(xpidl-deps) $(xpidl-preqs)
 
 # no need to link together if XPIDLSRCS contains only XPIDL_MODULE
 ifneq ($(XPIDL_MODULE).idl,$(strip $(XPIDLSRCS)))
+  XPT_PY = $(filter %/xpt.py,$(XPIDL_LINK))
+
   xpidl-xpt-preqs =\
     $(dir-xpidl-gen) \
     $(xpidl-idl2xpt) \
     $(GLOBAL_DEPS) \
+    $(XPT_PY) \
     $(NULL)
 
 $(xpidl-module-xpt): $(xpidl-xpt-preqs)
 	$(XPIDL_LINK) $@ $(xpidl-idl2xpt)
+
+$(XPT_PY):
+	$(MAKE) -C $(DEPTH)/xpcom/typelib/xpt/tools libs
+
 endif # XPIDL_MODULE.xpt != XPIDLSRCS
 
 endif #} xpidlsrcs

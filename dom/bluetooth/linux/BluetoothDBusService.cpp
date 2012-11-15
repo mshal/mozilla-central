@@ -879,10 +879,9 @@ bool
 IsDeviceConnectedTypeBoolean()
 {
 #if defined(MOZ_WIDGET_GONK)
-
   char connProp[PROPERTY_VALUE_MAX];
 
-  property_get(PROP_DEVICE_CONNECTED_TYPE, connProp, "array");
+  property_get(PROP_DEVICE_CONNECTED_TYPE, connProp, "boolean");
   if (strcmp(connProp, "boolean") == 0) {
     return true;
   }
@@ -2388,6 +2387,23 @@ BluetoothDBusService::Disconnect(const uint16_t aProfileId,
   DispatchBluetoothReply(aRunnable, v, replyError);
 }
 
+bool
+BluetoothDBusService::IsConnected(const uint16_t aProfileId)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Must be called from main thread!");
+
+  if (aProfileId == (uint16_t)(BluetoothServiceUuid::Handsfree >> 32)
+      || aProfileId == (uint16_t)(BluetoothServiceUuid::Headset >> 32)) {
+    BluetoothHfpManager* hfp = BluetoothHfpManager::Get();
+    return hfp->GetConnectionStatus() == SocketConnectionStatus::SOCKET_CONNECTED;
+  } else if (aProfileId == (uint16_t)(BluetoothServiceUuid::ObjectPush >> 32)) {
+    BluetoothOppManager* opp = BluetoothOppManager::Get();
+    return opp->GetConnectionStatus() == SocketConnectionStatus::SOCKET_CONNECTED;
+  }
+
+  return false;
+}
+
 class ConnectBluetoothSocketRunnable : public nsRunnable
 {
 public:
@@ -2425,10 +2441,6 @@ public:
       DispatchBluetoothReply(mRunnable, v, replyError);
       return NS_ERROR_FAILURE;
     }
-    // Bluetooth value needs to be set to something to succeed.
-    v = true;
-    DispatchBluetoothReply(mRunnable, v, replyError);
-
     return NS_OK;
   }
 

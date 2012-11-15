@@ -46,13 +46,8 @@ public:
   nsHTMLCanvasElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLCanvasElement();
 
-  static nsHTMLCanvasElement* FromContent(nsIContent* aPossibleCanvas)
-  {
-    if (!aPossibleCanvas || !aPossibleCanvas->IsHTML(nsGkAtoms::canvas)) {
-      return nullptr;
-    }
-    return static_cast<nsHTMLCanvasElement*>(aPossibleCanvas);
-  }
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLCanvasElement, canvas)
+
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -60,10 +55,10 @@ public:
   NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLElement::)
+  NS_FORWARD_NSIDOMHTMLELEMENT_TO_GENERIC
 
   // nsIDOMHTMLCanvasElement
   NS_DECL_NSIDOMHTMLCANVASELEMENT
@@ -136,7 +131,7 @@ public:
                            nsIAtom* aPrefix, const nsAString& aValue,
                            bool aNotify);
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-  nsresult CopyInnerTo(nsGenericElement* aDest);
+  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   /*
    * Helpers called by various users of Canvas
@@ -204,7 +199,7 @@ public:
 inline nsISupports*
 GetISupports(nsHTMLCanvasElement* p)
 {
-  return static_cast<nsGenericElement*>(p);
+  return static_cast<mozilla::dom::Element*>(p);
 }
 
 #endif /* nsHTMLCanvasElement_h__ */

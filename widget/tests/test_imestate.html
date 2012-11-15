@@ -115,6 +115,17 @@
 
 SimpleTest.waitForExplicitFinish();
 
+function hitEventLoop(aFunc, aTimes)
+{
+  SpecialPowers.getDOMWindowUtils(window).advanceTimeAndRefresh(100);
+
+  if (--aTimes) {
+    setTimeout(hitEventLoop, 0, aFunc, aTimes);
+  } else {
+    setTimeout(aFunc, 20);
+  }
+}
+
 var gUtils = window.
       QueryInterface(Components.interfaces.nsIInterfaceRequestor).
       getInterface(Components.interfaces.nsIDOMWindowUtils);
@@ -150,13 +161,31 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
       var previousFocusedElement = gFM.focusedElement;
       var element = document.getElementById(aTest.id);
       var focusEventTarget = element;
+      var subDocument = null;
       if (element.contentDocument) {
         focusEventTarget = element.contentDocument;
+        subDocument = element.contentDocument;
         element = element.contentDocument.documentElement;
       }
+
       focusEventTarget.addEventListener("focus", aFocusEventHandler, true);
+      document.addEventListener("MozIMEFocusIn", aFocusEventHandler, true);
+      document.addEventListener("MozIMEFocusOut", aFocusEventHandler, true);
+      if (subDocument) {
+        subDocument.addEventListener("MozIMEFocusIn", aFocusEventHandler, true);
+        subDocument.addEventListener("MozIMEFocusOut", aFocusEventHandler, true);
+      }
+
       element.focus();
+
       focusEventTarget.removeEventListener("focus", aFocusEventHandler, true);
+      document.removeEventListener("MozIMEFocusIn", aFocusEventHandler, true);
+      document.removeEventListener("MozIMEFocusOut", aFocusEventHandler, true);
+      if (element.contentDocument) {
+        subDocument.removeEventListener("MozIMEFocusIn", aFocusEventHandler, true);
+        subDocument.removeEventListener("MozIMEFocusOut", aFocusEventHandler, true);
+      }
+
       var focusedElement = gFM.focusedElement;
       if (focusedElement) {
         var bindingParent = document.getBindingParent(focusedElement);
@@ -191,11 +220,33 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
     var enabled = gUtils.IME_STATUS_ENABLED;
     if (kIMEEnabledSupported) {
       var focusEventCount = 0;
+      var mozIMEFocusInCount = 0;
+      var mozIMEFocusOutCount = 0;
+      var IMEHasFocus = false;
+
       function onFocus(aEvent)
       {
-        focusEventCount++;
-        is(gUtils.IMEStatus, aTest.expectedEnabled,
-           aDescription + ": " + aTest.description + ", wrong enabled state at focus event");
+        switch (aEvent.type) {
+          case "focus":
+            focusEventCount++;
+            is(gUtils.IMEStatus, aTest.expectedEnabled,
+               aDescription + ": " + aTest.description + ", wrong enabled state at focus event");
+            break;
+          case "MozIMEFocusIn":
+            mozIMEFocusInCount++;
+            IMEHasFocus = true;
+            is(gUtils.IMEStatus, aTest.expectedEnabled,
+               aDescription + ": " + aTest.description +
+                 ", MozIMEFocusIn event must be fired after IME state is updated");
+            break;
+          case "MozIMEFocusOut":
+            mozIMEFocusOutCount++;
+            IMEHasFocus = false;
+            is_not(gUtils.IMEStatus, aTest.expectedEnabled,
+                   aDescription + ": " + aTest.description +
+                     ", MozIMEFocusOut event must be fired before IME state is updated");
+            break;
+        }
       }
 
       if (!moveFocus(aTest, onFocus)) {
@@ -203,13 +254,48 @@ function runBasicTest(aIsEditable, aInDesignMode, aDescription)
       }
 
       if (aTest.focusable) {
-        if (aTest.focusEventNotFired) {
-          todo(focusEventCount > 0,
-               aDescription + ": " + aTest.description + ", focus event is never fired");
-        } else {
+        if (!aTest.focusEventNotFired) {
           ok(focusEventCount > 0,
              aDescription + ": " + aTest.description + ", focus event is never fired");
+          if (aTest.expectedEnabled == gUtils.IME_STATUS_ENABLED || aTest.expectedEnabled == gUtils.IME_STATUS_PASSWORD) {
+            ok(mozIMEFocusInCount > 0,
+               aDescription + ": " + aTest.description + ", MozIMEFocusIn event should be fired");
+            var toDesignModeEditor = (document.activeElement.contentDocument &&
+                                      (document.activeElement.contentDocument.designMode == "on"));
+            if (aInDesignMode && !toDesignModeEditor) {
+              is(mozIMEFocusOutCount, 0,
+                 aDescription + ": " + aTest.description +
+                   ", MozIMEFocusOut event shouldn't be fired in designMode since focus isn't moved from another editor");
+            } else {
+              ok(mozIMEFocusOutCount > 0,
+                 aDescription + ": " + aTest.description +
+                   ", MozIMEFocusOut event should be fired for the previous focused editor");
+            }
+            ok(IMEHasFocus,
+               aDescription + ": " + aTest.description +
+                 ", The latest MozIMEFocus* event must be MozIMEFocusIn");
+          } else {
+            is(mozIMEFocusInCount, 0,
+               aDescription + ": " + aTest.description +
+                 ", MozIMEFocusIn event shouldn't be fired");
+            ok(mozIMEFocusOutCount > 0,
+               aDescription + ": " + aTest.description +
+                 ", MozIMEFocusOut event should be fired");
+            ok(!IMEHasFocus,
+               aDescription + ": " + aTest.description +
+                 ", The latest MozIMEFocus* event must be MozIMEFocusOut");
+          }
+        } else {
+          todo(focusEventCount > 0,
+               aDescription + ": " + aTest.description + ", focus event should be fired");
         }
+      } else {
+        is(mozIMEFocusInCount, 0,
+           aDescription + ": " + aTest.description +
+             ", MozIMEFocusIn event shouldn't be fired at testing non-focusable element");
+        is(mozIMEFocusOutCount, 0,
+           aDescription + ": " + aTest.description +
+             ", MozIMEFocusOut event shouldn't be fired at testing non-focusable element");
       }
 
       enabled = gUtils.IMEStatus;
@@ -1270,10 +1356,65 @@ function runTestPasswordFieldOnDialog()
   }
 }
 
+function runBug580388Tests(aCallback)
+{
+  if (document.activeElement) {
+    document.activeElement.blur();
+  }
+
+  var input = document.getElementById("text");
+  input.focus();
+  input.style.overflow = "visible";
+
+  var mozIMEFocusIn = 0;
+  var mozIMEFocusOut = 0;
+  var IMEHasFocus = false;
+
+  var handler = function (aEvent) {
+    switch (aEvent.type) {
+      case "MozIMEFocusIn":
+        mozIMEFocusIn++;
+        IMEHasFocus = true;
+        break;
+      case "MozIMEFocusOut":
+        mozIMEFocusOut++;
+        IMEHasFocus = false;
+        break;
+    }
+  };
+
+  var onInput = function (aEvent) {
+    aEvent.target.style.overflow = "hidden";
+  }
+
+  document.addEventListener("MozIMEFocusIn", handler, true);
+  document.addEventListener("MozIMEFocusOut", handler, true);
+  input.addEventListener("input", onInput, true);
+
+  sendChar("a");
+
+  hitEventLoop(function () {
+    ok(mozIMEFocusOut > 0, "runBug580388Tests(): IME focus must be lost at reframing");
+    ok(mozIMEFocusIn > 0, "runBug580388Tests(): IME focus must be restored after reframing");
+    ok(IMEHasFocus, "runBug580388Tests(): IME must have focus after reframing");
+
+    document.removeEventListener("MozIMEFocusIn", handler, true);
+    document.removeEventListener("MozIMEFocusOut", handler, true);
+    input.removeEventListener("input", onInput, true);
+
+    input.style.overflow = "visible";
+    input.value = "";
+
+    hitEventLoop(aCallback, 20);
+  }, 20);
+}
+
 function runTests()
 {
   if (!kIMEEnabledSupported && !kIMEOpenSupported)
     return;
+
+  SpecialPowers.setBoolPref("test.IME", true);
 
   // test for normal contents.
   runBasicTest(false, false, "Testing of normal contents");
@@ -1319,17 +1460,16 @@ function runTests()
   // XXX temporary disable against failure
   //runTestPasswordFieldOnDialog();
 
-  runASyncTests();
-}
-
-function runASyncTests()
-{
-  // The tests must call onFinish() method.
-  runEditableSubframeTests();
+  // Asynchronous tests
+  runBug580388Tests(function () {
+    // This will call onFinish(), so, this test must be the last.
+    runEditableSubframeTests();
+  });
 }
 
 function onFinish()
 {
+  SpecialPowers.clearUserPref("test.IME");
   SimpleTest.finish();
 }
 

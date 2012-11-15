@@ -985,6 +985,7 @@ struct GCMarker : public JSTracer {
     void startBufferingGrayRoots();
     void endBufferingGrayRoots();
     void markBufferedGrayRoots();
+    void markBufferedGrayRootCompartmentsAlive();
 
     static void GrayCallback(JSTracer *trc, void **thing, JSGCTraceKind kind);
 
@@ -1037,12 +1038,12 @@ struct GCMarker : public JSTracer {
     /* The color is only applied to objects, functions and xml. */
     uint32_t color;
 
-    DebugOnly<bool> started;
+    mozilla::DebugOnly<bool> started;
 
     /* Pointer to the top of the stack of arenas we are delaying marking on. */
     js::gc::ArenaHeader *unmarkedArenaStackTop;
     /* Count of arenas that are currently in the stack. */
-    DebugOnly<size_t> markLaterArenas;
+    mozilla::DebugOnly<size_t> markLaterArenas;
 
     struct GrayRoot {
         void *thing;

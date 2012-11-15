@@ -4,7 +4,7 @@
 
 import datetime
 from errors import *
-from mozdevice import devicemanagerADB
+from mozdevice import devicemanagerADB, DMError
 from mozprocess import ProcessHandlerMixin
 import multiprocessing
 import os
@@ -19,6 +19,7 @@ import time
 
 from emulator_battery import EmulatorBattery
 from emulator_geo import EmulatorGeo
+from emulator_screen import EmulatorScreen
 
 
 class LogcatProc(ProcessHandlerMixin):
@@ -59,6 +60,7 @@ class Emulator(object):
         self.res = res
         self.battery = EmulatorBattery(self)
         self.geo = EmulatorGeo(self)
+        self.screen = EmulatorScreen(self)
         self.homedir = homedir
         self.sdcard = sdcard
         self.noWindow = noWindow
@@ -359,6 +361,7 @@ waitFor(
         # bug 802877
         time.sleep(10)
         self.geo.set_default_location()
+        self.screen.initialize()
 
         if self.logcat_dir:
             self.save_logcat()
@@ -373,36 +376,69 @@ waitFor(
         self.logcat_proc.waitForFinish()
         self.logcat_proc = None
 
+    def _restart_b2g(self, marionette):
+        self.dm.shellCheckOutput(['stop', 'b2g'])
+
+        # ensure the b2g process has fully stopped
+        for i in range(0, 10):
+            time.sleep(1)
+            if self.dm.processExist('b2g') is None:
+                break
+        else:
+            raise TimeoutException("Timeout waiting for the b2g process to terminate")
+
+        self.dm.shellCheckOutput(['start', 'b2g'])
+
+        # ensure the b2g process has started
+        for i in range(0, 10):
+            time.sleep(1)
+            if self.dm.processExist('b2g') is not None:
+                break
+        else:
+            raise TimeoutException("Timeout waiting for the b2g process to start")
+
+        if not self.wait_for_port():
+            raise TimeoutException("Timeout waiting for marionette on port '%s'" % self.marionette_port)
+        self.wait_for_system_message(marionette)
+
+
     def install_gecko(self, gecko_path, marionette):
         """
         Install gecko into the emulator using adb push.  Restart b2g after the
         installation.
         """
-        print 'installing gecko binaries...'
-        # need to remount so we can write to /system/b2g
-        self._run_adb(['remount'])
         # See bug 800102.  We use this particular method of installing
         # gecko in order to avoid an adb bug in which adb will sometimes
         # hang indefinitely while copying large files to the system
         # partition.
+        push_attempts = 10
+        restart_attempts = 10
+
+        print 'installing gecko binaries...'
+        # need to remount so we can write to /system/b2g
+        self._run_adb(['remount'])
         for root, dirs, files in os.walk(gecko_path):
             for filename in files:
-                data_local_file = os.path.join('/data/local', filename)
-                print 'pushing', data_local_file
-                self.dm.pushFile(os.path.join(root, filename), data_local_file)
-        self.dm.shellCheckOutput(['stop', 'b2g'])
-        for root, dirs, files in os.walk(gecko_path):
-            for filename in files:
-                data_local_file = os.path.join('/data/local', filename)
-                rel_file = os.path.relpath(os.path.join(root, filename), gecko_path)
-                system_file = os.path.join('/system/b2g', rel_file)
-                print 'copying', data_local_file, 'to', system_file
-                self.dm.shellCheckOutput(['dd', 'if=%s' % data_local_file,
-                                          'of=%s' % system_file])
-        print 'restarting B2G'
-        self.dm.shellCheckOutput(['start', 'b2g'])
-        self.wait_for_port()
-        self.wait_for_system_message(marionette)
+                rel_path = os.path.relpath(os.path.join(root, filename), gecko_path)
+                system_b2g_file = os.path.join('/system/b2g', rel_path)
+                for retry in range(1, push_attempts+1):
+                    print 'pushing', system_b2g_file, '(attempt %s of %s)' % (retry, push_attempts)
+                    try:
+                        self.dm.pushFile(os.path.join(root, filename), system_b2g_file)
+                        break
+                    except DMError:
+                        if retry == push_attempts:
+                            raise
+
+        for retry in range(1, restart_attempts+1):
+            print 'restarting B2G (attempt %s of %s)' % (retry, restart_attempts)
+            try:
+                self._restart_b2g(marionette)
+                break
+            except MarionetteException, TimeoutException:
+                if retry == restart_attempts:
+                    raise
+
 
     def rotate_log(self, srclog, index=1):
         """ Rotate a logfile, by recursively rotating logs further in the sequence,

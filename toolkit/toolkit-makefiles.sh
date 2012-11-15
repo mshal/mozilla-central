@@ -632,6 +632,7 @@ elif [ "$MOZ_WIDGET_TOOLKIT" = "android" ]; then
     image/decoders/icon/android/Makefile
     netwerk/system/android/Makefile
     widget/android/Makefile
+    toolkit/system/androidproxy/Makefile
   "
   if [ "$MOZ_BUILD_APP" = "mobile/xul" -o "$MOZ_BUILD_APP" = "b2g" ]; then
     add_makefiles "
@@ -1075,11 +1076,6 @@ if [ "$ENABLE_TESTS" ]; then
     add_makefiles "
       toolkit/components/url-classifier/tests/Makefile
       toolkit/components/url-classifier/tests/mochitest/Makefile
-    "
-  fi
-  if [ "$MOZ_XTF" ]; then
-    add_makefiles "
-      content/xtf/test/Makefile
     "
   fi
   if [ "$MOZ_XUL" ]; then
@@ -1737,3 +1733,11 @@ if [ "$MOZ_SPEEX_RESAMPLER" ]; then
     media/libspeex_resampler/src/Makefile
   "
 fi
+
+if [ "$MOZ_SOUNDTOUCH" ]; then
+  add_makefiles "
+    media/libsoundtouch/Makefile
+    media/libsoundtouch/src/Makefile
+  "
+fi
+

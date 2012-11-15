@@ -91,6 +91,7 @@ class JaegerRuntime;
 class MathCache;
 
 namespace ion {
+class IonRuntime;
 class IonActivation;
 }
 
@@ -389,8 +390,70 @@ struct JSAtomState
 #define NAME_OFFSET(name)       offsetof(JSAtomState, name)
 #define OFFSET_TO_NAME(rt,off)  (*(js::FixedHeapPtr<js::PropertyName>*)((char*)&(rt)->atomState + (off)))
 
+namespace js {
+
+/*
+ * Encapsulates portions of the runtime/context that are tied to a
+ * single active thread.  Normally, as most JS is single-threaded,
+ * there is only one instance of this struct, embedded in the
+ * JSRuntime as the field |mainThread|.  During Parallel JS sections,
+ * however, there will be one instance per worker thread.
+ *
+ * The eventual plan is to designate thread-safe portions of the
+ * interpreter and runtime by having them take |PerThreadData*|
+ * arguments instead of |JSContext*| or |JSRuntime*|.
+ */
+class PerThreadData : public js::PerThreadDataFriendFields
+{
+    /*
+     * Backpointer to the full shared JSRuntime* with which this
+     * thread is associaed.  This is private because accessing the
+     * fields of this runtime can provoke race conditions, so the
+     * intention is that access will be mediated through safe
+     * functions like |associatedWith()| below.
+     */
+    JSRuntime *runtime_;
+
+  public:
+    /*
+     * We save all conservative scanned roots in this vector so that
+     * conservative scanning can be "replayed" deterministically. In DEBUG mode,
+     * this allows us to run a non-incremental GC after every incremental GC to
+     * ensure that no objects were missed.
+     */
+#ifdef DEBUG
+    struct SavedGCRoot {
+        void *thing;
+        JSGCTraceKind kind;
+
+        SavedGCRoot(void *thing, JSGCTraceKind kind) : thing(thing), kind(kind) {}
+    };
+    js::Vector<SavedGCRoot, 0, js::SystemAllocPolicy> gcSavedRoots;
+
+    bool                gcRelaxRootChecks;
+    int                 gcAssertNoGCDepth;
+#endif
+
+    PerThreadData(JSRuntime *runtime);
+
+    bool associatedWith(const JSRuntime *rt) { return runtime_ == rt; }
+};
+
+} // namespace js
+
 struct JSRuntime : js::RuntimeFriendFields
 {
+    /* Per-thread data for the main thread that is associated with
+     * this JSRuntime, as opposed to any worker threads used in
+     * parallel sections.  See definition of |PerThreadData| struct
+     * above for more details.
+     *
+     * NB: This field is statically asserted to be at offset
+     * sizeof(RuntimeFriendFields). See
+     * PerThreadDataFriendFields::getMainThread.
+     */
+    js::PerThreadData mainThread;
+
     /* Default compartment. */
     JSCompartment       *atomsCompartment;
 
@@ -437,12 +500,14 @@ struct JSRuntime : js::RuntimeFriendFields
 #ifdef JS_METHODJIT
     js::mjit::JaegerRuntime *jaegerRuntime_;
 #endif
+    js::ion::IonRuntime *ionRuntime_;
 
     JSObject *selfHostedGlobal_;
 
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
     js::mjit::JaegerRuntime *createJaegerRuntime(JSContext *cx);
+    js::ion::IonRuntime *createIonRuntime(JSContext *cx);
 
   public:
     JSC::ExecutableAllocator *getExecAlloc(JSContext *cx) {
@@ -451,6 +516,9 @@ struct JSRuntime : js::RuntimeFriendFields
     JSC::ExecutableAllocator &execAlloc() {
         JS_ASSERT(execAlloc_);
         return *execAlloc_;
+    }
+    JSC::ExecutableAllocator *maybeExecAlloc() {
+        return execAlloc_;
     }
     WTF::BumpPointerAllocator *getBumpPointerAllocator(JSContext *cx) {
         return bumpAlloc_ ? bumpAlloc_ : createBumpPointerAllocator(cx);
@@ -467,13 +535,16 @@ struct JSRuntime : js::RuntimeFriendFields
         return *jaegerRuntime_;
     }
 #endif
+    js::ion::IonRuntime *getIonRuntime(JSContext *cx) {
+        return ionRuntime_ ? ionRuntime_ : createIonRuntime(cx);
+    }
 
     bool initSelfHosting(JSContext *cx);
     void markSelfHostedGlobal(JSTracer *trc);
     bool isSelfHostedGlobal(js::HandleObject global) {
         return global == selfHostedGlobal_;
     }
-    JSFunction *getSelfHostedFunction(JSContext *cx, const char *name);
+    JSFunction *getSelfHostedFunction(JSContext *cx, js::Handle<js::PropertyName*> name);
     bool cloneSelfHostedValueById(JSContext *cx, js::HandleId id, js::HandleObject holder,
                                   js::MutableHandleValue vp);
 
@@ -654,24 +725,23 @@ struct JSRuntime : js::RuntimeFriendFields
      */
     bool                gcExactScanningEnabled;
 
+
     /*
-     * We save all conservative scanned roots in this vector so that
-     * conservative scanning can be "replayed" deterministically. In DEBUG mode,
-     * this allows us to run a non-incremental GC after every incremental GC to
-     * ensure that no objects were missed.
+     * This is true if we are in the middle of a brain transplant (e.g.,
+     * JS_TransplantObject) or some other operation that can manipulate
+     * dead compartments.
      */
-#ifdef DEBUG
-    struct SavedGCRoot {
-        void *thing;
-        JSGCTraceKind kind;
+    bool                gcManipulatingDeadCompartments;
 
-        SavedGCRoot(void *thing, JSGCTraceKind kind) : thing(thing), kind(kind) {}
-    };
-    js::Vector<SavedGCRoot, 0, js::SystemAllocPolicy> gcSavedRoots;
-
-    bool                gcRelaxRootChecks;
-    int                 gcAssertNoGCDepth;
-#endif
+    /*
+     * This field is incremented each time we mark an object inside a
+     * compartment with no incoming cross-compartment pointers. Typically if
+     * this happens it signals that an incremental GC is marking too much
+     * stuff. At various times we check this counter and, if it has changed, we
+     * run an immediate, non-incremental GC to clean up the dead
+     * compartments. This should happen very rarely.
+     */
+    unsigned            gcObjectsMarkedInDeadCompartments;
 
     bool                gcPoke;
 
@@ -867,7 +937,7 @@ struct JSRuntime : js::RuntimeFriendFields
      * and for each JSObject::remove method call that frees a slot in the given
      * object. See js_NativeGet and js_NativeSet in jsobj.cpp.
      */
-    int32_t             propertyRemovals;
+    uint32_t            propertyRemovals;
 
     /* Number localization, used by jsnum.c */
     const char          *thousandsSeparator;
@@ -1874,6 +1944,11 @@ js_ReportErrorNumberVA(JSContext *cx, unsigned flags, JSErrorCallback callback,
                        void *userRef, const unsigned errorNumber,
                        JSBool charArgs, va_list ap);
 
+extern bool
+js_ReportErrorNumberUCArray(JSContext *cx, unsigned flags, JSErrorCallback callback,
+                            void *userRef, const unsigned errorNumber,
+                            const jschar **args);
+
 extern JSBool
 js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
                         void *userRef, const unsigned errorNumber,
@@ -2128,6 +2203,7 @@ class RuntimeAllocPolicy
     RuntimeAllocPolicy(JSRuntime *rt) : runtime(rt) {}
     RuntimeAllocPolicy(JSContext *cx) : runtime(cx->runtime) {}
     void *malloc_(size_t bytes) { return runtime->malloc_(bytes); }
+    void *calloc_(size_t bytes) { return runtime->calloc_(bytes); }
     void *realloc_(void *p, size_t bytes) { return runtime->realloc_(p, bytes); }
     void free_(void *p) { js_free(p); }
     void reportAllocOverflow() const {}
@@ -2144,6 +2220,7 @@ class ContextAllocPolicy
     ContextAllocPolicy(JSContext *cx) : cx(cx) {}
     JSContext *context() const { return cx; }
     void *malloc_(size_t bytes) { return cx->malloc_(bytes); }
+    void *calloc_(size_t bytes) { return cx->calloc_(bytes); }
     void *realloc_(void *p, size_t oldBytes, size_t bytes) { return cx->realloc_(p, oldBytes, bytes); }
     void free_(void *p) { js_free(p); }
     void reportAllocOverflow() const { js_ReportAllocationOverflow(cx); }

@@ -45,6 +45,8 @@ using namespace js::mjit::ic;
 #endif
 using namespace js::analyze;
 
+using mozilla::DebugOnly;
+
 #define RETURN_IF_OOM(retval)                                   \
     JS_BEGIN_MACRO                                              \
         if (oomInVector || masm.oom() || stubcc.masm.oom())     \
@@ -537,7 +539,7 @@ mjit::Compiler::performCompilation()
     JS_ASSERT(cx->compartment->activeInference);
 
     {
-        types::AutoEnterCompilation enter(cx, types::AutoEnterCompilation::JM);
+        types::AutoEnterCompilation enter(cx, types::CompilerOutput::MethodJIT);
         if (!enter.init(outerScript, isConstructing, chunkIndex)) {
             js_ReportOutOfMemory(cx);
             return Compile_Error;
@@ -3978,6 +3980,12 @@ mjit::Compiler::ionCompileHelper()
     uint32_t *useCountAddress = script_->addressOfUseCount();
     masm.add32(Imm32(1), AbsoluteAddress(useCountAddress));
 
+    // We cannot inline a JM -> Ion constructing call.
+    // Compiling this function is pointless and would disable the JM -> JM fastpath.
+    // This function will start running in Ion, when caller runs in Ion/Interpreter.
+    if (isConstructing && outerScript->code == PC)
+        return;
+
     // If we don't want to do a recompileCheck for Ion, then this just needs to
     // increment the useCount so that we know when to recompile this function
     // from an Ion call.  No need to call out to recompiler stub.
@@ -4429,7 +4437,7 @@ mjit::Compiler::inlineCallHelper(uint32_t argc, bool callingNew, FrameSize &call
         /* Test if the function is scripted. */
         stubcc.masm.load16(Address(icCalleeData, offsetof(JSFunction, flags)), tmp);
         Jump isNative = stubcc.masm.branchTest32(Assembler::Zero, tmp,
-                                                 Imm32(JSFUN_INTERPRETED));
+                                                 Imm32(JSFunction::INTERPRETED));
         tempRegs.putReg(tmp);
 
         /*

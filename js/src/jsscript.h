@@ -549,24 +549,48 @@ struct JSScript : public js::gc::Cell
         return needsArgsObj() && !strictModeCode;
     }
 
-    js::ion::IonScript *ion;          /* Information attached by Ion */
+    bool hasAnyIonScript() const {
+        return hasIonScript() || hasParallelIonScript();
+    }
 
-#if defined(JS_METHODJIT) && JS_BITS_PER_WORD == 32
-    void *padding_;
-#endif
+    /* Information attached by Ion: script for sequential mode execution */
+    js::ion::IonScript *ion;
 
     bool hasIonScript() const {
         return ion && ion != ION_DISABLED_SCRIPT && ion != ION_COMPILING_SCRIPT;
     }
+
     bool canIonCompile() const {
         return ion != ION_DISABLED_SCRIPT;
     }
+
     bool isIonCompilingOffThread() const {
         return ion == ION_COMPILING_SCRIPT;
     }
+
     js::ion::IonScript *ionScript() const {
         JS_ASSERT(hasIonScript());
         return ion;
+    }
+
+    /* Information attached by Ion: script for parallel mode execution */
+    js::ion::IonScript *parallelIon;
+
+    bool hasParallelIonScript() const {
+        return parallelIon && parallelIon != ION_DISABLED_SCRIPT && parallelIon != ION_COMPILING_SCRIPT;
+    }
+
+    bool canParallelIonCompile() const {
+        return parallelIon != ION_DISABLED_SCRIPT;
+    }
+
+    bool isParallelIonCompilingOffThread() const {
+        return parallelIon == ION_COMPILING_SCRIPT;
+    }
+
+    js::ion::IonScript *parallelIonScript() const {
+        JS_ASSERT(hasParallelIonScript());
+        return parallelIon;
     }
 
     /*
@@ -990,9 +1014,14 @@ struct ScriptSource
     friend class SourceCompressorThread;
   private:
     union {
-        // When the script source is ready, compressedLength_ != 0 implies
-        // compressed holds the compressed data; otherwise, source holds the
-        // uncompressed source.
+        // Before setSourceCopy or setSource are successfully called, this union
+        // has a NULL pointer. When the script source is ready,
+        // compressedLength_ != 0 implies compressed holds the compressed data;
+        // otherwise, source holds the uncompressed source. There is a special
+        // pointer |emptySource| for source code for length 0.
+        //
+        // The only function allowed to malloc, realloc, or free the pointers in
+        // this union is adjustDataSize(). Don't do it elsewhere.
         jschar *source;
         unsigned char *compressed;
     } data;
@@ -1068,6 +1097,7 @@ struct ScriptSource
     size_t computedSizeOfData() const {
         return compressed() ? compressedLength_ : sizeof(jschar) * length_;
     }
+    bool adjustDataSize(size_t nbytes);
 };
 
 class ScriptSourceHolder

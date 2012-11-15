@@ -12,8 +12,11 @@
 #include "CodeGenerator-shared-inl.h"
 #include "ion/IonSpewer.h"
 #include "ion/IonMacroAssembler.h"
+
 using namespace js;
 using namespace js::ion;
+
+using mozilla::DebugOnly;
 
 namespace js {
 namespace ion {
@@ -216,7 +219,8 @@ CodeGeneratorShared::encode(LSnapshot *snapshot)
         DebugOnly<jsbytecode *> bailPC = pc;
         if (mir->mode() == MResumePoint::ResumeAfter)
           bailPC = GetNextPc(pc);
-        JS_ASSERT(exprStack == js_ReconstructStackDepth(GetIonContext()->cx, script, bailPC));
+        JS_ASSERT_IF(GetIonContext()->cx,
+                     exprStack == js_ReconstructStackDepth(GetIonContext()->cx, script, bailPC));
 
 #ifdef TRACK_SNAPSHOTS
         LInstruction *ins = instruction();
@@ -371,10 +375,9 @@ CodeGeneratorShared::callVM(const VMFunction &fun, LInstruction *ins, const Regi
     pushedArgs_ = 0;
 #endif
 
-    // Generate the wrapper of the VM function.
-    JSContext *cx = GetIonContext()->cx;
-    IonCompartment *ion = cx->compartment->ionCompartment();
-    IonCode *wrapper = ion->generateVMWrapper(cx, fun);
+    // Get the wrapper of the VM function.
+    IonCompartment *ion = GetIonContext()->compartment->ionCompartment();
+    IonCode *wrapper = ion->getVMWrapper(fun);
     if (!wrapper)
         return false;
 

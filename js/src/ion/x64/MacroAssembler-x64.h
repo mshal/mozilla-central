@@ -647,6 +647,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     void boxDouble(const FloatRegister &src, const ValueOperand &dest) {
         movqsd(src, dest.valueReg());
     }
+    void boxNonDouble(JSValueType type, const Register &src, const ValueOperand &dest) {
+        JS_ASSERT(src != dest.valueReg());
+        boxValue(type, src, dest.valueReg());
+    }
 
     // Note that the |dest| register here may be ScratchReg, so we shouldn't
     // use it.
@@ -864,13 +868,13 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
     // Save an exit frame (which must be aligned to the stack pointer) to
     // ThreadData::ionTop.
     void linkExitFrame() {
-        mov(ImmWord(GetIonContext()->cx->runtime), ScratchReg);
+        mov(ImmWord(GetIonContext()->compartment->rt), ScratchReg);
         mov(StackPointer, Operand(ScratchReg, offsetof(JSRuntime, ionTop)));
     }
 
     void callWithExitFrame(IonCode *target, Register dynStack) {
         addPtr(Imm32(framePushed()), dynStack);
-        makeFrameDescriptor(dynStack, IonFrame_JS);
+        makeFrameDescriptor(dynStack, IonFrame_OptimizedJS);
         Push(dynStack);
         call(target);
     }

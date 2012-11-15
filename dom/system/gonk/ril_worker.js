@@ -2376,8 +2376,22 @@ let RIL = {
       case MMI_SC_CF_NOT_REACHABLE:
       case MMI_SC_CF_ALL:
       case MMI_SC_CF_ALL_CONDITIONAL:
-        // TODO: Bug 793192 - MMI Codes: support call forwarding.
-        _sendMMIError("CALL_FORWARDING_NOT_SUPPORTED_VIA_MMI");
+        // Call forwarding requires at least an action, given by the MMI
+        // procedure, and a reason, given by the MMI service code, but there
+        // is no way that we get this far without a valid procedure or service
+        // code.
+        options.action = MMI_PROC_TO_CF_ACTION[mmi.procedure];
+        options.rilMessageType = "sendMMI";
+        options.reason = MMI_SC_TO_CF_REASON[sc];
+        options.number = mmi.sia;
+        options.serviceClass = mmi.sib;
+        if (options.action == CALL_FORWARD_ACTION_QUERY_STATUS) {
+          this.queryCallForwardStatus(options);
+          return;
+        }
+
+        options.timeSeconds = mmi.sic;
+        this.setCallForward(options);
         return;
 
       // Change the current ICC PIN number.
@@ -2895,6 +2909,13 @@ let RIL = {
    },
 
   /**
+   * Report STK Service is running.
+   */
+  reportStkServiceIsRunning: function reportStkServiceIsRunning() {
+    Buf.simpleRequest(REQUEST_REPORT_STK_SERVICE_IS_RUNNING);
+  },
+
+  /**
    * Process ICC status.
    */
   _processICCStatus: function _processICCStatus(iccStatus) {
@@ -2961,6 +2982,7 @@ let RIL = {
     this.getSignalStrength();
     if (newCardState == GECKO_CARDSTATE_READY) {
       this.fetchICCRecords();
+      this.reportStkServiceIsRunning();
     }
 
     this.cardState = newCardState;
@@ -4123,6 +4145,10 @@ let RIL = {
       if (DEBUG) debug("Handling parcel as " + method.name);
       method.call(this, length, options);
     }
+  },
+
+  setDebugEnabled: function setDebugEnabled(options) {
+    DEBUG = DEBUG_WORKER || options.enabled;
   }
 };
 
@@ -5872,20 +5898,25 @@ let GsmPDUHelper = {
 
     // Type-of-Address
     let toa = this.readHexOctet();
+    let addr = "";
 
-    // Address-Value
-    let addr = this.readSwappedNibbleBcdString(len / 2);
+    if ((toa & 0xF0) == PDU_TOA_ALPHANUMERIC) {
+      addr = this.readSeptetsToString(Math.floor(len * 4 / 7), 0,
+          PDU_NL_IDENTIFIER_DEFAULT , PDU_NL_IDENTIFIER_DEFAULT );
+      return addr;
+    }
+    addr = this.readSwappedNibbleBcdString(len / 2);
     if (addr.length <= 0) {
       if (DEBUG) debug("PDU error: no number provided");
       return null;
     }
-    if ((toa >> 4) == (PDU_TOA_INTERNATIONAL >> 4)) {
+    if ((toa & 0xF0) == (PDU_TOA_INTERNATIONAL)) {
       addr = '+' + addr;
     }
 
     return addr;
   },
-  
+
   /**
    * Read Alpha Identifier.
    *

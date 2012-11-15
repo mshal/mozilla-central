@@ -14,7 +14,7 @@
 #include "EnableWebAudioCheck.h"
 #include "nsAutoPtr.h"
 
-class JSContext;
+struct JSContext;
 class nsIDOMWindow;
 
 namespace mozilla {
@@ -23,11 +23,15 @@ class ErrorResult;
 
 namespace dom {
 
-class AudioDestinationNode;
-class AudioBufferSourceNode;
 class AudioBuffer;
-class GainNode;
+class AudioBufferSourceNode;
+class AudioDestinationNode;
+class AudioListener;
+class BiquadFilterNode;
 class DelayNode;
+class DynamicsCompressorNode;
+class GainNode;
+class PannerNode;
 
 class AudioContext MOZ_FINAL : public nsWrapperCache,
                                public EnableWebAudioCheck
@@ -56,6 +60,8 @@ public:
     return mDestination;
   }
 
+  AudioListener* Listener();
+
   already_AddRefed<AudioBufferSourceNode> CreateBufferSource();
 
   already_AddRefed<AudioBuffer>
@@ -67,11 +73,21 @@ public:
   CreateGain();
 
   already_AddRefed<DelayNode>
-  CreateDelay(float aMaxDelayTime);
+  CreateDelay(float aMaxDelayTime, ErrorResult& aRv);
+
+  already_AddRefed<PannerNode>
+  CreatePanner();
+
+  already_AddRefed<DynamicsCompressorNode>
+  CreateDynamicsCompressor();
+
+  already_AddRefed<BiquadFilterNode>
+  CreateBiquadFilter();
 
 private:
   nsCOMPtr<nsIDOMWindow> mWindow;
   nsRefPtr<AudioDestinationNode> mDestination;
+  nsRefPtr<AudioListener> mListener;
 };
 
 }

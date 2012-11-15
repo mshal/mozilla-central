@@ -97,6 +97,9 @@ import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
+import java.net.ProxySelector;
+import java.net.Proxy;
+import java.net.URI;
 
 public class GeckoAppShell
 {
@@ -234,17 +237,17 @@ public class GeckoAppShell
 
     public static native void notifySmsReceived(String aSender, String aBody, int aMessageClass, long aTimestamp);
     public static native int  saveMessageInSentbox(String aReceiver, String aBody, long aTimestamp);
-    public static native void notifySmsSent(int aId, String aReceiver, String aBody, long aTimestamp, int aRequestId, long aProcessId);
+    public static native void notifySmsSent(int aId, String aReceiver, String aBody, long aTimestamp, int aRequestId);
     public static native void notifySmsDelivery(int aId, int aDeliveryStatus, String aReceiver, String aBody, long aTimestamp);
-    public static native void notifySmsSendFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifyGetSms(int aId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyGetSmsFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifySmsDeleted(boolean aDeleted, int aRequestId, long aProcessId);
-    public static native void notifySmsDeleteFailed(int aError, int aRequestId, long aProcessId);
-    public static native void notifyNoMessageInList(int aRequestId, long aProcessId);
-    public static native void notifyListCreated(int aListId, int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyGotNextMessage(int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
-    public static native void notifyReadingMessageListFailed(int aError, int aRequestId, long aProcessId);
+    public static native void notifySmsSendFailed(int aError, int aRequestId);
+    public static native void notifyGetSms(int aId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyGetSmsFailed(int aError, int aRequestId);
+    public static native void notifySmsDeleted(boolean aDeleted, int aRequestId);
+    public static native void notifySmsDeleteFailed(int aError, int aRequestId);
+    public static native void notifyNoMessageInList(int aRequestId);
+    public static native void notifyListCreated(int aListId, int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyGotNextMessage(int aMessageId, int aDeliveryStatus, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId);
+    public static native void notifyReadingMessageListFailed(int aError, int aRequestId);
 
     public static native void scheduleComposite();
     public static native void schedulePauseComposition();
@@ -1949,12 +1952,12 @@ public class GeckoAppShell
         return SmsManager.getInstance().getNumberOfMessagesForText(aText);
     }
 
-    public static void sendMessage(String aNumber, String aMessage, int aRequestId, long aProcessId) {
+    public static void sendMessage(String aNumber, String aMessage, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().send(aNumber, aMessage, aRequestId, aProcessId);
+        SmsManager.getInstance().send(aNumber, aMessage, aRequestId);
     }
 
     public static int saveSentMessage(String aRecipient, String aBody, long aDate) {
@@ -1965,36 +1968,36 @@ public class GeckoAppShell
         return SmsManager.getInstance().saveSentMessage(aRecipient, aBody, aDate);
     }
 
-    public static void getMessage(int aMessageId, int aRequestId, long aProcessId) {
+    public static void getMessage(int aMessageId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().getMessage(aMessageId, aRequestId, aProcessId);
+        SmsManager.getInstance().getMessage(aMessageId, aRequestId);
     }
 
-    public static void deleteMessage(int aMessageId, int aRequestId, long aProcessId) {
+    public static void deleteMessage(int aMessageId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().deleteMessage(aMessageId, aRequestId, aProcessId);
+        SmsManager.getInstance().deleteMessage(aMessageId, aRequestId);
     }
 
-    public static void createMessageList(long aStartDate, long aEndDate, String[] aNumbers, int aNumbersCount, int aDeliveryState, boolean aReverse, int aRequestId, long aProcessId) {
+    public static void createMessageList(long aStartDate, long aEndDate, String[] aNumbers, int aNumbersCount, int aDeliveryState, boolean aReverse, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().createMessageList(aStartDate, aEndDate, aNumbers, aNumbersCount, aDeliveryState, aReverse, aRequestId, aProcessId);
+        SmsManager.getInstance().createMessageList(aStartDate, aEndDate, aNumbers, aNumbersCount, aDeliveryState, aReverse, aRequestId);
     }
 
-    public static void getNextMessageInList(int aListId, int aRequestId, long aProcessId) {
+    public static void getNextMessageInList(int aListId, int aRequestId) {
         if (SmsManager.getInstance() == null) {
             return;
         }
 
-        SmsManager.getInstance().getNextMessageInList(aListId, aRequestId, aProcessId);
+        SmsManager.getInstance().getNextMessageInList(aListId, aRequestId);
     }
 
     public static void clearMessageList(int aListId) {
@@ -2232,5 +2235,45 @@ public class GeckoAppShell
             return true;
         }
         return false;
+    }
+
+    public static String getProxyForURI(String spec, String scheme, String host, int port) {
+        URI uri = null;
+        try {
+            uri = new URI(spec);
+        } catch(java.net.URISyntaxException uriEx) {
+            try {
+                uri = new URI(scheme, null, host, port, null, null, null);
+            } catch(java.net.URISyntaxException uriEx2) {
+                Log.d("GeckoProxy", "Failed to create uri from spec", uriEx);
+                Log.d("GeckoProxy", "Failed to create uri from parts", uriEx2);
+            }
+        }
+        if (uri != null) {
+            ProxySelector ps = ProxySelector.getDefault();
+            if (ps != null) {
+                List<Proxy> proxies = ps.select(uri);
+                if (proxies != null && !proxies.isEmpty()) {
+                    Proxy proxy = proxies.get(0);
+                    if (!Proxy.NO_PROXY.equals(proxy)) {
+                        final String proxyStr;
+                        switch (proxy.type()) {
+                        case HTTP:
+                            proxyStr = "PROXY " + proxy.address().toString();
+                            break;
+                        case SOCKS:
+                            proxyStr = "SOCKS " + proxy.address().toString();
+                            break;
+                        case DIRECT:
+                        default:
+                            proxyStr = "DIRECT";
+                            break;
+                        }
+                        return proxyStr;
+                    }
+                }
+            }
+        }
+        return "DIRECT";
     }
 }
