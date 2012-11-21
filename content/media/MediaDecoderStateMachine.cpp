@@ -24,6 +24,7 @@
 namespace mozilla {
 
 using namespace layers;
+using namespace mozilla::dom;
 
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gMediaDecoderLog;
@@ -115,7 +116,7 @@ static int64_t DurationToUsecs(TimeDuration aDuration) {
 class nsAudioMetadataEventRunner : public nsRunnable
 {
 private:
-  nsCOMPtr<MediaDecoder> mDecoder;
+  nsRefPtr<MediaDecoder> mDecoder;
 public:
   nsAudioMetadataEventRunner(MediaDecoder* aDecoder, uint32_t aChannels,
                              uint32_t aRate, bool aHasAudio,
@@ -974,27 +975,10 @@ void MediaDecoderStateMachine::AudioLoop()
     channels = mInfo.mAudioChannels;
     rate = mInfo.mAudioRate;
     NS_ASSERTION(audioStartTime != -1, "Should have audio start time by now");
-  }
 
-  // It is unsafe to call some methods of AudioStream with the decoder
-  // monitor held, as on Android those methods do a synchronous dispatch to
-  // the main thread. If the audio thread holds the decoder monitor while
-  // it does a synchronous dispatch to the main thread, we can get deadlocks
-  // if the main thread tries to acquire the decoder monitor before the
-  // dispatched event has finished (or even started!) running. Methods which
-  // are unsafe to call with the decoder monitor held are documented as such
-  // in AudioStream.h.
-  nsRefPtr<AudioStream> audioStream = AudioStream::AllocateStream();
-  audioStream->Init(channels, rate);
+    mAudioStream = AudioStream::AllocateStream();
+    mAudioStream->Init(channels, rate, mDecoder->GetAudioChannelType());
 
-  {
-    // We must hold the monitor while setting mAudioStream or whenever we query
-    // the playback position off the audio thread. This ensures the audio stream
-    // is always alive when we use it off the audio thread. Note that querying
-    // the playback position does not do a synchronous dispatch to the main
-    // thread, so it's safe to call with the decoder monitor held.
-    ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mAudioStream = audioStream;
     volume = mVolume;
     mAudioStream->SetVolume(volume);
   }
@@ -1033,9 +1017,6 @@ void MediaDecoderStateMachine::AudioLoop()
       setVolume = volume != mVolume;
       volume = mVolume;
 
-      // Note audio stream IsPaused() does not do synchronous dispatch to the
-      // main thread on Android, so can be called safely with the decoder
-      // monitor held.
       if (IsPlaying() && mAudioStream->IsPaused()) {
         mAudioStream->Resume();
       }
@@ -1145,9 +1126,10 @@ void MediaDecoderStateMachine::AudioLoop()
   }
   LOG(PR_LOG_DEBUG, ("%p Reached audio stream end.", mDecoder.get()));
   {
-    // Must hold lock while anulling the audio stream to prevent
+    // Must hold lock while shutting down and anulling the audio stream to prevent
     // state machine thread trying to use it while we're destroying it.
     ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
+    mAudioStream->Shutdown();
     mAudioStream = nullptr;
     mEventManager.Clear();
     if (!mAudioCaptured) {
@@ -1157,11 +1139,6 @@ void MediaDecoderStateMachine::AudioLoop()
       mDecoder->GetReentrantMonitor().NotifyAll();
     }
   }
-
-  // Must not hold the decoder monitor while we shutdown the audio stream, as
-  // it makes a synchronous dispatch on Android.
-  audioStream->Shutdown();
-  audioStream = nullptr;
 
   LOG(PR_LOG_DEBUG, ("%p Audio stream finished playing, audio thread exit", mDecoder.get()));
 }
@@ -1374,7 +1351,7 @@ void MediaDecoderStateMachine::SetDuration(int64_t aDuration)
   }
 }
 
-void MediaDecoderStateMachine::SetEndTime(int64_t aEndTime)
+void MediaDecoderStateMachine::SetMediaEndTime(int64_t aEndTime)
 {
   NS_ASSERTION(OnDecodeThread(), "Should be on decode thread");
   mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
@@ -2174,19 +2151,16 @@ int64_t
 MediaDecoderStateMachine::GetAudioClock()
 {
   NS_ASSERTION(OnStateMachineThread(), "Should be on state machine thread.");
-  mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
-  if (!HasAudio() || mAudioCaptured)
-    return -1;
   // We must hold the decoder monitor while using the audio stream off the
   // audio thread to ensure that it doesn't get destroyed on the audio thread
   // while we're using it.
+  mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
+  if (!HasAudio() || mAudioCaptured)
+    return -1;
   if (!mAudioStream) {
     // Audio thread hasn't played any data yet.
     return mAudioStartTime;
   }
-  // Note that querying the playback position does not do a synchronous
-  // dispatch to the main thread on Android, so it's safe to call with
-  // the decoder monitor held here.
   int64_t t = mAudioStream->GetPosition();
   return (t == -1) ? -1 : t + mAudioStartTime;
 }

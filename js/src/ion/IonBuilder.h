@@ -17,7 +17,7 @@
 namespace js {
 namespace ion {
 
-class LIRGraph;
+class CodeGenerator;
 
 class IonBuilder : public MIRGenerator
 {
@@ -360,6 +360,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_itermore();
     bool jsop_iterend();
     bool jsop_in();
+    bool jsop_in_dense();
     bool jsop_instanceof();
     bool jsop_getaliasedvar(ScopeCoordinate sc);
     bool jsop_setaliasedvar(ScopeCoordinate sc);
@@ -439,16 +440,21 @@ class IonBuilder : public MIRGenerator
     // A builder is inextricably tied to a particular script.
     HeapPtrScript script_;
 
+    // If off thread compilation is successful, the final code generator is
+    // attached here. Code has been generated, but not linked (there is not yet
+    // an IonScript). This is heap allocated, and must be explicitly destroyed.
+    CodeGenerator *backgroundCodegen_;
+
   public:
     // Compilation index for this attempt.
     types::RecompileInfo const recompileInfo;
 
-    // If off thread compilation is successful, final LIR is attached here.
-    LIRGraph *backgroundCompiledLir;
-
     void clearForBackEnd();
 
     Return<JSScript*> script() const { return script_; }
+
+    CodeGenerator *backgroundCodegen() const { return backgroundCodegen_; }
+    void setBackgroundCodegen(CodeGenerator *codegen) { backgroundCodegen_ = codegen; }
 
   private:
     JSContext *cx;

@@ -580,7 +580,7 @@ CanvasRenderingContext2D::ParseColor(const nsAString& aString,
     return false;
   }
 
-  if (value.GetUnit() == nsCSSUnit::eCSSUnit_Color) {
+  if (value.GetUnit() == eCSSUnit_Color) {
     // if we already have a color we can just use it directly
     *aColor = value.GetColorValue();
   } else {
@@ -3591,8 +3591,7 @@ CanvasRenderingContext2D::FillRuleChanged()
 }
 
 void
-CanvasRenderingContext2D::PutImageData(JSContext* cx,
-                                       ImageData& imageData, double dx,
+CanvasRenderingContext2D::PutImageData(ImageData& imageData, double dx,
                                        double dy, ErrorResult& error)
 {
   if (!FloatValidate(dx, dy)) {
@@ -3608,8 +3607,7 @@ CanvasRenderingContext2D::PutImageData(JSContext* cx,
 }
 
 void
-CanvasRenderingContext2D::PutImageData(JSContext* cx,
-                                       ImageData& imageData, double dx,
+CanvasRenderingContext2D::PutImageData(ImageData& imageData, double dx,
                                        double dy, double dirtyX,
                                        double dirtyY, double dirtyWidth,
                                        double dirtyHeight,

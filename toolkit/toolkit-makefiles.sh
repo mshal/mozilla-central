@@ -1154,11 +1154,6 @@ if [ "$ACCESSIBILITY" ]; then
     accessible/src/jsat/Makefile
     accessible/src/xpcom/Makefile
   "
-  if [ ! "$DISABLE_XFORMS_HOOKS" ]; then
-    add_makefiles "
-      accessible/src/xforms/Makefile
-    "
-  fi
   if [ "$MOZ_XUL" ]; then
     add_makefiles "
       accessible/src/xul/Makefile
@@ -1731,13 +1726,6 @@ if [ "$MOZ_SPEEX_RESAMPLER" ]; then
   add_makefiles "
     media/libspeex_resampler/Makefile
     media/libspeex_resampler/src/Makefile
-  "
-fi
-
-if [ "$MOZ_SOUNDTOUCH" ]; then
-  add_makefiles "
-    media/libsoundtouch/Makefile
-    media/libsoundtouch/src/Makefile
   "
 fi
 

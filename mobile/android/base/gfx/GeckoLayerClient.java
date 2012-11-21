@@ -5,8 +5,10 @@
 
 package org.mozilla.gecko.gfx;
 
+import org.mozilla.gecko.BrowserApp;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
+import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.ScreenshotHandler;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
@@ -679,6 +681,19 @@ public class GeckoLayerClient
         if (notifyGecko && mGeckoIsReady) {
             geometryChanged();
         }
+        setShadowVisibility();
+    }
+
+    private void setShadowVisibility() {
+        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+            public void run() {
+                if (BrowserApp.mBrowserToolbar == null) {
+                    return;
+                }
+                ImmutableViewportMetrics m = mViewportMetrics;
+                BrowserApp.mBrowserToolbar.setShadowVisibility(m.viewportRectTop >= m.pageRectTop);
+            }
+        });
     }
 
     /** Implementation of PanZoomTarget */

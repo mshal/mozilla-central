@@ -807,6 +807,7 @@ this.DOMApplicationRegistry = {
           app.downloading = false;
           app.downloadAvailable = false;
           app.readyToApplyDownload = true;
+          app.updateTime = Date.now();
           DOMApplicationRegistry._saveApps(function() {
             debug("About to fire Webapps:PackageEvent");
             DOMApplicationRegistry.broadcastMessage("Webapps:PackageEvent",
@@ -967,6 +968,7 @@ this.DOMApplicationRegistry = {
 
       app.name = aManifest.name;
       app.csp = aManifest.csp || "";
+      app.updateTime = Date.now();
 
       // Update the registry.
       this.webapps[id] = app;
@@ -1003,8 +1005,10 @@ this.DOMApplicationRegistry = {
           sendError("MANIFEST_PARSE_ERROR");
           return;
         }
-        if (!AppsUtils.checkManifest(manifest, app.installOrigin)) {
+        if (!AppsUtils.checkManifest(manifest)) {
           sendError("INVALID_MANIFEST");
+        } else if (!AppsUtils.checkInstallAllowed(manifest, app.installOrigin)) {
+          sendError("INSTALL_FROM_DENIED");
         } else {
           app.etag = xhr.getResponseHeader("Etag");
           app.lastCheckedUpdate = Date.now();
@@ -1100,6 +1104,7 @@ this.DOMApplicationRegistry = {
     appObject.localId = localId;
     appObject.basePath = FileUtils.getDir(DIRECTORY_NAME, ["webapps"], true, true).path;
     let dir = FileUtils.getDir(DIRECTORY_NAME, ["webapps", id], true, true);
+    dir.permissions = FileUtils.PERMS_DIRECTORY;
     let manFile = dir.clone();
     manFile.append(manifestName);
     let jsonManifest = aData.isPackage ? app.updateManifest : app.manifest;
@@ -1176,6 +1181,7 @@ this.DOMApplicationRegistry = {
         let zipFile = FileUtils.getFile("TmpD", ["webapps", aId, "application.zip"], true);
         let dir = FileUtils.getDir(DIRECTORY_NAME, ["webapps", aId], true, true);
         zipFile.moveTo(dir, "application.zip");
+        zipFile.permissions = FileUtils.PERMS_FILE;
         let tmpDir = FileUtils.getDir("TmpD", ["webapps", aId], true, true);
         try {
           tmpDir.remove(true);
@@ -1391,7 +1397,7 @@ this.DOMApplicationRegistry = {
           try {
             zipReader.open(zipFile);
             if (!zipReader.hasEntry("manifest.webapp")) {
-              throw "No manifest.webapp found.";
+              throw "MISSING_MANIFEST";
             }
 
             let istream = zipReader.getInputStream("manifest.webapp");
@@ -1404,8 +1410,12 @@ this.DOMApplicationRegistry = {
             let manifest = JSON.parse(converter.ConvertToUnicode(NetUtil.readInputStreamToString(istream,
                                                                  istream.available()) || ""));
 
-            if (!AppsUtils.checkManifest(manifest, aApp.installOrigin)) {
+            if (!AppsUtils.checkManifest(manifest)) {
               throw "INVALID_MANIFEST";
+            }
+
+            if (!AppsUtils.checkInstallAllowed(manifest, aApp.installOrigin)) {
+              throw "INSTALL_FROM_DENIED";
             }
 
             if (!checkAppStatus(manifest)) {
@@ -1417,8 +1427,12 @@ this.DOMApplicationRegistry = {
             }
             delete self.downloads[aApp.manifestURL];
           } catch (e) {
-            // XXX we may need new error messages.
-            cleanup(e);
+            // Something bad happened when reading the package.
+            if (typeof e == 'object') {
+              cleanup("INVALID_PACKAGE");
+            } else {
+              cleanup(e);
+            }
           } finally {
             zipReader.close();
           }
@@ -1426,9 +1440,8 @@ this.DOMApplicationRegistry = {
       });
     };
 
-    let browser = Services.wm.getMostRecentWindow("navigator:browser");
-    let deviceStorage = browser.getContentWindow().navigator
-                               .getDeviceStorage("apps");
+    let deviceStorage = Services.wm.getMostRecentWindow("navigator:browser")
+                                .navigator.getDeviceStorage("apps");
     let req = deviceStorage.stat();
     req.onsuccess = req.onerror = function statResult(e) {
       // Even if we could not retrieve the device storage free space, we try

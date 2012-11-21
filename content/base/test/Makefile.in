@@ -585,10 +585,16 @@ MOCHITEST_FILES_B = \
 		test_mixed_content_blocker.html \
 		file_mixed_content_main.html \
 		file_mixed_content_server.sjs \
+    test_mixed_content_blocker_bug803225.html \
+    file_mixed_content_main_bug803225.html \
+    file_mixed_content_main_bug803225_websocket_wsh.py \
+    bug803225_test_mailto.html \
 		test_bug789856.html \
 		file_bug804395.jar \
 		test_bug804395.html \
 		test_bug809003.html \
+		test_textnode_split_in_selection.html \
+		test_textnode_normalize_in_selection.html \
 		$(NULL)
 
 # OOP tests don't work on Windows (bug 763081) or native-fennec
