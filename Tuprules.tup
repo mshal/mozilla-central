@@ -1,0 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+.gitignore
+
+MOZ_ROOT = $(TUP_CWD)
+
+PYTHON = python -B
+PYTHONPATH = $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply
+PYHEADER = $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/xpcom/idl-parser/header.py
+
+!ln = |> ^ LN %o -> %f^ ln -s %f %o |> %b
