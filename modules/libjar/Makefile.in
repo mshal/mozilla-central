@@ -9,7 +9,6 @@ srcdir		= @srcdir@
 VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
-include $(srcdir)/objs.mk
 
 DIRS   =
 
@@ -30,12 +29,28 @@ MODULE_NAME	= nsJarModule
 GRE_MODULE	= 1
 LIBXUL_LIBRARY = 1
 
+CPPSRCS = \
+	  nsZipArchive.cpp \
+	  nsJARInputStream.cpp \
+	  nsJAR.cpp \
+	  nsJARFactory.cpp \
+	  nsJARProtocolHandler.cpp \
+	  nsJARChannel.cpp  \
+	  nsJARURI.cpp  \
+	  $(NULL)
 
-CPPSRCS		= $(MODULES_LIBJAR_LCPPSRCS)
+EXPORTS = \
+	  zipstruct.h \
+	  nsJARURI.h \
+	  nsZipArchive.h \
+	  $(NULL)
 
-XPIDLSRCS	= $(MODULES_LIBJAR_LXPIDLSRCS)
-
-EXPORTS		= $(MODULES_LIBJAR_LEXPORTS)
+XPIDLSRCS = \
+	    nsIZipReader.idl \
+	    nsIJARChannel.idl \
+	    nsIJARURI.idl \
+	    nsIJARProtocolHandler.idl \
+	    $(NULL)
 
 include $(topsrcdir)/config/config.mk
 include $(topsrcdir)/ipc/chromium/chromium-config.mk
