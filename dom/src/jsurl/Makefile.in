@@ -25,7 +25,7 @@ XPIDLSRCS	= \
 
 CPPSRCS		= nsJSProtocolHandler.cpp
 
-EXPORTS		= $(srcdir)/nsJSProtocolHandler.h
+EXPORTS		= nsJSProtocolHandler.h
 
 LOCAL_INCLUDES += \
 		-I$(srcdir) \
