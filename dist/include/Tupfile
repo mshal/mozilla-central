@@ -6,3 +6,39 @@ include_rules
 
 # Process all of the idl files in dist/idl so we can generate headers.
 : foreach ../idl/*.idl | ../idl/<installed-idls> |> ^ python header.py [%f -> %o]^ $(PYHEADER) -I../idl %f -o %o --cachedir=../idl |> %B.h
+
+# List of directories that contain EXPORTS
+EXPORT_DIRS += $(MOZ_ROOT)/dom/activities/src/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/alarm/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/audiochannel/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/base/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/battery/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/bindings/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/bluetooth/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/browser-element/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/camera/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/devicestorage/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/encoding/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/file/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/icc/src/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/indexedDB/ipc/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/indexedDB/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/interfaces/storage/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/ipc/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/media/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/network/src/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/base/android/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/base/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/ipc/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/power/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/sms/src/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/src/geolocation/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/src/json/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/src/jsurl/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/src/storage/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/system/gonk/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/system/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/time/
+EXPORT_DIRS += $(MOZ_ROOT)/dom/workers/
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py $(MOZ_ROOT)/autoconf.mk $(EXPORT_DIRS)

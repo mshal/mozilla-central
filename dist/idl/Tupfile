@@ -4,6 +4,7 @@
 
 include_rules
 
+# List of directories that contain XPIDLSRCS
 XPIDL_DIRS += $(MOZ_ROOT)/accessible/public/
 XPIDL_DIRS += $(MOZ_ROOT)/browser/components/
 XPIDL_DIRS += $(MOZ_ROOT)/browser/components/feeds/public/
