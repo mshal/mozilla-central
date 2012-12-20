@@ -7,16 +7,18 @@ import sys
 import os
 import tup_makefile
 
-if len(sys.argv) < 3:
-    sys.exit('usage: %s MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
+if len(sys.argv) < 4:
+    sys.exit('usage: %s EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
 
-tupmk = tup_makefile.TupMakefile(sys.argv[1])
+export_var = sys.argv[1]
 
-for subdir in sys.argv[2:]:
+tupmk = tup_makefile.TupMakefile(sys.argv[2])
+
+for subdir in sys.argv[3:]:
     tupmk.parse(subdir)
 
     # TODO: If --exports is set? only should happen in dist/include
-    exports = tupmk.get_var('EXPORTS')
+    exports = tupmk.get_var(export_var)
     if exports:
         # Create a tup :-rule for each symlink to an .idl file that we need.
         print ": foreach ",
