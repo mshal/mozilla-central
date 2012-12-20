@@ -8,7 +8,7 @@ import os
 import tup_makefile
 
 if len(sys.argv) < 3:
-    sys.exit('usage: %s path/to/autoconf.mk sub/dir1 [sub/dir2...]' % sys.argv[0])
+    sys.exit('usage: %s MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
 
 tupmk = tup_makefile.TupMakefile(sys.argv[1])
 
@@ -17,7 +17,7 @@ for subdir in sys.argv[2:]:
 
     # TODO: If --exports is set? only should happen in dist/include
     exports = tupmk.get_var('EXPORTS')
-    if exports is not None:
+    if exports:
         # Create a tup :-rule for each symlink to an .idl file that we need.
         print ": foreach ",
         for i in exports:
