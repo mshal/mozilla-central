@@ -24,4 +24,4 @@ for subdir in sys.argv[3:]:
         print ": foreach ",
         for i in exports:
             print os.path.join(subdir, i),
-        print " |> !ln |> %b <installed-headers>"
+        print " |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>"
