@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, makefile_name='Makefile.in'):
+    def __init__(self, moz_root, makefile_name='Makefile.in', always_allow=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -18,6 +18,7 @@ class TupMakefile(object):
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
         self.makefile_name = makefile_name
+        self.always_allow = always_allow
 
         autoconf_path = os.path.join(moz_root, "autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
@@ -145,7 +146,6 @@ class TupMakefile(object):
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)
 
-        # manifest.mn check is a cheat to enable all security/nss dirs.
-        if self.makefile_is_enabled(subdir) or self.makefile_name == 'manifest.mn':
+        if self.makefile_is_enabled(subdir) or self.always_allow:
             makefile_in = os.path.join(subdir, self.makefile_name)
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)
