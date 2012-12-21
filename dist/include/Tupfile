@@ -19,8 +19,6 @@ EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/other
 EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/windows/ia2
 EXPORT_DIRS += $(MOZ_ROOT)/browser/components/build
 EXPORT_DIRS += $(MOZ_ROOT)/caps/include
-EXPORT_DIRS += $(MOZ_ROOT)/config/makefiles
-EXPORT_DIRS += $(MOZ_ROOT)/config
 EXPORT_DIRS += $(MOZ_ROOT)/content/base/public
 EXPORT_DIRS += $(MOZ_ROOT)/content/base/src
 EXPORT_DIRS += $(MOZ_ROOT)/content/canvas/public
@@ -274,9 +272,10 @@ NSS_DIRS += $(MOZ_ROOT)/security/nss/tests/pkcs11/netscape/suites/security/ssl
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py -m manifest.mn EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
 
-# Copy all headers from nsprpub/pr/include
+# Copy some extra headers from one-off directories that don't use EXPORTS, or wildcard *.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/ds/*.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/libc/include/*.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/pr/include/*.h
+INSTALL_ALL_HEADERS += $(MOZ_ROOT)/config/nsStaticComponents.h
 
 : foreach $(INSTALL_ALL_HEADERS) |> !ln |> %b <installed-headers>
