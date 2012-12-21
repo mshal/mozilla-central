@@ -174,8 +174,7 @@ XPIDL_DIRS += $(MOZ_ROOT)/xpfe/appshell/public
 XPIDL_DIRS += $(MOZ_ROOT)/xpfe/components/directory
 XPIDL_DIRS += $(MOZ_ROOT)/xpfe/components/windowds
 
-# The toolkit/src/Makefile.in file uses $(shell), so we need to export our
-# SHELL environment variable so pymake can use it to execute those.
+# Allow pymake to support $(shell) by giving it the SHELL environment variable.
 export SHELL
 
 # Preload these directories for readdir() that is used by python in OSX.
