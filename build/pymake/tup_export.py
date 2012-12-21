@@ -6,15 +6,21 @@
 import sys
 import os
 import tup_makefile
+from optparse import OptionParser
 
 if len(sys.argv) < 4:
-    sys.exit('usage: %s EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
+    sys.exit('usage: %s [-m Makefile] EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
 
-export_var = sys.argv[1]
+p = OptionParser()
+p.add_option('-m', dest='makefile', default='Makefile.in',
+        help='Optional: Name of the Makefile (defaults to Makefile.in)')
 
-tupmk = tup_makefile.TupMakefile(sys.argv[2])
+(options, args) = p.parse_args()
 
-for subdir in sys.argv[3:]:
+export_var = args[0]
+tupmk = tup_makefile.TupMakefile(args[1], options.makefile)
+
+for subdir in args[2:]:
     tupmk.parse(subdir)
 
     # TODO: If --exports is set? only should happen in dist/include

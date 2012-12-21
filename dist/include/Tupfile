@@ -221,5 +221,58 @@ SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/string/public
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py SDK_HEADERS $(MOZ_ROOT) $(SDK_HEADER_DIRS)
 
+# NSS dirs run a little differently, since they use manifest.mn instead of Makefile.in
+# as the primary source of info.
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/bltest
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/chktest
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/crmf-cgi
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/crmftest
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/fipstest
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/lowhashtest
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/modutil
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/pk11mode
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/rsapoptst
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/signtool
+NSS_DIRS += $(MOZ_ROOT)/security/nss/cmd/ssltap
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/base
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/certdb
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/certhigh
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw/builtins
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw/capi
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw/nssmkey
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/crmf
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/cryptohi
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/dev
+# TODO: freebl uses 'vpath %h mpi ecl' instead of VPATH? Also we're using manifest.mn instead of the
+# Makefile, which is what has vpath. This just affects ecl-exp.h
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/freebl
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/jar
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/include
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/certsel
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/checker
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/crlsel
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/params
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/module
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/pki
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/system
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/results
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/store
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/top
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/util
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/nss
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/pk11wrap
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/pkcs12
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/pkcs7
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/pki
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/smime
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/softoken
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/sqlite
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ssl
+NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/util
+NSS_DIRS += $(MOZ_ROOT)/security/nss/tests/pkcs11/netscape/suites/security/ssl
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py -m manifest.mn EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
+
 # Copy all headers from nsprpub/pr/include
 : foreach $(MOZ_ROOT)/nsprpub/pr/include/*.h |> !ln |> %b <installed-headers>

@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root):
+    def __init__(self, moz_root, makefile_name='Makefile.in'):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -17,6 +17,7 @@ class TupMakefile(object):
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
+        self.makefile_name = makefile_name
 
         autoconf_path = os.path.join(moz_root, "autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
@@ -83,7 +84,7 @@ class TupMakefile(object):
 
             # If the parent directory has a Makefile.in, break out so we can
             # check if we are in its DIRS variable (and it too is enabled).
-            makefile_in = os.path.join(parent, "Makefile.in")
+            makefile_in = os.path.join(parent, self.makefile_name)
             if os.path.exists(makefile_in):
 
                 # Parent not enabled means we aren't either
@@ -118,6 +119,9 @@ class TupMakefile(object):
         return self.enabled_dirs[subdir]
 
     def vpath_resolve(self, subdir, vpath, filename):
+        # When parsing manifest.mn, for example, VPATH may not be set.
+        if not vpath:
+            vpath = ['.']
         for path in vpath:
             # Since we are using Makefile.in, @srcdir@ won't be substituted.
             # We just want to use the current directory in such cases.
@@ -132,6 +136,8 @@ class TupMakefile(object):
 
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)
-        if self.makefile_is_enabled(subdir):
-            makefile_in = os.path.join(subdir, "Makefile.in")
+
+        # manifest.mn check is a cheat to enable all security/nss dirs.
+        if self.makefile_is_enabled(subdir) or self.makefile_name == 'manifest.mn':
+            makefile_in = os.path.join(subdir, self.makefile_name)
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)
