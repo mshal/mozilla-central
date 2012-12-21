@@ -34,7 +34,7 @@ class TupMakefile(object):
             self.enabled_dirs[tier] = True
 
         # TODO: Where are these enabled? They aren't part of tier_platform_dirs
-        for dirname in ['browser', 'chrome']:
+        for dirname in ['browser', 'chrome', 'js/src']:
             tier = os.path.join(moz_root, dirname)
             self.enabled_dirs[tier] = True
 
