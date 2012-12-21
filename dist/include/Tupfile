@@ -220,3 +220,6 @@ SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/io
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/string/public
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py SDK_HEADERS $(MOZ_ROOT) $(SDK_HEADER_DIRS)
+
+# Copy all headers from nsprpub/pr/include
+: foreach $(MOZ_ROOT)/nsprpub/pr/include/*.h |> !ln |> %b <installed-headers>
