@@ -12,6 +12,9 @@ class TupMakefile(object):
     def __init__(self, moz_root):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
+        self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC, '.')
+
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
 
@@ -45,7 +48,7 @@ class TupMakefile(object):
 
                 # These variables are specific to make's implementation, and aren't
                 # needed in general
-                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'VPATH']:
+                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir']:
                     continue
 
                 s.execute(makefile, context)

@@ -5,7 +5,6 @@
 include_rules
 
 # List of directories that contain EXPORTS_mozilla/dom/bluetooth/ipc
-# TODO: Support VPATH
-#EXPORT_DIRS += $(MOZ_ROOT)/dom/bluetooth
+EXPORT_DIRS += $(MOZ_ROOT)/dom/bluetooth
 
-#run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/bluetooth/ipc $(MOZ_ROOT) $(EXPORT_DIRS)
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/bluetooth/ipc $(MOZ_ROOT) $(EXPORT_DIRS)

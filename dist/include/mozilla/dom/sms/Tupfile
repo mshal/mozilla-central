@@ -5,7 +5,6 @@
 include_rules
 
 # List of directories that contain EXPORTS_mozilla/dom/sms
-# TODO: Support VPATH
-#EXPORT_DIRS += $(MOZ_ROOT)/dom/sms/src
+EXPORT_DIRS += $(MOZ_ROOT)/dom/sms/src
 
-#run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/sms $(MOZ_ROOT) $(EXPORT_DIRS)
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/sms $(MOZ_ROOT) $(EXPORT_DIRS)
