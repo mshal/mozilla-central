@@ -275,4 +275,8 @@ NSS_DIRS += $(MOZ_ROOT)/security/nss/tests/pkcs11/netscape/suites/security/ssl
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py -m manifest.mn EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
 
 # Copy all headers from nsprpub/pr/include
-: foreach $(MOZ_ROOT)/nsprpub/pr/include/*.h |> !ln |> %b <installed-headers>
+INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/ds/*.h
+INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/libc/include/*.h
+INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/pr/include/*.h
+
+: foreach $(INSTALL_ALL_HEADERS) |> !ln |> %b <installed-headers>
