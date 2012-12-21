@@ -84,8 +84,7 @@ XPIDL_DIRS += $(MOZ_ROOT)/extensions/cookie
 XPIDL_DIRS += $(MOZ_ROOT)/extensions/pref/autoconfig/public
 XPIDL_DIRS += $(MOZ_ROOT)/extensions/spellcheck/idl
 XPIDL_DIRS += $(MOZ_ROOT)/gfx/src
-# TODO: Vpath
-#XPIDL_DIRS += $(MOZ_ROOT)/hal/gonk
+XPIDL_DIRS += $(MOZ_ROOT)/hal
 XPIDL_DIRS += $(MOZ_ROOT)/image/decoders/icon
 XPIDL_DIRS += $(MOZ_ROOT)/image/public
 XPIDL_DIRS += $(MOZ_ROOT)/intl/locale/idl

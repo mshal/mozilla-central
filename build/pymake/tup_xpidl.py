@@ -15,6 +15,8 @@ tupmk = tup_makefile.TupMakefile(sys.argv[1])
 for subdir in sys.argv[2:]:
     tupmk.parse(subdir)
 
+    vpath = tupmk.get_var('VPATH')
+
     # TODO: If --xpidl is set? only should happen in dist/idl
     # TODO: Bug 698251 for SDK_XPIDLSRCS
     for varname in ['XPIDLSRCS', 'SDK_XPIDLSRCS']:
@@ -22,6 +24,8 @@ for subdir in sys.argv[2:]:
         if xpidl:
             # Create a tup :-rule for each symlink to an .idl file that we need.
             print ": foreach ",
-            for i in xpidl:
-                print os.path.join(subdir, i),
+            for filename in xpidl:
+                fullpath = tupmk.vpath_resolve(subdir, vpath, filename)
+                if fullpath:
+                    print fullpath,
             print " |> !ln |> %b <installed-idls>"

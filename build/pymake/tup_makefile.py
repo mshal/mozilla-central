@@ -117,6 +117,19 @@ class TupMakefile(object):
 
         return self.enabled_dirs[subdir]
 
+    def vpath_resolve(self, subdir, vpath, filename):
+        for path in vpath:
+            # Since we are using Makefile.in, @srcdir@ won't be substituted.
+            # We just want to use the current directory in such cases.
+            if path == '@srcdir@' or path == '.':
+                fullpath = os.path.join(subdir, filename)
+            else:
+                fullpath = os.path.join(subdir, path, filename)
+
+            if os.path.exists(fullpath):
+                return fullpath
+        return None
+
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)
         if self.makefile_is_enabled(subdir):
