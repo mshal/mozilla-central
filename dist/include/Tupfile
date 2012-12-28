@@ -242,8 +242,6 @@ NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw/nssmkey
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/crmf
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/cryptohi
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/dev
-# TODO: freebl uses 'vpath %h mpi ecl' instead of VPATH? Also we're using manifest.mn instead of the
-# Makefile, which is what has vpath. This just affects ecl-exp.h
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/freebl
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/jar
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/include

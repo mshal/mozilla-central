@@ -94,6 +94,8 @@ class TupMakefile(object):
                     if c.evaluate(makefile):
                         self.process_statements(makefile, context, dirname, ifstatements)
                         break
+            elif isinstance(s, pymake.parserdata.VPathDirective):
+                s.execute(makefile, context)
 
     def process_makefile(self, makefile, context, filename):
         statements = pymake.parser.parsefile(filename)
@@ -160,6 +162,11 @@ class TupMakefile(object):
         # When parsing manifest.mn, for example, VPATH may not be set.
         if not vpath:
             vpath = ['.']
+
+        for p, dirs in self.subdir_makefile._patternvpaths:
+            if p.match(filename):
+                vpath.extend(dirs)
+
         for path in vpath:
             # Since we are using Makefile.in, @srcdir@ won't be substituted.
             # We just want to use the current directory in such cases.
