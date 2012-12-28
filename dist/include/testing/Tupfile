@@ -4,4 +4,4 @@
 
 include_rules
 
-: foreach $(MOZ_ROOT)/xpcom/tests/TestHarness.h |> !ln |>
+: foreach $(MOZ_ROOT)/xpcom/tests/TestHarness.h |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>

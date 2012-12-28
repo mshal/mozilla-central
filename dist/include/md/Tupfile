@@ -4,4 +4,4 @@
 
 include_rules
 
-: foreach $(MOZ_ROOT)/nsprpub/pr/include/md/*.cfg |> !ln |>
+: foreach $(MOZ_ROOT)/nsprpub/pr/include/md/*.cfg |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>

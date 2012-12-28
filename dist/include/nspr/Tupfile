@@ -10,4 +10,4 @@ headers += $(MOZ_ROOT)/nsprpub/lib/ds/plhash.h
 headers += $(MOZ_ROOT)/nsprpub/lib/libc/include/*.h
 headers += $(MOZ_ROOT)/nsprpub/pr/include/*.h
 
-: foreach $(headers) |> !ln |>
+: foreach $(headers) |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>

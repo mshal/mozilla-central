@@ -4,4 +4,4 @@
 
 include_rules
 
-: foreach $(MOZ_ROOT)/nsprpub/pr/include/obsolete/*.h |> !ln |>
+: foreach $(MOZ_ROOT)/nsprpub/pr/include/obsolete/*.h |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>

@@ -9,4 +9,4 @@ RELEASE_HEADERS += $(MOZ_ROOT)/nsprpub/pr/include/private/pprio.h
 RELEASE_HEADERS += $(MOZ_ROOT)/nsprpub/pr/include/private/pprthred.h
 RELEASE_HEADERS += $(MOZ_ROOT)/nsprpub/pr/include/private/prpriv.h
 
-: foreach $(RELEASE_HEADERS) |> !ln |>
+: foreach $(RELEASE_HEADERS) |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>

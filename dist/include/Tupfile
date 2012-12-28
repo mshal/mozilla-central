@@ -5,7 +5,7 @@
 include_rules
 
 # Process all of the idl files in dist/idl so we can generate headers.
-: foreach ../idl/*.idl | ../idl/<installed-idls> |> ^ python header.py [%f -> %o]^ $(PYHEADER) -I../idl %f -o %o --cachedir=../idl |> %B.h
+: foreach ../idl/*.idl | ../idl/<installed-idls> |> ^ python header.py [%f -> %o]^ $(PYHEADER) -I../idl %f -o %o --cachedir=../idl |> %B.h <installed-headers>
 
 # List of directories that contain EXPORTS
 EXPORT_DIRS += $(MOZ_ROOT)/accessible/public/ia2
