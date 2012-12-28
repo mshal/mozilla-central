@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# List of directories that contain EXPORTS_mozilla/ipc
+EXPORT_DIRS += $(MOZ_ROOT)/content/canvas/public
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/dbus
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/glue
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/netd
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/ril
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/testshell
+EXPORT_DIRS += $(MOZ_ROOT)/ipc/unixsocket
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/ipc $(MOZ_ROOT) $(EXPORT_DIRS)

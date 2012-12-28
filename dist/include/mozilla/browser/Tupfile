@@ -1,0 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# List of directories that contain EXPORTS_mozilla/browser
+EXPORT_DIRS += $(MOZ_ROOT)/browser/components/about
+EXPORT_DIRS += $(MOZ_ROOT)/browser/components/dirprovider
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/browser $(MOZ_ROOT) $(EXPORT_DIRS)

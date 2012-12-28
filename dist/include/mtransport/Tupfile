@@ -1,0 +1,14 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# List of directories that contain EXPORTS_mtransport
+
+# Both of these directories define EXPORTS_mtransport, but the ones in
+# standalone appear to be a subset of the ones in build.
+EXPORT_DIRS += $(MOZ_ROOT)/media/mtransport/build
+#EXPORT_DIRS += $(MOZ_ROOT)/media/mtransport/standalone
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mtransport $(MOZ_ROOT) $(EXPORT_DIRS)

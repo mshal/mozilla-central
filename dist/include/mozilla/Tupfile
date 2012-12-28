@@ -5,6 +5,8 @@
 include_rules
 
 # List of directories that contain EXPORTS_mozilla
+EXPORT_DIRS += $(MOZ_ROOT)/content/base/public
+EXPORT_DIRS += $(MOZ_ROOT)/docshell/base
 EXPORT_DIRS += $(MOZ_ROOT)/dom/bindings
 EXPORT_DIRS += $(MOZ_ROOT)/dom/browser-element
 EXPORT_DIRS += $(MOZ_ROOT)/dom/ipc
@@ -12,5 +14,23 @@ EXPORT_DIRS += $(MOZ_ROOT)/dom/media
 EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/base
 EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/ipc
 EXPORT_DIRS += $(MOZ_ROOT)/dom/system
+EXPORT_DIRS += $(MOZ_ROOT)/gfx/src
+EXPORT_DIRS += $(MOZ_ROOT)/hal
+EXPORT_DIRS += $(MOZ_ROOT)/layout/base
+EXPORT_DIRS += $(MOZ_ROOT)/layout/generic
+EXPORT_DIRS += $(MOZ_ROOT)/memory/mozalloc
+EXPORT_DIRS += $(MOZ_ROOT)/mfbt
+EXPORT_DIRS += $(MOZ_ROOT)/modules/libpref/public
+EXPORT_DIRS += $(MOZ_ROOT)/storage/public
+EXPORT_DIRS += $(MOZ_ROOT)/toolkit/components/startup
+EXPORT_DIRS += $(MOZ_ROOT)/toolkit/components/telemetry
+EXPORT_DIRS += $(MOZ_ROOT)/widget
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/base
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/build
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/components
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/ds
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/glue
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/io
+EXPORT_DIRS += $(MOZ_ROOT)/xpcom/threads
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla $(MOZ_ROOT) $(EXPORT_DIRS)

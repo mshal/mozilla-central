@@ -1,0 +1,15 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# List of directories that contain EXPORTS_mozilla/a11y
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/atk
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/base
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/generic
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/mac
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/msaa
+EXPORT_DIRS += $(MOZ_ROOT)/accessible/src/other
+
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/a11y $(MOZ_ROOT) $(EXPORT_DIRS)

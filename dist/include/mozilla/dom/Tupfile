@@ -5,10 +5,15 @@
 include_rules
 
 # List of directories that contain EXPORTS_mozilla/dom
+EXPORT_DIRS += $(MOZ_ROOT)/content/base/public
+EXPORT_DIRS += $(MOZ_ROOT)/content/base/src
+EXPORT_DIRS += $(MOZ_ROOT)/content/canvas/src
+EXPORT_DIRS += $(MOZ_ROOT)/content/media/webaudio
 EXPORT_DIRS += $(MOZ_ROOT)/dom/activities/src
 EXPORT_DIRS += $(MOZ_ROOT)/dom/base
 EXPORT_DIRS += $(MOZ_ROOT)/dom/encoding
 EXPORT_DIRS += $(MOZ_ROOT)/dom/ipc
 EXPORT_DIRS += $(MOZ_ROOT)/dom/src/storage
+EXPORT_DIRS += $(MOZ_ROOT)/uriloader/exthandler
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom $(MOZ_ROOT) $(EXPORT_DIRS)
