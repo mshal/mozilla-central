@@ -78,6 +78,10 @@ class TupMakefile(object):
                         # Similar to MKDEPENDENCIES, but now in
                         # security/coreconf/rules.mk
                         continue
+                    elif 'autoconf.mk' in include_filename:
+                        # We already include this file automatically, so skip
+                        # any lines that try to include it again.
+                        continue
                     else:
                         files = s.exp.resolvesplit(makefile, makefile.variables)
                         for f in files:
