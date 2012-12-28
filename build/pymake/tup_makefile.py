@@ -14,6 +14,8 @@ class TupMakefile(object):
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC, '.')
+        self.autoconf_makefile.variables.set('topsrcdir', pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC, moz_root)
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
@@ -177,6 +179,10 @@ class TupMakefile(object):
             # We just want to use the current directory in such cases.
             if path == '@srcdir@' or path == '.':
                 fullpath = os.path.join(subdir, filename)
+            elif path.startswith('..'):
+                # other-licenses/snappy/Makefile.in uses $(topsrcdir) in its
+                # VPATH, so we account for that here.
+                fullpath = os.path.join(path, filename)
             else:
                 fullpath = os.path.join(subdir, path, filename)
 
