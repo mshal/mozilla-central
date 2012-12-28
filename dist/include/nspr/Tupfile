@@ -4,4 +4,10 @@
 
 include_rules
 
-: foreach $(MOZ_ROOT)/nsprpub/pr/include/*.h |> !ln |>
+headers += $(MOZ_ROOT)/nsprpub/lib/ds/plarena.h
+headers += $(MOZ_ROOT)/nsprpub/lib/ds/plarenas.h
+headers += $(MOZ_ROOT)/nsprpub/lib/ds/plhash.h
+headers += $(MOZ_ROOT)/nsprpub/lib/libc/include/*.h
+headers += $(MOZ_ROOT)/nsprpub/pr/include/*.h
+
+: foreach $(headers) |> !ln |>
