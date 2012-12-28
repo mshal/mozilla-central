@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, makefile_name='Makefile.in', always_allow=False, allow_includes=False):
+    def __init__(self, moz_root, makefile_name='Makefile.in', allow_includes=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -18,7 +18,6 @@ class TupMakefile(object):
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
         self.makefile_name = makefile_name
-        self.always_allow = always_allow
         self.allow_includes = allow_includes
 
         autoconf_path = os.path.join(moz_root, "autoconf.mk")
@@ -45,6 +44,7 @@ class TupMakefile(object):
                 'js/src',
                 'memory/mozjemalloc',
                 'modules/zlib',
+                'security/nss',
                 ]:
             tier = os.path.join(moz_root, dirname)
             self.enabled_dirs[tier] = True
@@ -175,6 +175,6 @@ class TupMakefile(object):
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)
 
-        if self.makefile_is_enabled(subdir) or self.always_allow:
+        if self.makefile_is_enabled(subdir):
             makefile_in = os.path.join(subdir, self.makefile_name)
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)

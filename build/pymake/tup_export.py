@@ -9,20 +9,18 @@ import tup_makefile
 from optparse import OptionParser
 
 if len(sys.argv) < 4:
-    sys.exit('usage: %s [-a] [-m Makefile] EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
+    sys.exit('usage: %s [--allow-includes] [-m Makefile] EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
 
 p = OptionParser()
 p.add_option('-m', dest='makefile', default='Makefile.in',
         help='Optional: Name of the Makefile (defaults to Makefile.in)')
-p.add_option('-a', action='store_true', dest='always_allow', default=False,
-        help='Always parse the Makefile - do not check up the tree for DIRS inclusion.')
 p.add_option('--allow-includes', action='store_true', dest='allow_includes', default=False,
         help='Allow the "include" directive to work.')
 
 (options, args) = p.parse_args()
 
 export_var = args[0]
-tupmk = tup_makefile.TupMakefile(args[1], options.makefile, options.always_allow, options.allow_includes)
+tupmk = tup_makefile.TupMakefile(args[1], options.makefile, options.allow_includes)
 
 for subdir in args[2:]:
     tupmk.parse(subdir)

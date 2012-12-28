@@ -270,7 +270,7 @@ NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ssl
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/util
 NSS_DIRS += $(MOZ_ROOT)/security/nss/tests/pkcs11/netscape/suites/security/ssl
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -a -m Makefile EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
 
 # Copy some extra headers from one-off directories that don't use EXPORTS, or wildcard *.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/ds/*.h
