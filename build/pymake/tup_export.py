@@ -16,11 +16,13 @@ p.add_option('-m', dest='makefile', default='Makefile.in',
         help='Optional: Name of the Makefile (defaults to Makefile.in)')
 p.add_option('-a', action='store_true', dest='always_allow', default=False,
         help='Always parse the Makefile - do not check up the tree for DIRS inclusion.')
+p.add_option('--allow-includes', action='store_true', dest='allow_includes', default=False,
+        help='Allow the "include" directive to work.')
 
 (options, args) = p.parse_args()
 
 export_var = args[0]
-tupmk = tup_makefile.TupMakefile(args[1], options.makefile, options.always_allow)
+tupmk = tup_makefile.TupMakefile(args[1], options.makefile, options.always_allow, options.allow_includes)
 
 for subdir in args[2:]:
     tupmk.parse(subdir)

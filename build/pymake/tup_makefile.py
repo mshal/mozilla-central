@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, makefile_name='Makefile.in', always_allow=False):
+    def __init__(self, moz_root, makefile_name='Makefile.in', always_allow=False, allow_includes=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -19,6 +19,7 @@ class TupMakefile(object):
         self.moz_root = moz_root
         self.makefile_name = makefile_name
         self.always_allow = always_allow
+        self.allow_includes = allow_includes
 
         autoconf_path = os.path.join(moz_root, "autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
@@ -48,11 +49,7 @@ class TupMakefile(object):
             tier = os.path.join(moz_root, dirname)
             self.enabled_dirs[tier] = True
 
-    def process_makefile(self, makefile, context, filename):
-        source = None
-
-        statements = pymake.parser.parsefile(filename)
-
+    def process_statements(self, makefile, context, dirname, statements):
         for s in statements:
             if isinstance(s, pymake.parserdata.SetVariable):
 
@@ -63,13 +60,45 @@ class TupMakefile(object):
 
                 s.execute(makefile, context)
             elif isinstance(s, pymake.parserdata.Include):
-                # Includes are ignored. We just want the variable data from
-                # Makefile.in
+                # Includes are generally ignored. The Makefiles in security/nss
+                # are an exception, since much of the data is actually defined
+                # in security/coreconf/* and the manifest.mn files, which are
+                # included by the Makefile.
+                if self.allow_includes:
+                    include_filename = s.exp.to_source()
+                    if '$(topsrcdir)' in include_filename:
+                        # Ignore things like rules.mk
+                        continue
+                    elif '$(MKDEPENDENCIES)' in include_filename:
+                        # Make dependencies aren't needed for tup, and this
+                        # variable may not be defined (in
+                        # security/coreconf/config.mk)
+                        continue
+                    elif '$(DEPENDENCIES)' in include_filename:
+                        # Similar to MKDEPENDENCIES, but now in
+                        # security/coreconf/rules.mk
+                        continue
+                    else:
+                        files = s.exp.resolvesplit(makefile, makefile.variables)
+                        for f in files:
+                            # We always include relative to the main Makefile,
+                            # so we have to pass in the original dirname to
+                            # process_statements(), rather than going back
+                            # through process_makefile().
+                            include_path = os.path.join(dirname, f)
+                            included_statements = pymake.parser.parsefile(include_path)
+                            self.process_statements(makefile, context, dirname, included_statements)
                 continue
             elif isinstance(s, pymake.parserdata.ConditionBlock):
-                s.execute(makefile, context)
-    #        else:
-    #            print >> sys.stderr, "[33mStatement: [0m", s
+                for c, ifstatements in s._groups:
+                    if c.evaluate(makefile):
+                        self.process_statements(makefile, context, dirname, ifstatements)
+                        break
+
+    def process_makefile(self, makefile, context, filename):
+        statements = pymake.parser.parsefile(filename)
+
+        self.process_statements(makefile, context, os.path.dirname(filename), statements)
 
     def get_var(self, varname, makefile=None):
         if makefile is None:
