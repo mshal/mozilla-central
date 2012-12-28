@@ -186,6 +186,9 @@ class TupMakefile(object):
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)
 
+        makefile_in = os.path.join(subdir, self.makefile_name)
+        if not os.path.exists(makefile_in):
+            print >> sys.stderr, "Error: Unable to find file: ", makefile_in
+            sys.exit(1)
         if self.makefile_is_enabled(subdir):
-            makefile_in = os.path.join(subdir, self.makefile_name)
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)
