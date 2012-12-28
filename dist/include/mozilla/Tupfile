@@ -33,4 +33,5 @@ EXPORT_DIRS += $(MOZ_ROOT)/xpcom/glue
 EXPORT_DIRS += $(MOZ_ROOT)/xpcom/io
 EXPORT_DIRS += $(MOZ_ROOT)/xpcom/threads
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla $(MOZ_ROOT) $(EXPORT_DIRS)
+# --allow-includes needed for mfbt, which defines exports in exported_headers.mk
+run python -B $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes EXPORTS_mozilla $(MOZ_ROOT) $(EXPORT_DIRS)

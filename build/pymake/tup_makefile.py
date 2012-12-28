@@ -43,6 +43,7 @@ class TupMakefile(object):
                 'db/sqlite3/src',
                 'js/src',
                 'memory/mozjemalloc',
+                'mfbt',
                 'modules/zlib',
                 'security/nss',
                 ]:
