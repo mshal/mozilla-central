@@ -174,21 +174,42 @@ class TupMakefile(object):
             if p.match(filename):
                 vpath.extend(dirs)
 
+        # Don't use the wild-carding method if we:
+        # 1) Just have a single VPATH (ie: the current directory), or
+        # 2) Are specifying an explicit relative directory where we don't expect
+        #    VPATH to kick in. Otherwise tup returns errors when non-existent
+        #    directories are used.
+        if len(vpath) == 1 or filename.find('/') != -1:
+            return os.path.join(subdir, filename)
+
+        # When VPATH is enabled, we return one entry for each path with a
+        # wildcard attached. If we use something like os.path.exists() to find
+        # the exact correct file, tup will detect these dependencies and cause
+        # the Tupfile to be re-parsed when the file is modified. Extraneous
+        # parsing is undesirable, and this strange way of handling VPATH avoids
+        # the issue. It does also cause symlinks to files like js-config.h.in
+        # since js-config.h* matches both, but that isn't likely to cause
+        # problems.
+        returned_path = []
+        wildcard_filename = filename + "*"
         for path in vpath:
+
             # Since we are using Makefile.in, @srcdir@ won't be substituted.
             # We just want to use the current directory in such cases.
-            if path == '@srcdir@' or path == '.':
-                fullpath = os.path.join(subdir, filename)
+            path = path.replace('@srcdir@', '.')
+
+            if path == '.':
+                fullpath = os.path.join(subdir, wildcard_filename)
             elif path.startswith('..'):
                 # other-licenses/snappy/Makefile.in uses $(topsrcdir) in its
                 # VPATH, so we account for that here.
-                fullpath = os.path.join(path, filename)
+                fullpath = os.path.join(path, wildcard_filename)
             else:
-                fullpath = os.path.join(subdir, path, filename)
+                fullpath = os.path.join(subdir, path, wildcard_filename)
 
-            if os.path.exists(fullpath):
-                return fullpath
-        return None
+            returned_path.append(fullpath)
+
+        return ' '.join(returned_path)
 
     def parse(self, subdir):
         self.subdir_makefile = copy.deepcopy(self.autoconf_makefile)

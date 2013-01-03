@@ -100,7 +100,8 @@ EXPORT_DIRS += $(MOZ_ROOT)/js/jsd
 EXPORT_DIRS += $(MOZ_ROOT)/js/src/config
 EXPORT_DIRS += $(MOZ_ROOT)/js/src
 EXPORT_DIRS += $(MOZ_ROOT)/js/xpconnect/public
-EXPORT_DIRS += $(MOZ_ROOT)/js/xpconnect/src
+# TODO: Generated headers
+#EXPORT_DIRS += $(MOZ_ROOT)/js/xpconnect/src
 EXPORT_DIRS += $(MOZ_ROOT)/layout/base
 EXPORT_DIRS += $(MOZ_ROOT)/layout/build
 EXPORT_DIRS += $(MOZ_ROOT)/layout/forms
@@ -141,7 +142,8 @@ EXPORT_DIRS += $(MOZ_ROOT)/netwerk/base/public
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/base/src
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/build
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/cache
-EXPORT_DIRS += $(MOZ_ROOT)/netwerk
+# TODO: necko-config.h
+#EXPORT_DIRS += $(MOZ_ROOT)/netwerk
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/mime
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/protocol/about
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/protocol/ftp
@@ -206,8 +208,10 @@ run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS $(MOZ_ROOT) $(EXPOR
 # These dirs specify SDK_HEADERS, which are really just EXPORTS
 SDK_HEADER_DIRS += $(MOZ_ROOT)/embedding/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/intl/unicharutil/util
-SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom
-SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/base
+# TODO: xpcom-config.h
+#SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom
+# TODO: auto-generated headers
+#SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/build
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/glue
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/glue/standalone
