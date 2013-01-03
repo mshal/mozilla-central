@@ -1,0 +1,5 @@
+include_rules
+
+export PYTHONPATH
+
+: xpcom-config.h.in |> !preprocess_header |> xpcom-config.h

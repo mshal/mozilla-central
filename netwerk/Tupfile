@@ -2,4 +2,4 @@ include_rules
 
 export PYTHONPATH
 
-: necko-config.h.in |> $(MOZ_ROOT)/build/tup-preprocessor.py %f %o |> necko-config.h
+: necko-config.h.in |> !preprocess_header |> necko-config.h

@@ -207,8 +207,7 @@ run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS $(MOZ_ROOT) $(EXPOR
 # These dirs specify SDK_HEADERS, which are really just EXPORTS
 SDK_HEADER_DIRS += $(MOZ_ROOT)/embedding/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/intl/unicharutil/util
-# TODO: xpcom-config.h
-#SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom
+SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom
 # TODO: auto-generated headers
 #SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/build
