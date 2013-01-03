@@ -23,8 +23,7 @@ EXPORT_DIRS += $(MOZ_ROOT)/mfbt
 EXPORT_DIRS += $(MOZ_ROOT)/modules/libpref/public
 EXPORT_DIRS += $(MOZ_ROOT)/storage/public
 EXPORT_DIRS += $(MOZ_ROOT)/toolkit/components/startup
-# TODO: auto-generated headers
-#EXPORT_DIRS += $(MOZ_ROOT)/toolkit/components/telemetry
+EXPORT_DIRS += $(MOZ_ROOT)/toolkit/components/telemetry
 EXPORT_DIRS += $(MOZ_ROOT)/widget
 EXPORT_DIRS += $(MOZ_ROOT)/xpcom/base
 EXPORT_DIRS += $(MOZ_ROOT)/xpcom/build
