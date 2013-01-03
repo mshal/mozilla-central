@@ -60,8 +60,6 @@ VPATH += \
   $(srcdir)/vp8/common/x86 \
   $(srcdir)/vp8/decoder \
   $(srcdir)/vp8/decoder/arm \
-  $(srcdir)/vp8/decoder/arm/armv6 \
-  $(srcdir)/vp8/decoder/arm/neon \
   $(srcdir)/vp8/decoder/generic \
   $(srcdir)/vp8/decoder/x86 \
   $(NULL)
