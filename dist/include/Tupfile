@@ -208,8 +208,7 @@ run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS $(MOZ_ROOT) $(EXPOR
 SDK_HEADER_DIRS += $(MOZ_ROOT)/embedding/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/intl/unicharutil/util
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom
-# TODO: auto-generated headers
-#SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/base
+SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/base
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/build
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/glue
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/glue/standalone
