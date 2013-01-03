@@ -142,8 +142,7 @@ EXPORT_DIRS += $(MOZ_ROOT)/netwerk/base/public
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/base/src
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/build
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/cache
-# TODO: necko-config.h
-#EXPORT_DIRS += $(MOZ_ROOT)/netwerk
+EXPORT_DIRS += $(MOZ_ROOT)/netwerk
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/mime
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/protocol/about
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/protocol/ftp
