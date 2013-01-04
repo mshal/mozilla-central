@@ -11,6 +11,7 @@ EXPORT_DIRS += $(MOZ_ROOT)/content/canvas/src
 EXPORT_DIRS += $(MOZ_ROOT)/content/media/webaudio
 EXPORT_DIRS += $(MOZ_ROOT)/dom/activities/src
 EXPORT_DIRS += $(MOZ_ROOT)/dom/base
+EXPORT_DIRS += $(MOZ_ROOT)/dom/bindings
 EXPORT_DIRS += $(MOZ_ROOT)/dom/encoding
 EXPORT_DIRS += $(MOZ_ROOT)/dom/ipc
 EXPORT_DIRS += $(MOZ_ROOT)/dom/src/storage

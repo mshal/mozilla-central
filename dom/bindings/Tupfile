@@ -1,0 +1,34 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+include ../webidl/WebIDL.mk
+
+bindinggen_dependencies = \
+			  BindingGen.py \
+			  Bindings.conf \
+			  Configuration.py \
+			  Codegen.py \
+			  parser/WebIDL.py \
+			  ParserResults.pkl \
+			  $(NULL)
+
+globalgen_targets = \
+		    PrototypeList.h \
+		    RegisterBindings.h \
+		    RegisterBindings.cpp \
+		    UnionTypes.h \
+		    UnionTypes.cpp \
+		    UnionConversions.h \
+		    $(NULL)
+
+all_webidl_files = $(webidl_files) $(generated_webidl_files) $(test_webidl_files)
+
+: |> ^ Preprocess -> CSS2Properties.webidl^ @(CPP) -I$(MOZ_ROOT)/layout/style ../webidl/CSS2PropertiesProps.h | $(PYTHON) GenerateCSS2PropertiesWebIDL.py ../webidl/CSS2Properties.webidl.in > %o |> CSS2Properties.webidl {webidls}
+
+: foreach ../webidl/*.webidl |> !ln |> {webidls}
+: foreach test/*.webidl |> !ln |> {webidls}
+
+: {webidls} |> ^ GlobalGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser GlobalGen.py Bindings.conf . $(all_webidl_files) |> ParserResults.pkl parser.out WebIDLGrammar.pkl $(globalgen_targets)
