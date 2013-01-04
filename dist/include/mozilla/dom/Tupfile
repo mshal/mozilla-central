@@ -18,3 +18,5 @@ EXPORT_DIRS += $(MOZ_ROOT)/dom/src/storage
 EXPORT_DIRS += $(MOZ_ROOT)/uriloader/exthandler
 
 run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom $(MOZ_ROOT) $(EXPORT_DIRS)
+
+: foreach $(MOZ_ROOT)/dom/bindings/*Binding.h |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>
