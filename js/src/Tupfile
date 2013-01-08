@@ -1,0 +1,5 @@
+include_rules
+
+export PYTHONPATH
+
+: js-config.h.in |> !preprocess_header |> js-config.h
