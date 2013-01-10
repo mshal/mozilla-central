@@ -275,3 +275,5 @@ INSTALL_ALL_HEADERS += $(MOZ_ROOT)/config/nsStaticComponents.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/js/xpconnect/src/DictionaryHelpers.h
 
 : foreach $(INSTALL_ALL_HEADERS) |> !ln |> %b <installed-headers>
+
+: $(MOZ_ROOT)/nsprpub/pr/include/md/@(MDCPUCFG_H) |> !ln |> prcpucfg.h <installed-headers>
