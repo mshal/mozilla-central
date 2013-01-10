@@ -15,4 +15,4 @@ EXPORT_DIRS += $(MOZ_ROOT)/netwerk/protocol/wyciwyg
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/sctp/datachannel
 EXPORT_DIRS += $(MOZ_ROOT)/netwerk/sctp/src
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/net $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/net $(MOZ_ROOT) $(EXPORT_DIRS)

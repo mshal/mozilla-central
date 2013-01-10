@@ -8,4 +8,4 @@ include_rules
 EXPORT_DIRS += $(MOZ_ROOT)/storage/public
 EXPORT_DIRS += $(MOZ_ROOT)/storage/src
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/storage $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/storage $(MOZ_ROOT) $(EXPORT_DIRS)

@@ -9,4 +9,4 @@ EXPORT_DIRS += $(MOZ_ROOT)/js/src
 
 export SHELL
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_gc $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_gc $(MOZ_ROOT) $(EXPORT_DIRS)

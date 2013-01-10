@@ -7,4 +7,4 @@ include_rules
 # List of directories that contain EXPORTS_opus
 EXPORT_DIRS += $(MOZ_ROOT)/media/libopus
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_opus $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_opus $(MOZ_ROOT) $(EXPORT_DIRS)

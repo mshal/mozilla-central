@@ -7,4 +7,4 @@ include_rules
 # List of directories that contain EXPORTS_mozilla/plugins
 EXPORT_DIRS += $(MOZ_ROOT)/dom/plugins/ipc
 
-run python -B $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/plugins $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/plugins $(MOZ_ROOT) $(EXPORT_DIRS)
