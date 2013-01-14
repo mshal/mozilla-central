@@ -2,4 +2,4 @@ include_rules
 
 export PYTHONPATH
 
-: js-config.h.in |> !preprocess_header |> js-config.h
+: js-config.h.in |> !preprocess_header |> js-config.h | $(MOZ_ROOT)/dist/include/<installed-headers>

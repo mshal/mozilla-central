@@ -2,4 +2,4 @@ include_rules
 
 histograms_file = Histograms.json
 
-: |> $(PYTHON) gen-histogram-enum.py $(histograms_file) > %o |> TelemetryHistogramEnums.h
+: |> $(PYTHON) gen-histogram-enum.py $(histograms_file) > %o |> TelemetryHistogramEnums.h | $(MOZ_ROOT)/dist/include/<installed-headers>
