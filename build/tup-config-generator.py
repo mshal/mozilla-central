@@ -4,24 +4,33 @@ import sys
 import os
 import re
 
-if len(sys.argv) < 4:
-    sys.exit('usage: %s path/to/config.status path/to/nsprpub/autoconf.mk path/to/tup.config' % sys.argv[0])
+def set_config(name, value, setvals):
+    if name not in setvals:
+        setvals[name] = value
+        print >> output, "CONFIG_%s=%s" % (name, value)
+
+if len(sys.argv) < 5:
+    sys.exit('usage: %s path/to/config.status path/to/js-config.status path/to/nsprpub/autoconf.mk path/to/tup.config' % sys.argv[0])
+
+setvals = {}
 
 config_status_path = sys.argv[1]
-nsprpub_path = sys.argv[2]
-tup_config_path = sys.argv[3]
+js_config_status_path = sys.argv[2]
+nsprpub_path = sys.argv[3]
+tup_config_path = sys.argv[4]
 
 sys.path.append(os.path.dirname(config_status_path))
-from configstatus import defines, substs, non_global_defines
+sys.path.append(os.path.dirname(js_config_status_path))
+import configstatus
 
 output = open(tup_config_path, 'w')
 
-for name, value in defines:
-    print >> output, "CONFIG_%s=%s" % (name, value)
+for name, value in configstatus.defines:
+    set_config(name, value, setvals)
 
-for name, value in substs:
+for name, value in configstatus.substs:
     # TODO: Expand $(FOO) and ${FOO} here?
-    print >> output, "CONFIG_%s=%s" % (name, value)
+    set_config(name, value, setvals)
 
 for line in open(nsprpub_path, 'r'):
     m = re.match("([A-Z_]*)[ \t]*= *(.*)", line)
@@ -32,4 +41,13 @@ for line in open(nsprpub_path, 'r'):
                           'PR_MD_ARCH_DIR',
                           'CPU_ARCH',
                           ]:
-            print >> output, "CONFIG_%s=%s" % (m.group(1), m.group(2))
+            set_config(m.group(1), m.group(2), setvals)
+
+# Now from js/src/config.status
+import jsconfigstatus
+for name, value in jsconfigstatus.defines:
+    set_config(name, value, setvals)
+
+for name, value in jsconfigstatus.substs:
+    # TODO: Expand $(FOO) and ${FOO} here?
+    set_config(name, value, setvals)
