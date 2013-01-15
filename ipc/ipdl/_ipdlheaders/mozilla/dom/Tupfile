@@ -1,5 +1,15 @@
 include_rules
+
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBlob.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBlobStream.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBrowser.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContentDialog.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContent.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContentPermissionRequest.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PCrashReporter.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PMemoryReportRequest.ipdl
+
 IPDLSRCS += $(MOZ_ROOT)/uriloader/exthandler/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/*.ipdl
 IPDLSRCS += $(MOZ_ROOT)/dom/src/storage/*.ipdl
+
 include $(MOZ_ROOT)/build/tup/ipdl.tup

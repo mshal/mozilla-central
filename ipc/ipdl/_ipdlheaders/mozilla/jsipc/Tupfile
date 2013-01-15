@@ -1,0 +1,3 @@
+include_rules
+IPDLSRCS += $(MOZ_ROOT)/js/ipc/*.ipdl
+include $(MOZ_ROOT)/build/tup/ipdl.tup

@@ -1,0 +1,4 @@
+include_rules
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PDocumentRenderer.ipdl
+IPDLSRCS += $(MOZ_ROOT)/ipc/testshell/*.ipdl
+include $(MOZ_ROOT)/build/tup/ipdl.tup
