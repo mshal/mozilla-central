@@ -1,0 +1,5 @@
+include_rules
+IPDLSRCS += $(MOZ_ROOT)/uriloader/exthandler/*.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/ipc/*.ipdl
+IPDLSRCS += $(MOZ_ROOT)/dom/src/storage/*.ipdl
+include $(MOZ_ROOT)/build/tup/ipdl.tup
