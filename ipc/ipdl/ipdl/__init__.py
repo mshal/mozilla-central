@@ -35,16 +35,19 @@ def typecheck(ast, errout=sys.stderr):
     return TypeCheck().check(ast, errout)
 
 
-def gencxx(ipdlfilename, ast, outheadersdir, outcppdir):
+def gencxx(ipdlfilename, ast, outheadersdir, outcppdir, tup_support=False):
     headers, cpps = LowerToCxx().lower(ast)
 
     def resolveHeader(hdr):
-        return [
-            hdr, 
-            os.path.join(
-                outheadersdir,
-                *([ns.name for ns in ast.namespaces] + [hdr.name]))
-        ]
+        if tup_support:
+            return [ hdr, os.path.join(outheadersdir, hdr.name) ]
+        else:
+            return [
+                hdr,
+                os.path.join(
+                    outheadersdir,
+                    *([ns.name for ns in ast.namespaces] + [hdr.name]))
+            ]
     def resolveCpp(cpp):
         return [ cpp, os.path.join(outcppdir, cpp.name) ]
 
@@ -52,7 +55,10 @@ def gencxx(ipdlfilename, ast, outheadersdir, outcppdir):
                           + [ resolveCpp(cpp) for cpp in cpps ]):
         tempfile = StringIO()
         CxxCodeGen(tempfile).cgen(ast)
-        writeifmodified(tempfile.getvalue(), filename)
+        if tup_support:
+            write_tup(tempfile.getvalue(), filename)
+        else:
+            writeifmodified(tempfile.getvalue(), filename)
 
 
 def genipdl(ast, outdir):
@@ -72,3 +78,8 @@ def writeifmodified(contents, file):
         fd = open(file, 'wb')
         fd.write(contents)
         fd.close()
+
+def write_tup(contents, file):
+    fd = open(file, 'wb')
+    fd.write(contents)
+    fd.close()
