@@ -13,4 +13,4 @@ PYHEADER = $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/xpcom/idl-parser/header.py
 !ln = |> ^ LN %o -> %f^ ln -s %f %o |> %b
 !preprocess_header = |> ^ Preprocess %f -> %o^ $(PYTHON) $(MOZ_ROOT)/build/tup-preprocessor.py %f %o |>
 
-!ipdl = |> ^ ipdl %f^ $(PYTHON) $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply $(MOZ_ROOT)/ipc/ipdl/tup-ipdl.py $(IPDLFLAGS) %f |> %BChild.cpp %BParent.cpp %B.cpp %BChild.h %BParent.h %B.h ipdl_lextab.py ipdl_yacctab.py
+!ipdl = |> ^ ipdl %f^ $(PYTHON) $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply $(MOZ_ROOT)/ipc/ipdl/tup-ipdl.py $(IPDLFLAGS) %f |> %BChild.cpp %BParent.cpp %B.cpp %BChild.h %BParent.h %B.h

@@ -19,12 +19,18 @@ op.add_option('-I', '--include', dest='includedirs', default=[ ],
               help='Additional directory to search for included protocol specifications')
 op.add_option('-v', '--verbose', dest='verbosity', default=1, action='count',
               help='Verbose logging (specify -vv or -vvv for very verbose logging)')
+op.add_option('--regen', action='store_true', dest='regen', default=False,
+              help='Regenerate ipdl_lextab.py and ipdl_yacctab.py')
 op.add_option('-q', '--quiet', dest='verbosity', action='store_const', const=0,
               help="Suppress logging output")
 
 options, files = op.parse_args()
 _verbosity = options.verbosity
 includedirs = [ os.path.abspath(incdir) for incdir in options.includedirs ]
+
+if options.regen:
+    ipdl.parse(None, regen=True)
+    sys.exit(0)
 
 if not len(files):
     op.error("No IPDL files specified")

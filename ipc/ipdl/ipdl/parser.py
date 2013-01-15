@@ -54,7 +54,7 @@ class Parser:
         self.direction = None
         self.errout = None
 
-    def parse(self, input, filename, includedirs, errout):
+    def parse(self, input, filename, includedirs, errout, regen=False):
         assert os.path.isabs(filename)
 
         if filename in Parser.parsed:
@@ -66,6 +66,8 @@ class Parser:
         self.parser = yacc.yacc(debug=self.debug,
                                 optimize=not self.debug,
                                 tabmodule="ipdl_yacctab")
+        if regen:
+            return None
         self.filename = filename
         self.includedirs = includedirs
         self.tu.filename = filename

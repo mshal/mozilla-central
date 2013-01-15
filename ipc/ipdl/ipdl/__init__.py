@@ -15,7 +15,7 @@ from ipdl.type import TypeCheck
 from ipdl.cxx.cgen import CxxCodeGen
 
 
-def parse(specstring, filename='/stdin', includedirs=[ ], errout=sys.stderr):
+def parse(specstring, filename='/stdin', includedirs=[ ], errout=sys.stderr, regen=False):
     '''Return an IPDL AST if parsing was successful.  Print errors to |errout|
     if it is not.'''
     # The file type and name are later enforced by the type checker.
@@ -26,7 +26,7 @@ def parse(specstring, filename='/stdin', includedirs=[ ], errout=sys.stderr):
         type = 'header'
     else:
         type = 'protocol'
-    return Parser(type, name).parse(specstring, os.path.abspath(filename), includedirs, errout)
+    return Parser(type, name).parse(specstring, os.path.abspath(filename), includedirs, errout, regen)
 
 
 def typecheck(ast, errout=sys.stderr):
