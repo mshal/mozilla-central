@@ -1,3 +1,4 @@
 include_rules
 IPDLSRCS += $(MOZ_ROOT)/dom/sms/src/ipc/*.ipdl
+IPDLHEADERS += $(MOZ_ROOT)/dom/sms/src/ipc/*.ipdlh
 include $(MOZ_ROOT)/build/tup/ipdl.tup

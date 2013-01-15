@@ -21,4 +21,5 @@ IPDLFLAGS += -I$(MOZ_ROOT)/netwerk/protocol/websocket
 IPDLFLAGS += -I$(MOZ_ROOT)/netwerk/cookie 
 IPDLFLAGS += -I$(MOZ_ROOT)/uriloader/prefetch 
 
-: foreach $(IPDLSRCS) | $(MOZ_ROOT)/ipc/ipdl/<ipdl-tabs> |> !ipdl |>
+: foreach $(IPDLSRCS) | $(MOZ_ROOT)/ipc/ipdl/<ipdl-tabs> |> !ipdl |> %BChild.cpp %BParent.cpp %B.cpp %BChild.h %BParent.h %B.h
+: foreach $(IPDLHEADERS) | $(MOZ_ROOT)/ipc/ipdl/<ipdl-tabs> |> !ipdl |> %B.h %B.cpp
