@@ -1,4 +1,4 @@
-IPDLSRCS =					\
+IPDLSRCS +=					\
   PTestActorPunning.ipdl			\
   PTestActorPunningPunned.ipdl			\
   PTestActorPunningSub.ipdl			\
