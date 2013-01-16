@@ -1,0 +1,27 @@
+include_rules
+
+include $(MOZ_ROOT)/dom/bluetooth/ipc/ipdl.mk
+include $(MOZ_ROOT)/dom/devicestorage/ipdl.mk
+include $(MOZ_ROOT)/dom/indexedDB/ipc/ipdl.mk
+include $(MOZ_ROOT)/dom/ipc/ipdl.mk
+include $(MOZ_ROOT)/dom/network/src/ipdl.mk
+include $(MOZ_ROOT)/dom/plugins/ipc/ipdl.mk
+include $(MOZ_ROOT)/dom/sms/src/ipc/ipdl.mk
+include $(MOZ_ROOT)/dom/src/storage/ipdl.mk
+include $(MOZ_ROOT)/gfx/layers/ipc/ipdl.mk
+include $(MOZ_ROOT)/hal/sandbox/ipdl.mk
+include $(MOZ_ROOT)/ipc/glue/ipdl.mk
+include $(MOZ_ROOT)/ipc/ipdl/test/cxx/ipdl.mk
+include $(MOZ_ROOT)/ipc/testshell/ipdl.mk
+include $(MOZ_ROOT)/js/ipc/ipdl.mk
+include $(MOZ_ROOT)/layout/ipc/ipdl.mk
+include $(MOZ_ROOT)/netwerk/cookie/ipdl.mk
+include $(MOZ_ROOT)/netwerk/ipc/ipdl.mk
+include $(MOZ_ROOT)/netwerk/protocol/ftp/ipdl.mk
+include $(MOZ_ROOT)/netwerk/protocol/http/ipdl.mk
+include $(MOZ_ROOT)/netwerk/protocol/websocket/ipdl.mk
+include $(MOZ_ROOT)/netwerk/protocol/wyciwyg/ipdl.mk
+include $(MOZ_ROOT)/uriloader/exthandler/ipdl.mk
+include $(MOZ_ROOT)/uriloader/prefetch/ipdl.mk
+
+: |> ^ ipdl %o^ $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/ipc/ipdl/tup-ipdl.py --gen-ipc-message-start $(IPDLSRCS) |> IPCMessageStart.h | $(MOZ_ROOT)/dist/include/<installed-headers>
