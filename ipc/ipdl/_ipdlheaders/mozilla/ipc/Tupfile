@@ -1,5 +1,5 @@
 include_rules
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PDocumentRenderer.ipdl
-IPDLSRCS += $(MOZ_ROOT)/ipc/testshell/*.ipdl
-IPDLHEADERS += $(MOZ_ROOT)/ipc/glue/*.ipdlh
-include $(MOZ_ROOT)/build/tup/ipdl.tup
+IPDLDIRS += $(MOZ_ROOT)/dom/ipc
+IPDLDIRS += $(MOZ_ROOT)/ipc/testshell
+IPDLDIRS += $(MOZ_ROOT)/ipc/glue
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)

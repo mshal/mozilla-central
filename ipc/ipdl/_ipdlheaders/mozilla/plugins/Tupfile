@@ -1,3 +1,3 @@
 include_rules
-IPDLSRCS += $(MOZ_ROOT)/dom/plugins/ipc/*.ipdl
-include $(MOZ_ROOT)/build/tup/ipdl.tup
+IPDLDIRS += $(MOZ_ROOT)/dom/plugins/ipc
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)

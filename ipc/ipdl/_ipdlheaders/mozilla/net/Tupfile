@@ -1,9 +1,9 @@
 include_rules
-IPDLSRCS += $(MOZ_ROOT)/dom/network/src/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/cookie/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/ipc/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/protocol/ftp/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/protocol/http/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/protocol/websocket/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/netwerk/protocol/wyciwyg/*.ipdl
-include $(MOZ_ROOT)/build/tup/ipdl.tup
+IPDLDIRS += $(MOZ_ROOT)/dom/network/src
+IPDLDIRS += $(MOZ_ROOT)/netwerk/cookie
+IPDLDIRS += $(MOZ_ROOT)/netwerk/ipc
+IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/ftp
+IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/http
+IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/websocket
+IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/wyciwyg
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)

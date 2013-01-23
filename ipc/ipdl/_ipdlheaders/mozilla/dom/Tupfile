@@ -1,17 +1,5 @@
 include_rules
-
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBlob.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBlobStream.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PBrowser.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContentDialog.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContent.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PContentPermissionRequest.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PCrashReporter.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/ipc/PMemoryReportRequest.ipdl
-
-IPDLSRCS += $(MOZ_ROOT)/uriloader/exthandler/*.ipdl
-IPDLSRCS += $(MOZ_ROOT)/dom/src/storage/*.ipdl
-
-IPDLHEADERS += $(MOZ_ROOT)/dom/ipc/*.ipdlh
-
-include $(MOZ_ROOT)/build/tup/ipdl.tup
+IPDLDIRS += $(MOZ_ROOT)/dom/ipc
+IPDLDIRS += $(MOZ_ROOT)/uriloader/exthandler
+IPDLDIRS += $(MOZ_ROOT)/dom/src/storage
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)

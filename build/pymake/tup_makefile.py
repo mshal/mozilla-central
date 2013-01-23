@@ -9,7 +9,8 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, makefile_name='Makefile.in', allow_includes=False):
+    def __init__(self, moz_root, makefile_name='Makefile.in', allow_includes=False,
+                 always_enabled=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -21,6 +22,7 @@ class TupMakefile(object):
         self.moz_root = moz_root
         self.makefile_name = makefile_name
         self.allow_includes = allow_includes
+        self.always_enabled = always_enabled
 
         autoconf_path = os.path.join(moz_root, "autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
@@ -219,5 +221,5 @@ class TupMakefile(object):
         if not os.path.exists(makefile_in):
             print >> sys.stderr, "Error: Unable to find file: ", makefile_in
             sys.exit(1)
-        if self.makefile_is_enabled(subdir):
+        if self.makefile_is_enabled(subdir) or self.always_enabled:
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)
