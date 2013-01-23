@@ -1,10 +1,10 @@
 include_rules
 
-ifeq (@(MOZ_B2G_BT),1)
+ifeq ($(MOZ_B2G_BT),1)
 DEFINES += -DMOZ_B2G_BT=1
 endif
 
-ifeq (@(MOZ_B2G_RIL),1)
+ifeq ($(MOZ_B2G_RIL),1)
 DEFINES += -DMOZ_B2G_RIL=1
 endif
 
