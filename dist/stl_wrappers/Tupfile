@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+ifneq ($(WRAP_STL_INCLUDES),)
+
+ifneq ($(GNU_CXX),)
+    stl_compiler = gcc
+endif
+ifneq ($(_MSC_VER),)
+    stl_compiler = msvc
+endif
+
+endif
+
+ifneq ($(stl_compiler),)
+# Run a python script to print out the rule - it will look in the stl-headers
+# file for the list of header files to generate as outputs. This way we don't
+# have to duplicate that list in the Tupfile.
+run $(PYTHON) gen_stl_rule.py $(MOZ_ROOT)
+endif
