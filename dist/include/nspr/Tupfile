@@ -12,4 +12,5 @@ headers += $(MOZ_ROOT)/nsprpub/pr/include/*.h
 
 : foreach $(headers) |> !ln |> %b $(MOZ_ROOT)/dist/include/<installed-headers>
 
-: $(MOZ_ROOT)/nsprpub/pr/include/md/@(MDCPUCFG_H) |> !ln |> prcpucfg.h $(MOZ_ROOT)/dist/include/<installed-headers>
+include $(MOZ_ROOT)/@(MOZ_OBJDIR)/nsprpub/config/autoconf.mk
+: $(MOZ_ROOT)/nsprpub/pr/include/md/$(MDCPUCFG_H) |> !ln |> prcpucfg.h $(MOZ_ROOT)/dist/include/<installed-headers>
