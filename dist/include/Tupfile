@@ -201,7 +201,7 @@ EXPORT_DIRS += $(MOZ_ROOT)/xpfe/appshell/public
 # Allow pymake to support $(shell) by giving it the SHELL environment variable.
 export SHELL
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)
 
 # These dirs specify SDK_HEADERS, which are really just EXPORTS
 SDK_HEADER_DIRS += $(MOZ_ROOT)/embedding/base
@@ -214,7 +214,7 @@ SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/glue/standalone
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/io
 SDK_HEADER_DIRS += $(MOZ_ROOT)/xpcom/string/public
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py SDK_HEADERS $(MOZ_ROOT) $(SDK_HEADER_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py SDK_HEADERS $(MOZ_ROOT) @(MOZ_OBJDIR) $(SDK_HEADER_DIRS)
 
 # NSS dirs run a little differently, since they use manifest.mn instead of Makefile.in
 # as the primary source of info.
@@ -265,7 +265,7 @@ NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/ssl
 NSS_DIRS += $(MOZ_ROOT)/security/nss/lib/util
 NSS_DIRS += $(MOZ_ROOT)/security/nss/tests/pkcs11/netscape/suites/security/ssl
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile EXPORTS $(MOZ_ROOT) $(NSS_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(NSS_DIRS)
 
 # Copy some extra headers from one-off directories that don't use EXPORTS, or wildcard *.h
 INSTALL_ALL_HEADERS += $(MOZ_ROOT)/nsprpub/lib/ds/*.h

@@ -2,4 +2,4 @@ include_rules
 IPDLDIRS += $(MOZ_ROOT)/dom/ipc
 IPDLDIRS += $(MOZ_ROOT)/ipc/testshell
 IPDLDIRS += $(MOZ_ROOT)/ipc/glue
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(IPDLDIRS)

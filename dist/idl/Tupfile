@@ -182,7 +182,7 @@ preload $(MOZ_ROOT)/build/pymake $(MOZ_ROOT)/build/pymake/pymake
 
 # Run the python script to parse the Makefile.in's in all the XPIDL_DIRS. This
 # will create symlinks to the necessary .idl files in dist/idl/.
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_xpidl.py $(MOZ_ROOT) $(XPIDL_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_xpidl.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(XPIDL_DIRS)
 
 # Generate the xpidl LALR tables. These are used during the .idl -> .h conversion.
 : |> ^ python header.py --regen -> [%o]^ $(PYHEADER) --cachedir=. --regen |> xpidlyacc.py xpidllex.py xpidl_debug <installed-idls>

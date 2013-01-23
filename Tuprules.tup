@@ -6,6 +6,9 @@
 
 MOZ_ROOT = $(TUP_CWD)
 
+topsrcdir = ../../build/tup
+include @(MOZ_OBJDIR)/config/autoconf.mk
+
 PYTHON = python -B
 PYTHONPATH = $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply
 PYHEADER = $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/xpcom/idl-parser/header.py

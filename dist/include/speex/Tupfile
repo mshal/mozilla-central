@@ -7,4 +7,4 @@ include_rules
 # List of directories that contain EXPORTS_speex
 EXPORT_DIRS += $(MOZ_ROOT)/media/libspeex_resampler/src
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_speex $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_speex $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)

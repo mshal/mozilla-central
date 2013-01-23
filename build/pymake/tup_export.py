@@ -8,8 +8,8 @@ import os
 import tup_makefile
 from optparse import OptionParser
 
-if len(sys.argv) < 4:
-    sys.exit('usage: %s [--allow-includes] [-m Makefile] EXPORTS MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
+if len(sys.argv) < 5:
+    sys.exit('usage: %s [--allow-includes] [-m Makefile] EXPORTS MOZ_ROOT MOZ_OBJDIR sub/dir1 [sub/dir2...]' % sys.argv[0])
 
 p = OptionParser()
 p.add_option('-m', dest='makefile', default='Makefile.in',
@@ -20,9 +20,11 @@ p.add_option('--allow-includes', action='store_true', dest='allow_includes', def
 (options, args) = p.parse_args()
 
 export_var = args[0]
-tupmk = tup_makefile.TupMakefile(args[1], options.makefile, options.allow_includes)
+tupmk = tup_makefile.TupMakefile(args[1], args[2],
+                                 makefile_name=options.makefile,
+                                 allow_includes=options.allow_includes)
 
-for subdir in args[2:]:
+for subdir in args[3:]:
     tupmk.parse(subdir)
 
     # TODO: If --exports is set? only should happen in dist/include

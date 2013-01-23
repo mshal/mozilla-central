@@ -6,4 +6,4 @@ IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/ftp
 IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/http
 IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/websocket
 IPDLDIRS += $(MOZ_ROOT)/netwerk/protocol/wyciwyg
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) $(IPDLDIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl_symlink.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(IPDLDIRS)

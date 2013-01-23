@@ -26,7 +26,7 @@ globalgen_targets = \
 
 all_webidl_files = $(webidl_files) $(generated_webidl_files) $(test_webidl_files)
 
-: |> ^ Preprocess -> CSS2Properties.webidl^ @(CPP) -I$(MOZ_ROOT)/layout/style ../webidl/CSS2PropertiesProps.h | $(PYTHON) GenerateCSS2PropertiesWebIDL.py ../webidl/CSS2Properties.webidl.in > %o |> CSS2Properties.webidl {webidls}
+: |> ^ Preprocess -> CSS2Properties.webidl^ $(CPP) -I$(MOZ_ROOT)/layout/style ../webidl/CSS2PropertiesProps.h | $(PYTHON) GenerateCSS2PropertiesWebIDL.py ../webidl/CSS2Properties.webidl.in > %o |> CSS2Properties.webidl {webidls}
 
 : foreach ../webidl/*.webidl |> !ln |> {webidls}
 : foreach test/*.webidl |> !ln |> {webidls}

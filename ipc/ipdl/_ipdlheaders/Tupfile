@@ -28,4 +28,4 @@ IPDLDIRS =  \
   $(MOZ_ROOT)/uriloader/prefetch  \
   $(NULL)
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl.py $(MOZ_ROOT) $(IPDLDIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_ipdl.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(IPDLDIRS)

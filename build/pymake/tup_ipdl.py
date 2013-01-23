@@ -7,16 +7,16 @@ import sys
 import os
 import tup_makefile
 
-if len(sys.argv) < 3:
-    sys.exit('usage: %s MOZ_ROOT sub/dir1 [sub/dir2...]' % sys.argv[0])
+if len(sys.argv) < 4:
+    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR, sub/dir1 [sub/dir2...]' % sys.argv[0])
 
-tupmk = tup_makefile.TupMakefile(sys.argv[1], makefile_name='ipdl.mk', always_enabled=True)
+tupmk = tup_makefile.TupMakefile(sys.argv[1], sys.argv[2], makefile_name='ipdl.mk', always_enabled=True)
 
 inputs = []
 incdirs = []
 outputs = ['IPCMessageStart.h', 'ipdl_lextab.py', 'ipdl_yacctab.py']
 
-for subdir in sys.argv[2:]:
+for subdir in sys.argv[3:]:
     tupmk.parse(subdir)
 
     incdirs.append('-I%s' % subdir)

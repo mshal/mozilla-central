@@ -7,4 +7,4 @@ include_rules
 # List of directories that contain EXPORTS_mozilla/dom/battery
 EXPORT_DIRS += $(MOZ_ROOT)/dom/battery
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/battery $(MOZ_ROOT) $(EXPORT_DIRS)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORTS_mozilla/dom/battery $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)

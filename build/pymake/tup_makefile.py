@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, makefile_name='Makefile.in', allow_includes=False,
+    def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in', allow_includes=False,
                  always_enabled=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
@@ -24,7 +24,7 @@ class TupMakefile(object):
         self.allow_includes = allow_includes
         self.always_enabled = always_enabled
 
-        autoconf_path = os.path.join(moz_root, "autoconf.mk")
+        autoconf_path = os.path.join(moz_root, moz_objdir, "config/autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
 
         self.process_makefile(self.autoconf_makefile, self.context, autoconf_path)
