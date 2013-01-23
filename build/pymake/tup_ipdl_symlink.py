@@ -29,4 +29,4 @@ for subdir in sys.argv[3:]:
                 sys.exit(1)
             for extension in extensions:
                 filename = "%s%s" % (basename, extension)
-                print ": %s |> !ln |> %s" % (os.path.join(sys.argv[1], 'ipc/ipdl/_ipdlheaders', filename), filename)
+                print ": %s |> !ln |> %s | $(MOZ_ROOT)/dist/include/<installed-headers>" % (os.path.join(sys.argv[1], 'ipc/ipdl/_ipdlheaders', filename), filename)

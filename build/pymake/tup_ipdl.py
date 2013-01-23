@@ -46,4 +46,5 @@ print ' '.join(inputs),
 print "|> ^ tup-ipdl.py %f^ $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/ipc/ipdl/tup-ipdl.py ",
 print ' '.join(incdirs),
 print "%f |>",
-print ' '.join(outputs)
+print ' '.join(outputs),
+print ' | $(MOZ_ROOT)/dist/include/<installed-headers>'
