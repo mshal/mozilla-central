@@ -2,4 +2,4 @@ include_rules
 
 export PYTHONPATH
 
-: xpcom-config.h.in |> !preprocess_header |> xpcom-config.h | $(MOZ_ROOT)/dist/include/<installed-headers>
+: $(MOZ_ROOT)/@(MOZ_OBJDIR)/xpcom/xpcom-config.h |> !ln |>

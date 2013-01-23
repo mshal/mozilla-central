@@ -14,4 +14,3 @@ PYTHONPATH = $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply
 PYHEADER = $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/xpcom/idl-parser/header.py
 
 !ln = |> ^ LN %o -> %f^ ln -s %f %o |> %b
-!preprocess_header = |> ^ Preprocess %f -> %o^ $(PYTHON) $(MOZ_ROOT)/build/tup-preprocessor.py %f %o |>

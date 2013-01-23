@@ -2,4 +2,4 @@ include_rules
 
 export PYTHONPATH
 
-: necko-config.h.in |> !preprocess_header |> necko-config.h
+: $(MOZ_ROOT)/@(MOZ_OBJDIR)/netwerk/necko-config.h |> !ln |>
