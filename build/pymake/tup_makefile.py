@@ -17,6 +17,12 @@ class TupMakefile(object):
                                              pymake.data.Variables.SOURCE_AUTOMATIC, '.')
         self.autoconf_makefile.variables.set('topsrcdir', pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC, moz_root)
+        self.autoconf_makefile.variables.set('DEPTH', pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             os.path.join(moz_root, moz_objdir))
+        self.autoconf_makefile.variables.set('DIST', pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             os.path.join(moz_root, 'dist'))
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
@@ -72,8 +78,12 @@ class TupMakefile(object):
                 # included by the Makefile.
                 if self.allow_includes:
                     include_filename = s.exp.to_source()
-                    if '$(topsrcdir)' in include_filename:
-                        # Ignore things like rules.mk
+                    if '/rules.mk' in include_filename:
+                        # Ignore rules.mk, since we are doing our own tup-based
+                        # rules.
+                        continue
+                    elif '/baseconfig.mk' in include_filename:
+                        # Ignore baseconfig.mk
                         continue
                     elif '$(MKDEPENDENCIES)' in include_filename:
                         # Make dependencies aren't needed for tup, and this
@@ -88,14 +98,26 @@ class TupMakefile(object):
                         # We already include this file automatically, so skip
                         # any lines that try to include it again.
                         continue
+                    elif 'app-config.mk' in include_filename:
+                        # This file doesn't seem to exist, and is only included
+                        # with -include
+                        continue
+                    elif 'MY_CONFIG' in include_filename:
+                        # This file doesn't seem to exist, and is only included
+                        # with -include
+                        continue
                     else:
                         files = s.exp.resolvesplit(makefile, makefile.variables)
+                        if '$(topsrcdir)' in include_filename:
+                            prefix_dir = '.'
+                        else:
+                            prefix_dir = dirname
                         for f in files:
-                            # We always include relative to the main Makefile,
-                            # so we have to pass in the original dirname to
-                            # process_statements(), rather than going back
-                            # through process_makefile().
-                            include_path = os.path.join(dirname, f)
+                            # We always include relative to the main Makefile
+                            # since that's what make does, so we have to pass in
+                            # the original dirname to process_statements(),
+                            # rather than going back through process_makefile().
+                            include_path = os.path.join(prefix_dir, f)
                             included_statements = pymake.parser.parsefile(include_path)
                             self.process_statements(makefile, context, dirname, included_statements)
                 continue
@@ -221,5 +243,5 @@ class TupMakefile(object):
         if not os.path.exists(makefile_in):
             print >> sys.stderr, "Error: Unable to find file: ", makefile_in
             sys.exit(1)
-        if self.makefile_is_enabled(subdir) or self.always_enabled:
+        if self.always_enabled or self.makefile_is_enabled(subdir):
             self.process_makefile(self.subdir_makefile, self.context, makefile_in)

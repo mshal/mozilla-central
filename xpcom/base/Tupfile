@@ -1,3 +1,5 @@
 include_rules
 
 : ErrorList.h |> ^ sed %f -> %o^ sed -n 's/.*ERROR(\([A-Z_0-9]*\).*/#define \1 nsresult::\1/p' < %f > %o |> ErrorListDefines.h | $(MOZ_ROOT)/dist/include/<installed-headers>
+
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_cpp.py $(MOZ_ROOT) @(MOZ_OBJDIR)
