@@ -31,7 +31,7 @@ all_webidl_files = $(webidl_files) $(generated_webidl_files) $(test_webidl_files
 : foreach ../webidl/*.webidl |> !ln |> {webidls}
 : foreach test/*.webidl |> !ln |> {webidls}
 
-: {webidls} |> ^ GlobalGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser GlobalGen.py Bindings.conf . $(all_webidl_files) |> ParserResults.pkl parser.out WebIDLGrammar.pkl $(globalgen_targets)
+: {webidls} |> ^ GlobalGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser GlobalGen.py Bindings.conf . $(all_webidl_files) |> ParserResults.pkl parser.out WebIDLGrammar.pkl $(globalgen_targets) | $(MOZ_ROOT)/dist/include/<installed-headers>
 
-: foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py header Bindings.conf %BBinding %f |> %BBinding.h
+: foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py header Bindings.conf %BBinding %f |> %BBinding.h | $(MOZ_ROOT)/dist/include/<installed-headers>
 : foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py cpp Bindings.conf %BBinding %f |> %BBinding.cpp

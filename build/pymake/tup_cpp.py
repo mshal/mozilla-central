@@ -72,6 +72,4 @@ if cppsrcs:
         if fullpath:
             print fullpath,
 
-    # TODO: PrototypeList.h is generated along with .cpp srcs, so it can't be
-    # used in <installed-headers> ?
-    print " | $(MOZ_ROOT)/dist/include/<installed-headers> $(MOZ_ROOT)/dom/bindings/PrototypeList.h |> ^ C++ %f^ $(CXX) -o %o -c %f ", all_flags_string, "|> %B.o"
+    print " | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ C++ %f^ $(CXX) -o %o -c %f ", all_flags_string, "|> %B.o"
