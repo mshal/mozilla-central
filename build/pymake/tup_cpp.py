@@ -14,7 +14,7 @@ moz_root = sys.argv[1]
 moz_objdir = sys.argv[2]
 tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True)
 
-tupmk.parse('../../xpcom/base')
+tupmk.parse('.')
 
 cppsrcs = tupmk.get_var('CPPSRCS')
 vpath = tupmk.get_var('VPATH')
@@ -28,6 +28,7 @@ all_flags = []
 for flag_group in cmdline_flags:
     value = tupmk.get_var(flag_group)
     for flag in value:
+        # Skip the make-specific dependency flags.
         if not flag in ['-MD', '-MF']:
             if '@tupjob' in flag:
                 print >> sys.stderr, "Error: @tupjob in flag:", flag
@@ -62,7 +63,7 @@ if cppsrcs:
     # Create a tup :-rule for each cpp file to compile it
     print ": foreach ",
     for filename in cppsrcs:
-        fullpath = tupmk.vpath_resolve('../../xpcom/base', vpath, filename)
+        fullpath = tupmk.vpath_resolve('.', vpath, filename)
         if fullpath:
             print fullpath,
 

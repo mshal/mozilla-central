@@ -185,6 +185,18 @@ class TupMakefile(object):
         Make sure that this Makefile.in is in a relevant DIRS variable of a parent.
         """
 
+        if subdir == '.':
+            # Get the path relative to moz_root by finding the components of cwd
+            # using the length of moz_root. Eg, if our cwd is
+            # HOME/m-c/xpcom/base, then moz_root is "../..", so we count one '/'
+            # in moz_root, and add one to it so path_count is 2. We pull off the
+            # last 2 parts of cwd to get "xpcom/base", and prefixed with
+            # moz_root becomes "../../xpcom/base".
+            cwd = os.getcwd()
+            cwd_parts = cwd.split('/')
+            path_count = self.moz_root.count('/') + 1
+            subdir = os.path.join(self.moz_root, *cwd_parts[-path_count:])
+
         if subdir not in self.enabled_dirs:
             self.enabled_dirs[subdir] = self.check_dirs_variables(subdir)
 
@@ -205,7 +217,10 @@ class TupMakefile(object):
         #    VPATH to kick in. Otherwise tup returns errors when non-existent
         #    directories are used.
         if len(vpath) == 1 or filename.find('/') != -1:
-            return os.path.join(subdir, filename)
+            if(subdir == '.'):
+                return filename
+            else:
+                return os.path.join(subdir, filename)
 
         # When VPATH is enabled, we return one entry for each path with a
         # wildcard attached. If we use something like os.path.exists() to find
