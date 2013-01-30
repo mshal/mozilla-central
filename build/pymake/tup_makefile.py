@@ -9,8 +9,8 @@ import copy
 import pymake.parser
 
 class TupMakefile(object):
-    def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in', allow_includes=False,
-                 always_enabled=False):
+    def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in',
+                 allow_includes=False, always_enabled=False, need_config_mk=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
@@ -29,6 +29,7 @@ class TupMakefile(object):
         self.makefile_name = makefile_name
         self.allow_includes = allow_includes
         self.always_enabled = always_enabled
+        self.need_config_mk = need_config_mk
 
         autoconf_path = os.path.join(moz_root, moz_objdir, "config/autoconf.mk")
         toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
@@ -80,7 +81,19 @@ class TupMakefile(object):
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
                         # Ignore rules.mk, since we are doing our own tup-based
-                        # rules.
+                        # rules, but make sure we get config.mk if it hasn't
+                        # already been included. Some Makefile.in's include this
+                        # manually, while others rely on rules.mk including it.
+                        # Since we don't include rules.mk, we won't pick it up
+                        # in that case.
+                        #
+                        # Note that extra parsing of config.mk when it's not
+                        # needed can greatly slow down some cases (such as
+                        # dist/include), so we only grab it if need_config_mk is
+                        # set.
+                        if self.need_config_mk and not self.get_var('INCLUDED_CONFIG_MK'):
+                            config_mk = os.path.join(self.moz_root, 'config/config.mk')
+                            self.process_makefile(makefile, context, config_mk)
                         continue
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk

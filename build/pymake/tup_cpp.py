@@ -13,7 +13,8 @@ if len(sys.argv) < 3:
 moz_root = sys.argv[1]
 moz_objdir = sys.argv[2]
 tup_extra_includes = sys.argv[3:]
-tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True)
+tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
+                                 need_config_mk=True)
 
 tupmk.parse('.')
 
@@ -30,11 +31,12 @@ for flag_group in cmdline_flags:
     value = tupmk.get_var(flag_group)
     for flag in value:
         # Skip the make-specific dependency flags.
-        if not flag in ['-MD', '-MF']:
+        if not flag in ['-MD', '-MF', '/.pp']:
             if '@tupjob' in flag:
                 print >> sys.stderr, "Error: @tupjob in flag:", flag
                 sys.exit(1)
             # TODO: Also error if /home/foo is in flags? Or run in chroot?
+
             if 'ipc/ipdl/_ipdlheaders' in flag:
                 # Make stores the ipdl headers in the objdir, but we generate
                 # them from tup so they are relative to the srcdir.
