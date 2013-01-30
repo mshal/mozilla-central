@@ -8,10 +8,11 @@ import os
 import tup_makefile
 
 if len(sys.argv) < 3:
-    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR' % sys.argv[0])
+    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR [TUP_EXTRA_INCLUDES...]' % sys.argv[0])
 
 moz_root = sys.argv[1]
 moz_objdir = sys.argv[2]
+tup_extra_includes = sys.argv[3:]
 tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True)
 
 tupmk.parse('.')
@@ -57,7 +58,9 @@ for flag_group in cmdline_flags:
             else:
                 all_flags.append(flag)
 
-all_flags_string = "-I/home/marf/mozilla-central-git/obj-pragma-vis/dist/system_wrappers " + " ".join(all_flags)
+all_flags.extend(tup_extra_includes)
+
+all_flags_string = " ".join(all_flags)
 
 if cppsrcs:
     # Create a tup :-rule for each cpp file to compile it

@@ -4,6 +4,8 @@
 
 include_rules
 
-: ErrorList.h |> ^ sed %f -> %o^ sed -n 's/.*ERROR(\([A-Z_0-9]*\).*/#define \1 nsresult::\1/p' < %f > %o |> ErrorListDefines.h | $(MOZ_ROOT)/dist/include/<installed-headers>
+# The xpcom/glue files are compiled both there and here in xpcom/build, but the
+# Makefile expects them to be local to xpcom/build.
+: foreach ../glue/*.cpp |> !ln |>
 
 include $(MOZ_ROOT)/build/tup/compile.tup
