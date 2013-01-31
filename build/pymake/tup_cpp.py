@@ -57,7 +57,6 @@ def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_inc
 
         print " | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ %s %%f^ %s -o %%o -c %%f %s |> %%B.o" % (print_string, cc_string, all_flags_string)
 
-
 if len(sys.argv) < 3:
     sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR [TUP_EXTRA_INCLUDES...]' % sys.argv[0])
 

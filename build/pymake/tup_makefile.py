@@ -186,11 +186,6 @@ class TupMakefile(object):
             # tree, since it may be out grandparent (or above) that enables us.
             makefile_in = os.path.join(parent, self.makefile_name)
             if os.path.exists(makefile_in):
-
-                # Parent not enabled means we aren't either
-                if not self.makefile_is_enabled(parent):
-                    return False
-
                 # Check parent's DIRS variables for our name
                 tmpmakefile = copy.deepcopy(self.autoconf_makefile)
                 self.process_makefile(tmpmakefile, self.context, makefile_in)
@@ -200,7 +195,7 @@ class TupMakefile(object):
                 dirs.extend(self.get_var('TOOL_DIRS', tmpmakefile))
                 dirs.extend(self.get_var('TEST_DIRS', tmpmakefile))
                 if dirs and child in dirs:
-                    return True
+                    return self.makefile_is_enabled(parent)
 
             # Recurse up the tree looking for a parent Makefile.in
             paths = os.path.split(parent)
