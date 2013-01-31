@@ -19,6 +19,7 @@ tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
 tupmk.parse('.')
 
 cppsrcs = tupmk.get_var('CPPSRCS')
+cppsrcs.extend(tupmk.get_var('CPP_UNIT_TESTS'))
 vpath = tupmk.get_var('VPATH')
 
 cmdline_flags = ['STL_FLAGS', 'VISIBILITY_FLAGS', 'DEFINES', 'INCLUDES', 'DSO_CFLAGS', 'DSO_PIC_CFLAGS', 'CXXFLAGS', 'RTL_FLAGS', 'OS_CPPFLAGS', 'OS_COMPILE_CXXFLAGS']
