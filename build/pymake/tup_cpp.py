@@ -7,7 +7,7 @@ import sys
 import os
 import tup_makefile
 
-def generate_compile_rules(srcs, print_string, cc_string, vpath, flags):
+def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_includes=[]):
     all_flags = []
     for flag_group in flags:
         value = tupmk.get_var(flag_group)
@@ -43,6 +43,7 @@ def generate_compile_rules(srcs, print_string, cc_string, vpath, flags):
                     all_flags.append(flag)
 
     all_flags.extend(tup_extra_includes)
+    all_flags.extend(test_includes)
 
     all_flags_string = " ".join(all_flags)
 
@@ -69,9 +70,14 @@ tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
 tupmk.parse('.')
 
 cppsrcs = tupmk.get_var('CPPSRCS')
-cppsrcs.extend(tupmk.get_var('CPP_UNIT_TESTS'))
+cpp_unit_tests = tupmk.get_var('CPP_UNIT_TESTS')
 csrcs = tupmk.get_var('CSRCS')
 vpath = tupmk.get_var('VPATH')
+
+test_includes = []
+if cpp_unit_tests:
+    cppsrcs.extend(cpp_unit_tests)
+    test_includes = ["-I" + os.path.join(moz_root, "dist/include/testing")]
 
 cpp_flags = ['STL_FLAGS',
              'VISIBILITY_FLAGS',
@@ -99,5 +105,5 @@ c_flags = ['VISIBILITY_FLAGS',
 #for i in cpp_flags:
 #    print >> sys.stderr, "[33m%s[0m: %s" % (i, tupmk.get_var(i))
 
-generate_compile_rules(cppsrcs, 'C++', '$(CXX)', vpath, cpp_flags)
+generate_compile_rules(cppsrcs, 'C++', '$(CXX)', vpath, cpp_flags, test_includes)
 generate_compile_rules(csrcs, 'CC', '$(CC)', vpath, c_flags)
