@@ -7,7 +7,8 @@ import sys
 import os
 import tup_makefile
 
-def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_includes=[]):
+def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_includes=[],
+                           host_prefix=False):
     all_flags = []
     for flag_group in flags:
         value = tupmk.get_var(flag_group)
@@ -47,6 +48,11 @@ def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_inc
 
     all_flags_string = " ".join(all_flags)
 
+    if host_prefix:
+        obj_prefix_string = "host_"
+    else:
+        obj_prefix_string = ""
+
     if srcs:
         # Create a tup :-rule for each cpp file to compile it
         print ": foreach ",
@@ -55,7 +61,7 @@ def generate_compile_rules(srcs, print_string, cc_string, vpath, flags, test_inc
             if fullpath:
                 print fullpath,
 
-        print " | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ %s %%f^ %s -o %%o -c %%f %s |> %%B.o" % (print_string, cc_string, all_flags_string)
+        print " | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ %s %%f^ %s -o %%o -c %%f %s |> %s%%B.o" % (print_string, cc_string, all_flags_string, obj_prefix_string)
 
 if len(sys.argv) < 3:
     sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR [TUP_EXTRA_INCLUDES...]' % sys.argv[0])
@@ -71,6 +77,8 @@ tupmk.parse('.')
 cppsrcs = tupmk.get_var('CPPSRCS')
 cpp_unit_tests = tupmk.get_var('CPP_UNIT_TESTS')
 csrcs = tupmk.get_var('CSRCS')
+host_cppsrcs = tupmk.get_var('HOST_CPPSRCS')
+host_csrcs = tupmk.get_var('HOST_CSRCS')
 vpath = tupmk.get_var('VPATH')
 
 test_includes = []
@@ -101,8 +109,22 @@ c_flags = ['VISIBILITY_FLAGS',
            'OS_COMPILE_CFLAGS',
            ]
 
+host_cpp_flags = ['HOST_CXXFLAGS',
+                  'INCLUDES',
+                  'NSPR_CFLAGS',
+                  ]
+
+host_c_flags = ['HOST_CFLAGS',
+                'INCLUDES',
+                'NSPR_CFLAGS',
+                ]
+
 #for i in cpp_flags:
 #    print >> sys.stderr, "[33m%s[0m: %s" % (i, tupmk.get_var(i))
 
 generate_compile_rules(cppsrcs, 'C++', '$(CXX)', vpath, cpp_flags, test_includes)
 generate_compile_rules(csrcs, 'CC', '$(CC)', vpath, c_flags)
+generate_compile_rules(host_cppsrcs, 'C++ [host]', '$(HOST_CXX)', vpath, host_cpp_flags,
+                       host_prefix=True)
+generate_compile_rules(host_csrcs, 'CC [host]', '$(HOST_CC)', vpath, host_c_flags,
+                       host_prefix=True)
