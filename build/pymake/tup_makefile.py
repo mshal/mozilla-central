@@ -30,6 +30,15 @@ class TupMakefile(object):
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
                                              os.path.join(moz_root, 'dist'))
 
+        # This is used in some -I flags, and we need to make sure it gets set to
+        # something so that "-I" isn't passed in without an argument. It isn't
+        # needed for tup, since we generate XPIDLSRCS a little differently from
+        # make.
+        self.autoconf_makefile.variables.set('XPIDL_GEN_DIR',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             '.')
+
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk
         self.autoconf_makefile.variables.set('INCLUDED_RCS_MK',

@@ -6,6 +6,11 @@ include_rules
 
 # The xpcom/glue files are compiled both there and here in xpcom/build, but the
 # Makefile expects them to be local to xpcom/build.
-: foreach ../glue/*.cpp |> !ln |>
+#
+# Note that even though these aren't headers, they go in the
+# <installed-headers> group because
+# toolkit/mozapps/update/updater/archivereader.cpp includes
+# nsVersionComparator.cpp directly.
+: foreach ../glue/*.cpp |> !ln |> %b | $(MOZ_ROOT)/dist/include/<installed-headers>
 
 include $(MOZ_ROOT)/build/tup/compile.tup
