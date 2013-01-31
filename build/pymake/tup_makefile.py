@@ -181,8 +181,9 @@ class TupMakefile(object):
             if parent == self.moz_root:
                 return False
 
-            # If the parent directory has a Makefile.in, break out so we can
-            # check if we are in its DIRS variable (and it too is enabled).
+            # If the parent directory has a Makefile.in, check if we are in its
+            # DIRS variable (and it too is enabled). If not, keep going up the
+            # tree, since it may be out grandparent (or above) that enables us.
             makefile_in = os.path.join(parent, self.makefile_name)
             if os.path.exists(makefile_in):
 
@@ -200,7 +201,6 @@ class TupMakefile(object):
                 dirs.extend(self.get_var('TEST_DIRS', tmpmakefile))
                 if dirs and child in dirs:
                     return True
-                return False
 
             # Recurse up the tree looking for a parent Makefile.in
             paths = os.path.split(parent)
