@@ -13,50 +13,64 @@ class TupMakefile(object):
                  allow_includes=False, always_enabled=False, need_config_mk=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
-        self.autoconf_makefile.variables.set('srcdir', pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC, '.')
-        self.autoconf_makefile.variables.set('topsrcdir', pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC, moz_root)
-        self.autoconf_makefile.variables.set('DEPTH', pymake.data.Variables.FLAVOR_SIMPLE,
+        self.autoconf_makefile.variables.set('srcdir',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             '.')
+        self.autoconf_makefile.variables.set('topsrcdir',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             moz_root)
+        self.autoconf_makefile.variables.set('DEPTH',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
                                              os.path.join(moz_root, moz_objdir))
-        self.autoconf_makefile.variables.set('DIST', pymake.data.Variables.FLAVOR_SIMPLE,
+        self.autoconf_makefile.variables.set('DIST',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
                                              os.path.join(moz_root, 'dist'))
+
+        # This determines whether or not to include makeutils.mk in
+        # package-name.mk, and we don't need makeutils.mk
+        self.autoconf_makefile.variables.set('INCLUDED_RCS_MK',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             '1')
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
         self.makefile_name = makefile_name
-        self.allow_includes = allow_includes
         self.always_enabled = always_enabled
         self.need_config_mk = need_config_mk
 
         autoconf_path = os.path.join(moz_root, moz_objdir, "config/autoconf.mk")
-        toolkit_tiers_path = os.path.join(moz_root, "toolkit/toolkit-tiers.mk")
+        browser_build_mk = os.path.join(moz_root, "browser/build.mk")
+        root_makefile_path = os.path.join(moz_root, "Makefile.in")
 
+        self.allow_includes = True
         self.process_makefile(self.autoconf_makefile, self.context, autoconf_path)
-        self.process_makefile(self.autoconf_makefile, self.context, toolkit_tiers_path)
+        self.process_makefile(self.autoconf_makefile, self.context, browser_build_mk)
+        self.allow_includes = False
+        self.process_makefile(self.autoconf_makefile, self.context, root_makefile_path)
+        self.allow_includes = allow_includes
 
         # enabled_dirs is our cache of directories that are enabled. By default,
         # all directories in tier_platform_dirs are enabled. Others are set to
         # enabled when requested.
-        toolkit_tiers = self.get_var('tier_platform_dirs', self.autoconf_makefile)
+        base_directories = self.get_var('tier_platform_dirs', self.autoconf_makefile)
+        base_directories.extend(self.get_var('tier_app_dirs', self.autoconf_makefile))
+        base_directories.extend(self.get_var('tier_base_dirs', self.autoconf_makefile))
+
         self.enabled_dirs = {}
-        for dirname in toolkit_tiers:
+        for dirname in base_directories:
             tier = os.path.join(moz_root, dirname)
             self.enabled_dirs[tier] = True
 
         # TODO: Where are these enabled? They aren't part of tier_platform_dirs
         for dirname in [
-                'browser',
                 'chrome',
-                'config',
                 'db/sqlite3/src',
                 'js/src',
-                'memory/mozalloc',
-                'memory/mozjemalloc',
-                'mfbt',
-                'modules/zlib',
                 'security/nss',
                 ]:
             tier = os.path.join(moz_root, dirname)
@@ -91,7 +105,7 @@ class TupMakefile(object):
                         # needed can greatly slow down some cases (such as
                         # dist/include), so we only grab it if need_config_mk is
                         # set.
-                        if self.need_config_mk and not self.get_var('INCLUDED_CONFIG_MK'):
+                        if self.need_config_mk and not self.get_var('INCLUDED_CONFIG_MK', makefile):
                             config_mk = os.path.join(self.moz_root, 'config/config.mk')
                             self.process_makefile(makefile, context, config_mk)
                         continue
