@@ -93,6 +93,11 @@ class TupMakefile(object):
                 # needed in general
                 if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir']:
                     continue
+                if s.vnameexp.to_source() == 'GRE_BUILDID':
+                    # This is for the config/buildid file, since it is not
+                    # generated from configure, we won't find it in the
+                    # MOZ_OBJDIR.
+                    s.value = s.value.replace('$(DEPTH)', self.moz_root)
 
                 s.execute(makefile, context)
             elif isinstance(s, pymake.parserdata.Include):
