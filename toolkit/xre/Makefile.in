@@ -228,8 +228,8 @@ ifdef MOZ_SOURCE_STAMP
 endif # MOZ_SOURCE_STAMP
 
 GRE_MILESTONE := $(strip $(lastword $(shell cat $(milestone_txt) 2>/dev/null)))
-GRE_BUILDID   := $(strip $(firstword $(shell cat $(DEPTH)/config/buildid 2>/dev/null)))
-$(call errorIfEmpty,GRE_MILESTONE GRE_BUILDID)
+GRE_BUILDID := `cat $(DEPTH)/config/buildid`
+$(call errorIfEmpty,GRE_MILESTONE)
 
 DEFINES += -DGRE_MILESTONE=$(GRE_MILESTONE) -DGRE_BUILDID=$(GRE_BUILDID)
 
@@ -241,7 +241,7 @@ DEFINES += -DAPP_VERSION=$(MOZ_APP_VERSION)
 
 DEFINES += -DAPP_ID="$(MOZ_APP_ID)"
 
-$(srcdir)/nsAppRunner.cpp: $(DEPTH)/config/buildid $(milestone_txt)
+nsAppRunner.$(OBJ_SUFFIX): $(DEPTH)/config/buildid $(milestone_txt)
 
 platform.ini: FORCE
 	$(PYTHON) $(srcdir)/make-platformini.py --buildid=$(GRE_BUILDID) $(INIARGS) $(milestone_txt) > $@

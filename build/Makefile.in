@@ -54,7 +54,7 @@ GRE_MILESTONE = $(shell tail -n 1 $(topsrcdir)/config/milestone.txt 2>/dev/null 
 APP_INI_DEPS = $(topsrcdir)/config/milestone.txt
 endif
 
-APP_BUILDID := $(shell cat $(DEPTH)/config/buildid)
+APP_BUILDID := `cat $(DEPTH)/config/buildid`
 APP_INI_DEPS += $(DEPTH)/config/buildid
 
 DEFINES += -DGRE_MILESTONE=$(GRE_MILESTONE) -DAPP_BUILDID=$(APP_BUILDID)

@@ -174,7 +174,7 @@ else
 APPFILES = MacOS
 endif
 
-MAC_BUNDLE_VERSION = $(shell $(PYTHON) $(srcdir)/macversion.py --version=$(MOZ_APP_VERSION) --buildid=$(DEPTH)/config/buildid)
+MAC_BUNDLE_VERSION = `$(PYTHON) $(srcdir)/macversion.py --version=$(MOZ_APP_VERSION) --buildid=$(DEPTH)/config/buildid`
 
 libs-preqs = \
   $(call mkdir_deps,$(dist_dest)/Contents/MacOS) \

@@ -38,7 +38,7 @@ CXXFLAGS += \
 	$(MOZ_GTK2_CFLAGS) \
 	$(NULL)
 
-GRE_BUILDID := $(shell cat $(DEPTH)/config/buildid)
+GRE_BUILDID := `cat $(DEPTH)/config/buildid`
 DEFINES += -DGRE_BUILDID=$(GRE_BUILDID)
 
 webapprt.$(OBJ_SUFFIX): $(DEPTH)/config/buildid
