@@ -21,6 +21,10 @@ class TupMakefile(object):
                                              pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
                                              moz_root)
+        self.autoconf_makefile.variables.set('MOZILLA_DIR',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             moz_root)
         self.autoconf_makefile.variables.set('DEPTH',
                                              pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
@@ -149,7 +153,7 @@ class TupMakefile(object):
                         continue
                     else:
                         files = s.exp.resolvesplit(makefile, makefile.variables)
-                        if '$(topsrcdir)' in include_filename:
+                        if '$(topsrcdir)' in include_filename or '$(MOZILLA_DIR)' in include_filename:
                             prefix_dir = '.'
                         else:
                             prefix_dir = dirname
