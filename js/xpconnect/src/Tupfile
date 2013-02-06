@@ -18,7 +18,7 @@ dictionary_gen += --stub-output DictionaryHelpers.cpp
 dictionary_gen += --cachedir=$(MOZ_ROOT)/dist/idl
 dictionary_gen += dictionary_helper_gen.conf
 dictionary_gen += event_impl_gen.conf
-: dictionary_helper_gen.conf event_impl_gen.conf | $(MOZ_ROOT)/dist/idl/<installed-idls> |> ^ dictionary_helper_gen.py -> %o^ $(dictionary_gen) %f |> DictionaryHelpers.h DictionaryHelpers.cpp
+: dictionary_helper_gen.conf event_impl_gen.conf | $(MOZ_ROOT)/dist/idl/<installed-idls> |> ^ dictionary_helper_gen.py -> %o^ $(dictionary_gen) %f |> DictionaryHelpers.h DictionaryHelpers.cpp | $(MOZ_ROOT)/dist/include/<installed-headers>
 
 event_impl_gen = $(PYTHON) $(PYTHONPATH)
 event_impl_gen += -I$(MOZ_ROOT)/xpcom/idl-parser
