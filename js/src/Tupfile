@@ -1,3 +1,18 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 include_rules
 
 : $(MOZ_ROOT)/@(MOZ_OBJDIR)/js/src/js-config.h |> !ln |> %b | $(MOZ_ROOT)/dist/include/<installed-headers>
+
+selfhosting_srcs += builtin/array.js
+# TODO: add -d to selfhosting_embed_flags if MOZ_DEBUG is set?
+: |> $(PYTHON) builtin/embedjs.py $(selfhosting_embed_flags) %o js.msg builtin/macros.py $(selfhosting_srcs) |> selfhosted.out.h | selfhosted.js $(MOZ_ROOT)/dist/include/<installed-headers>
+
+include $(MOZ_ROOT)/build/tup/compile_host.tup
+
+: host_jsoplengen |> ./%f %o |> jsautooplen.h | $(MOZ_ROOT)/dist/include/<installed-headers>
+: host_jskwgen |> ./%f %o |> jsautokw.h | $(MOZ_ROOT)/dist/include/<installed-headers>
+
+include $(MOZ_ROOT)/build/tup/compile_target.tup

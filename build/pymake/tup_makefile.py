@@ -10,7 +10,8 @@ import pymake.parser
 
 class TupMakefile(object):
     def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in',
-                 allow_includes=False, always_enabled=False, need_config_mk=False):
+                 allow_includes=False, always_enabled=False, need_config_mk=False,
+                 js_src=False):
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir',
@@ -25,10 +26,14 @@ class TupMakefile(object):
                                              pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
                                              moz_root)
+        if js_src:
+            depth = os.path.join(moz_root, moz_objdir, 'js', 'src')
+        else:
+            depth = os.path.join(moz_root, moz_objdir)
         self.autoconf_makefile.variables.set('DEPTH',
                                              pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             os.path.join(moz_root, moz_objdir))
+                                             depth)
         self.autoconf_makefile.variables.set('DIST',
                                              pymake.data.Variables.FLAVOR_SIMPLE,
                                              pymake.data.Variables.SOURCE_AUTOMATIC,
@@ -56,8 +61,8 @@ class TupMakefile(object):
         self.always_enabled = always_enabled
         self.need_config_mk = need_config_mk
 
-        autoconf_path = os.path.join(moz_root, moz_objdir, "config/autoconf.mk")
-        browser_build_mk = os.path.join(moz_root, "browser/build.mk")
+        autoconf_path = os.path.join(depth, "config", "autoconf.mk")
+        browser_build_mk = os.path.join(moz_root, "browser", "build.mk")
         root_makefile_path = os.path.join(moz_root, "Makefile.in")
 
         self.allow_includes = True
