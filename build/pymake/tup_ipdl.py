@@ -6,6 +6,7 @@
 import sys
 import os
 import tup_makefile
+import tup_cpp
 
 if len(sys.argv) < 3:
     sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR' % sys.argv[0])
@@ -27,27 +28,27 @@ ipdldirs = tupmk.get_var('IPDLDIRS')
 tupmk.makefile_name = 'ipdl.mk'
 tupmk.always_enabled = True
 
+cppsrcs = []
+
 for ipdldir in ipdldirs:
     subdir = os.path.join(moz_root, ipdldir)
     incdirs.append('-I%s' % subdir)
 
-    tupmk.parse(subdir)
-    ipdlsrcs = tupmk.get_var('IPDLSRCS')
+    ipdlsrcs = tupmk.one_time_parse(subdir, 'IPDLSRCS')
     if ipdlsrcs:
         for ipdl in ipdlsrcs:
             inputs.append(os.path.join(subdir, ipdl))
             (basename, ext) = os.path.splitext(ipdl)
 
+            extensions = ['']
             if ext == '.ipdl':
-                extensions = ['Child.cpp', 'Parent.cpp', '.cpp',
-                              'Child.h', 'Parent.h', '.h']
-            elif ext == '.ipdlh':
-                extensions = ['.cpp', '.h']
-            else:
-                print >> sys.stderr, "Error: Unknown extension for IPDLSRCS: ", ipdl
-                sys.exit(1)
+                extensions.extend(['Child', 'Parent'])
+
             for extension in extensions:
-                outputs.append("%s%s" % (basename, extension))
+                cppsrc = "%s%s.cpp" % (basename, extension)
+                cppsrcs.append(cppsrc)
+                outputs.append(cppsrc)
+                outputs.append("%s%s.h" % (basename, extension))
 
 # Create a single rule to process all of the .ipdl/.ipdlh files in one go.
 # Although we could theoretically process these individually, the inter-.ipdl
@@ -59,3 +60,6 @@ print ' '.join(incdirs),
 print "%f |>",
 print ' '.join(outputs),
 print ' | $(MOZ_ROOT)/dist/include/<installed-headers>'
+
+tupcpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True)
+tupcpp.generate_cpp_rules(cppsrcs)
