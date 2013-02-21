@@ -7,20 +7,31 @@ import sys
 import os
 import tup_makefile
 
-if len(sys.argv) < 4:
-    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR, sub/dir1 [sub/dir2...]' % sys.argv[0])
+if len(sys.argv) < 3:
+    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR' % sys.argv[0])
 
-tupmk = tup_makefile.TupMakefile(sys.argv[1], sys.argv[2], makefile_name='ipdl.mk', always_enabled=True)
+moz_root = sys.argv[1]
+moz_objdir = sys.argv[2]
+
+tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True)
 
 inputs = []
 incdirs = []
 outputs = ['IPCMessageStart.h', 'ipdl_lextab.py', 'ipdl_yacctab.py']
 
-for subdir in sys.argv[3:]:
-    tupmk.parse(subdir)
+tupmk.parse('.')
+ipdldirs = tupmk.get_var('IPDLDIRS')
 
+# Now that we have the list of IPDLDIRS, we will be parsing ipdl.mk files
+# in each of those directories. Setup tupmk to do that.
+tupmk.makefile_name = 'ipdl.mk'
+tupmk.always_enabled = True
+
+for ipdldir in ipdldirs:
+    subdir = os.path.join(moz_root, ipdldir)
     incdirs.append('-I%s' % subdir)
 
+    tupmk.parse(subdir)
     ipdlsrcs = tupmk.get_var('IPDLSRCS')
     if ipdlsrcs:
         for ipdl in ipdlsrcs:
