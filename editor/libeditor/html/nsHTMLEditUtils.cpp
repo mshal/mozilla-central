@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "./../../mozilla-config.h"     // for MOZ_MEDIA
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Util.h"               // for ArrayLength
 #include "mozilla/dom/Element.h"        // for Element, nsINode
