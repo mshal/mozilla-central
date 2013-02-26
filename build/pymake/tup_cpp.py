@@ -18,10 +18,17 @@ class TupCpp(object):
         self.extra_includes = extra_includes
         self.js_src = js_src
 
-    def get_all_flags(self, flags):
+    def get_all_flags(self, flags, filename):
         all_flags = []
+
+        targets = self.tupmk.subdir_makefile._targets
+        if filename in targets:
+            variables = targets[filename].variables
+        else:
+            variables = self.tupmk.subdir_makefile.variables
+
         for flag_group in flags:
-            value = self.tupmk.get_var(flag_group)
+            value = self.tupmk.get_var(flag_group, variables=variables)
             for flag in value:
                 # Skip the make-specific dependency flags.
                 if not flag in ['-MD', '-MF', '/.pp']:
@@ -58,13 +65,7 @@ class TupCpp(object):
 
     def generate_compile_rules(self, srcs, print_string, cc_string, vpath, flags,
                                test_includes=[], host_prefix=False):
-        all_flags = self.get_all_flags(flags)
-
-        for inc in self.extra_includes:
-            all_flags.append('-I' + inc)
-        all_flags.extend(test_includes)
-
-        all_flags_string = " ".join(all_flags)
+        obj_suffix = self.tupmk.get_var('OBJ_SUFFIX')[0]
 
         dist_include_dependency = False
         if host_prefix:
@@ -88,19 +89,27 @@ class TupCpp(object):
             extra_deps = ""
 
         if srcs:
-            # Create a tup :-rule for each cpp file to compile it
-            print ": foreach ",
             for filename in srcs:
-                fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
-                if fullpath:
-                    print fullpath,
 
-            print " %s |> ^ %s %%f^ %s -o %%o -c %%f %s |> %s%%B.o" % (extra_deps, print_string, cc_string, all_flags_string, obj_prefix_string)
+                base, extension = os.path.splitext(filename)
+                object_file = "%s.%s" % (base, obj_suffix)
+                all_flags = self.get_all_flags(flags, object_file)
+
+                for inc in self.extra_includes:
+                    all_flags.append('-I' + inc)
+                all_flags.extend(test_includes)
+
+                all_flags_string = " ".join(all_flags)
+
+                fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
+
+                # Create a tup :-rule for each cpp file to compile it
+                print ": %s %s |> ^ %s %%f^ %s -o %%o -c %%f %s |> %s%%B.o" % (fullpath, extra_deps, print_string, cc_string, all_flags_string, obj_prefix_string)
 
     def generate_simple_link_rules(self, srcs, print_string, ld_string, flags):
-        all_flags = self.get_all_flags(flags)
         if srcs:
             for filename in srcs:
+                all_flags = self.get_all_flags(flags, filename)
                 print ": %s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (filename + ".o", print_string, ld_string, " ".join(all_flags), filename)
 
     def generate_cpp_rules(self, cppsrcs=[]):

@@ -68,6 +68,17 @@ class TupMakefile(object):
         self.allow_includes = True
         self.process_makefile(self.autoconf_makefile, self.context, autoconf_path)
         self.process_makefile(self.autoconf_makefile, self.context, browser_build_mk)
+
+        # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
+        # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
+        # want, so put that in _OBJ_SUFFIX as well (since that value gets put
+        # back into the original OBJ_SUFFIX).
+        obj_suffix = self.get_var('OBJ_SUFFIX', self.autoconf_makefile)
+        self.autoconf_makefile.variables.set('_OBJ_SUFFIX',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             obj_suffix[0])
+
         self.allow_includes = False
         self.process_makefile(self.autoconf_makefile, self.context, root_makefile_path)
         self.allow_includes = allow_includes
@@ -184,13 +195,15 @@ class TupMakefile(object):
 
         self.process_statements(makefile, context, os.path.dirname(filename), statements)
 
-    def get_var(self, varname, makefile=None):
+    def get_var(self, varname, makefile=None, variables=None):
         if makefile is None:
             makefile = self.subdir_makefile
+        if variables is None:
+            variables = makefile.variables
 
-        var_tuple = makefile.variables.get(varname)
+        var_tuple = variables.get(varname)
         if var_tuple is not None and var_tuple[2] is not None:
-            return var_tuple[2].resolvesplit(makefile, makefile.variables)
+            return var_tuple[2].resolvesplit(makefile, variables)
         return []
 
     def check_dirs_variables(self, subdir):
