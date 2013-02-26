@@ -34,8 +34,6 @@
 #ifndef nptest_h_
 #define nptest_h_
 
-#include "mozilla-config.h"
-
 #include "npapi.h"
 #include "npfunctions.h"
 #include "npruntime.h"
