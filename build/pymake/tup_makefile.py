@@ -179,6 +179,7 @@ class TupMakefile(object):
                             # the original dirname to process_statements(),
                             # rather than going back through process_makefile().
                             include_path = os.path.join(prefix_dir, f)
+                            include_path = include_path.replace('@srcdir@', '.')
                             included_statements = pymake.parser.parsefile(include_path)
                             self.process_statements(makefile, context, dirname, included_statements)
                 continue
