@@ -35,3 +35,5 @@ all_webidl_files = $(webidl_files) $(generated_webidl_files) $(test_webidl_files
 
 : foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py header Bindings.conf %BBinding %f |> %BBinding.h | $(MOZ_ROOT)/dist/include/<installed-headers>
 : foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py cpp Bindings.conf %BBinding %f |> %BBinding.cpp
+
+include $(MOZ_ROOT)/build/tup/compile.tup
