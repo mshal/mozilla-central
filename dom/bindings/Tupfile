@@ -4,36 +4,9 @@
 
 include_rules
 
-include ../webidl/WebIDL.mk
+: |> ^ Preprocess -> CSS2Properties.webidl^ $(CPP) -I$(MOZ_ROOT)/layout/style ../webidl/CSS2PropertiesProps.h | $(PYTHON) GenerateCSS2PropertiesWebIDL.py ../webidl/CSS2Properties.webidl.in > %o |> CSS2Properties.webidl
 
-bindinggen_dependencies = \
-			  BindingGen.py \
-			  Bindings.conf \
-			  Configuration.py \
-			  Codegen.py \
-			  parser/WebIDL.py \
-			  ParserResults.pkl \
-			  $(NULL)
+: foreach ../webidl/*.webidl |> !ln |>
+: foreach test/*.webidl |> !ln |>
 
-globalgen_targets = \
-		    PrototypeList.h \
-		    RegisterBindings.h \
-		    RegisterBindings.cpp \
-		    UnionTypes.h \
-		    UnionTypes.cpp \
-		    UnionConversions.h \
-		    $(NULL)
-
-all_webidl_files = $(webidl_files) $(generated_webidl_files) $(test_webidl_files)
-
-: |> ^ Preprocess -> CSS2Properties.webidl^ $(CPP) -I$(MOZ_ROOT)/layout/style ../webidl/CSS2PropertiesProps.h | $(PYTHON) GenerateCSS2PropertiesWebIDL.py ../webidl/CSS2Properties.webidl.in > %o |> CSS2Properties.webidl {webidls}
-
-: foreach ../webidl/*.webidl |> !ln |> {webidls}
-: foreach test/*.webidl |> !ln |> {webidls}
-
-: {webidls} |> ^ GlobalGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser GlobalGen.py Bindings.conf . $(all_webidl_files) |> ParserResults.pkl parser.out WebIDLGrammar.pkl $(globalgen_targets) | $(MOZ_ROOT)/dist/include/<installed-headers>
-
-: foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py header Bindings.conf %BBinding %f |> %BBinding.h | $(MOZ_ROOT)/dist/include/<installed-headers>
-: foreach {webidls} | ParserResults.pkl |> ^ BindingGen.py -> %o^ $(PYTHON) $(PYTHONPATH) -Iparser BindingGen.py cpp Bindings.conf %BBinding %f |> %BBinding.cpp
-
-include $(MOZ_ROOT)/build/tup/compile.tup
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_dom_bindings.py $(MOZ_ROOT) @(MOZ_OBJDIR)
