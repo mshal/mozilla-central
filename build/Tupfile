@@ -1,0 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+export SHELL
+
+run $(PYTHON) pymake/tup_build.py $(MOZ_ROOT) @(MOZ_OBJDIR)
+
+: application.ini.gen |> $(PYTHON) appini_header.py %f > %o |> application.ini.h | $(MOZ_ROOT)/dist/include/<installed-headers>
