@@ -65,7 +65,7 @@ class TupCpp(object):
 
     def generate_compile_rules(self, srcs, print_string, cc_string, vpath, flags,
                                test_includes=[], host_prefix=False):
-        obj_suffix = self.tupmk.get_var('OBJ_SUFFIX')[0]
+        obj_suffix = self.tupmk.get_var_string('OBJ_SUFFIX')
 
         dist_include_dependency = False
         if host_prefix:
@@ -105,6 +105,20 @@ class TupCpp(object):
 
                 # Create a tup :-rule for each cpp file to compile it
                 print ": %s %s |> ^ %s %%f^ %s -o %%o -c %%f %s |> %s%%B.o" % (fullpath, extra_deps, print_string, cc_string, all_flags_string, obj_prefix_string)
+
+    def generate_asm_rules(self):
+        srcs = self.tupmk.get_var('ASFILES')
+        asm = self.tupmk.get_var_string('AS')
+        asflags = self.tupmk.get_var_string('ASFLAGS')
+        as_dash_c_flag = self.tupmk.get_var_string('AS_DASH_C_FLAG')
+        obj_suffix = self.tupmk.get_var_string('OBJ_SUFFIX')
+        if asm.startswith('ml'):
+            asoutoption = '-Fo'
+        else:
+            asoutoption = '-o '
+
+        for filename in srcs:
+            print ": %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (filename, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
 
     def generate_simple_link_rules(self, srcs, print_string, ld_string, flags):
         if srcs:
@@ -170,6 +184,7 @@ class TupCpp(object):
             self.generate_compile_rules(cppsrcs, 'C++', '$(CXX)', vpath,
                                         cpp_flags, test_includes)
             self.generate_compile_rules(csrcs, 'CC', '$(CC)', vpath, c_flags)
+            self.generate_asm_rules()
 
         if self.host_srcs_flag:
             self.generate_compile_rules(host_cppsrcs, 'C++ [host]', '$(HOST_CXX)',
@@ -177,7 +192,7 @@ class TupCpp(object):
             self.generate_compile_rules(host_csrcs, 'CC [host]', '$(HOST_CC)',
                                         vpath, host_c_flags, host_prefix=True)
 
-            host_simple_programs = tupmk.get_var('HOST_SIMPLE_PROGRAMS')
+            host_simple_programs = self.tupmk.get_var('HOST_SIMPLE_PROGRAMS')
             if host_simple_programs:
                 self.generate_simple_link_rules(host_simple_programs,
                                                 'LD [host]', '$(HOST_CXX)',

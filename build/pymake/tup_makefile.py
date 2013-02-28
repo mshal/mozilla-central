@@ -207,6 +207,9 @@ class TupMakefile(object):
             return var_tuple[2].resolvesplit(makefile, variables)
         return []
 
+    def get_var_string(self, varname, makefile=None, variables=None):
+        return ' '.join(self.get_var(varname, makefile, variables))
+
     def check_dirs_variables(self, subdir):
         paths = os.path.split(subdir)
 
