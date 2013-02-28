@@ -10,13 +10,54 @@ from optparse import OptionParser
 
 class TupCpp(object):
     def __init__(self, tupmk, moz_objdir, host_srcs_flag=False,
-                 target_srcs_flag=False, extra_includes="", js_src=False):
+                 target_srcs_flag=False, extra_includes="", js_src=False,
+                 extra_deps=[]):
         self.tupmk = tupmk
         self.moz_objdir = moz_objdir
         self.host_srcs_flag = host_srcs_flag
         self.target_srcs_flag = target_srcs_flag
         self.extra_includes = extra_includes
         self.js_src = js_src
+        self.extra_deps = extra_deps
+
+        self.cpp_flags = ['STL_FLAGS',
+                          'VISIBILITY_FLAGS',
+                          'DEFINES',
+                          'INCLUDES',
+                          'DSO_CFLAGS',
+                          'DSO_PIC_CFLAGS',
+                          'CXXFLAGS',
+                          'RTL_FLAGS',
+                          'OS_CPPFLAGS',
+                          'OS_COMPILE_CXXFLAGS',
+                          ]
+
+        self.c_flags = ['VISIBILITY_FLAGS',
+                        'DEFINES',
+                        'INCLUDES',
+                        'DSO_CFLAGS',
+                        'DSO_PIC_CFLAGS',
+                        'CFLAGS',
+                        'RTL_FLAGS',
+                        'OS_CPPFLAGS',
+                        'OS_COMPILE_CFLAGS',
+                        ]
+
+        self.host_cpp_flags = ['HOST_CXXFLAGS',
+                               'INCLUDES',
+                               'NSPR_CFLAGS',
+                               ]
+
+        self.host_c_flags = ['HOST_CFLAGS',
+                             'INCLUDES',
+                             'NSPR_CFLAGS',
+                             ]
+
+        self.host_link_flags = ['HOST_CXXFLAGS',
+                                'INCLUDES',
+                                'HOST_LIBS'
+                                'HOST_EXTRA_LIBS'
+                                ]
 
     def get_all_flags(self, flags, filename):
         all_flags = []
@@ -64,8 +105,10 @@ class TupCpp(object):
         return all_flags
 
     def generate_compile_rules(self, srcs, print_string, cc_string, vpath, flags,
-                               test_includes=[], host_prefix=False):
-        obj_suffix = self.tupmk.get_var_string('OBJ_SUFFIX')
+                               test_includes=[], host_prefix=False,
+                               compile_flag='-c', obj_suffix=None):
+        if not obj_suffix:
+            obj_suffix = self.tupmk.get_var_string('OBJ_SUFFIX')
 
         dist_include_dependency = False
         if host_prefix:
@@ -83,10 +126,14 @@ class TupCpp(object):
             obj_prefix_string = ""
             dist_include_dependency = True
 
+        deps = self.extra_deps
         if dist_include_dependency:
-            extra_deps = " | $(MOZ_ROOT)/dist/include/<installed-headers>"
+            deps.append("$(MOZ_ROOT)/dist/include/<installed-headers>")
+
+        if deps:
+            extra_deps_string = " | " + (' '.join(deps))
         else:
-            extra_deps = ""
+            extra_deps_string = ""
 
         if srcs:
             for filename in srcs:
@@ -104,7 +151,7 @@ class TupCpp(object):
                 fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
 
                 # Create a tup :-rule for each cpp file to compile it
-                print ": %s %s |> ^ %s %%f^ %s -o %%o -c %%f %s |> %s%%B.o" % (fullpath, extra_deps, print_string, cc_string, all_flags_string, obj_prefix_string)
+                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s%%B.%s" % (fullpath, extra_deps_string, print_string, cc_string, compile_flag, all_flags_string, obj_prefix_string, obj_suffix)
 
     def generate_asm_rules(self):
         srcs = self.tupmk.get_var('ASFILES')
@@ -112,13 +159,20 @@ class TupCpp(object):
         asflags = self.tupmk.get_var_string('ASFLAGS')
         as_dash_c_flag = self.tupmk.get_var_string('AS_DASH_C_FLAG')
         obj_suffix = self.tupmk.get_var_string('OBJ_SUFFIX')
+        vpath = self.tupmk.get_var('VPATH')
         if asm.startswith('ml'):
             asoutoption = '-Fo'
         else:
             asoutoption = '-o '
 
+        if self.extra_deps:
+            extra_deps_string = " | " + (' '.join(self.extra_deps))
+        else:
+            extra_deps_string = ""
+
         for filename in srcs:
-            print ": %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (filename, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
+            fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
+            print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (fullpath, extra_deps_string, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
 
     def generate_simple_link_rules(self, srcs, print_string, ld_string, flags):
         if srcs:
@@ -141,62 +195,25 @@ class TupCpp(object):
             cppsrcs.extend(cpp_unit_tests)
             test_includes = ["-I" + os.path.join(moz_root, "dist/include/testing")]
 
-        cpp_flags = ['STL_FLAGS',
-                     'VISIBILITY_FLAGS',
-                     'DEFINES',
-                     'INCLUDES',
-                     'DSO_CFLAGS',
-                     'DSO_PIC_CFLAGS',
-                     'CXXFLAGS',
-                     'RTL_FLAGS',
-                     'OS_CPPFLAGS',
-                     'OS_COMPILE_CXXFLAGS',
-                     ]
-
-        c_flags = ['VISIBILITY_FLAGS',
-                   'DEFINES',
-                   'INCLUDES',
-                   'DSO_CFLAGS',
-                   'DSO_PIC_CFLAGS',
-                   'CFLAGS',
-                   'RTL_FLAGS',
-                   'OS_CPPFLAGS',
-                   'OS_COMPILE_CFLAGS',
-                   ]
-
-        host_cpp_flags = ['HOST_CXXFLAGS',
-                          'INCLUDES',
-                          'NSPR_CFLAGS',
-                          ]
-
-        host_c_flags = ['HOST_CFLAGS',
-                        'INCLUDES',
-                        'NSPR_CFLAGS',
-                        ]
-
-        host_link_flags = ['HOST_CXXFLAGS',
-                           'INCLUDES',
-                           'HOST_LIBS'
-                           'HOST_EXTRA_LIBS'
-                           ]
-
         if self.target_srcs_flag:
             self.generate_compile_rules(cppsrcs, 'C++', '$(CXX)', vpath,
-                                        cpp_flags, test_includes)
-            self.generate_compile_rules(csrcs, 'CC', '$(CC)', vpath, c_flags)
+                                        self.cpp_flags, test_includes)
+            self.generate_compile_rules(csrcs, 'CC', '$(CC)', vpath, self.c_flags)
             self.generate_asm_rules()
 
         if self.host_srcs_flag:
             self.generate_compile_rules(host_cppsrcs, 'C++ [host]', '$(HOST_CXX)',
-                                        vpath, host_cpp_flags, host_prefix=True)
+                                        vpath, self.host_cpp_flags,
+                                        host_prefix=True)
             self.generate_compile_rules(host_csrcs, 'CC [host]', '$(HOST_CC)',
-                                        vpath, host_c_flags, host_prefix=True)
+                                        vpath, self.host_c_flags,
+                                        host_prefix=True)
 
             host_simple_programs = self.tupmk.get_var('HOST_SIMPLE_PROGRAMS')
             if host_simple_programs:
                 self.generate_simple_link_rules(host_simple_programs,
                                                 'LD [host]', '$(HOST_CXX)',
-                                                host_link_flags)
+                                                self.host_link_flags)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
