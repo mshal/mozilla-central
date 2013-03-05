@@ -12,6 +12,7 @@ class TupMakefile(object):
     def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in',
                  allow_includes=False, always_enabled=False, need_config_mk=False,
                  js_src=False):
+        self.subdir_makefile = None
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
         self.autoconf_makefile.variables.set('srcdir',
@@ -198,7 +199,13 @@ class TupMakefile(object):
 
     def get_var(self, varname, makefile=None, variables=None):
         if makefile is None:
-            makefile = self.subdir_makefile
+            # Usually we want the variables from the subdir makefile, but in
+            # some cases we just parse autoconf.mk and pull variables directly
+            # from there.
+            if self.subdir_makefile:
+                makefile = self.subdir_makefile
+            else:
+                makefile = self.autoconf_makefile
         if variables is None:
             variables = makefile.variables
 

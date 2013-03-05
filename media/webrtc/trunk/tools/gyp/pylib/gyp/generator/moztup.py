@@ -2,13 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import collections
 import gyp
 import gyp.common
 import sys
 import os
-import re
-import shlex
+import tup_makefile
+import tup_cpp
 
 generator_default_variables = {}
 for dirname in ['INTERMEDIATE_DIR', 'SHARED_INTERMEDIATE_DIR', 'PRODUCT_DIR',
@@ -40,23 +39,6 @@ def CalculateVariables(default_variables, params):
     generator_flags = params.get('generator_flags', {})
     default_variables['OS'] = generator_flags.get('os', GetFlavor(params))
 
-def WriteTupRules(data, debug, moz_root, cc, obj_suffix):
-    if 'CSRCS' in data:
-        srcs = data['CSRCS']
-        if debug:
-            suffix = "Debug"
-        else:
-            suffix = "Release"
-        includes = data['INCLUDES_' + suffix]
-        defines = data['DEFINES_' + suffix]
-        flag_string = ' '.join(defines)
-        for inc in includes:
-            inc = inc.replace('$(srcdir)', '.')
-            inc = inc.replace('$(DEPTH)', moz_root)
-            flag_string += ' ' + inc
-        for filename in srcs:
-            print ": %s | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ CC %%f^ %s -c %%f -o %%o %s |> %%B.%s" % (filename, cc, flag_string, obj_suffix)
-
 def striplib(name):
     "Strip lib prefixes from library names."
     if name[:3] == 'lib':
@@ -85,16 +67,13 @@ def Compilable(filename):
     return os.path.splitext(filename)[1] in COMPILABLE_EXTENSIONS
 
 class TupfileGenerator(object):
-    def __init__(self, target_dicts, data, options, flavor, debug, moz_root,
-                 cc, obj_suffix):
+    def __init__(self, target_dicts, data, options, flavor, tupmk, cpp):
         self.target_dicts = target_dicts
         self.data = data
         self.options = options
         self.flavor = flavor
-        self.debug = debug
-        self.moz_root = moz_root
-        self.cc = cc
-        self.obj_suffix = obj_suffix
+        self.tupmk = tupmk
+        self.cpp = cpp
 
     def ProcessTargets(self, needed_targets):
         """
@@ -211,18 +190,67 @@ class TupfileGenerator(object):
         else:
             # Maybe nothing?
             return False
-        WriteTupRules(data, self.debug, self.moz_root, self.cc, self.obj_suffix)
+        self.WriteTupRules(data)
         return True
+
+#    def WriteCompileRules(self, data, srcs_name, display_string, cc_string,
+#                          flag_string, obj_suffix):
+#        if srcs_name in data:
+#            srcs = data[srcs_name]
+#            for filename in srcs:
+#                print ": %s | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ %s %%f^ %s -c %%f -o %%o %s |> %%B.%s" % (filename, display_string, cc_string, flag_string, obj_suffix)
+#
+    def GetFlag(self, data, flag):
+        return list(data[flag]) if flag in data else []
+
+    def WriteTupRules(self, data):
+        if self.tupmk.get_var('MOZ_DEBUG'):
+            suffix = "Debug"
+        else:
+            suffix = "Release"
+        includes = self.GetFlag(data, 'INCLUDES_' + suffix)
+
+        cflags = self.GetFlag(data, 'DEFINES_' + suffix)
+        cflags.extend(self.GetFlag(data, 'CPP_FLAGS_' + suffix))
+        cflags.extend(self.GetFlag(data, 'CFLAGS_' + suffix))
+
+        cxxflags = self.GetFlag(data, 'DEFINES_' + suffix)
+        cxxflags.extend(self.GetFlag(data, 'CPP_FLAGS_' + suffix))
+        cxxflags.extend(self.GetFlag(data, 'CXXFLAGS_' + suffix))
+
+        cflag_string = ' '.join(cflags)
+        cxxflag_string = ' '.join(cxxflags)
+        for inc in includes:
+            inc = inc.replace('$(srcdir)', '.')
+            inc = inc.replace('$(DEPTH)', self.tupmk.moz_root)
+            cflag_string += ' ' + inc
+            cxxflag_string += ' ' + inc
+
+        if 'CPPSRCS' in data:
+            self.cpp.generate_cpp_rules(cppsrcs=data['CPPSRCS'],
+                                        flags=cxxflag_string)
+        if 'CSRCS' in data:
+            self.cpp.generate_cpp_rules(csrcs=data['CSRCS'],
+                                        flags=cflag_string)
 
 def GenerateOutput(target_list, target_dicts, data, params):
     options = params['options']
     flavor = GetFlavor(params)
     generator_flags = params.get('generator_flags', {})
+    moz_root = generator_flags['MOZ_ROOT']
+    moz_objdir = generator_flags['MOZ_OBJDIR']
+    tupmk = tup_makefile.TupMakefile(moz_root,
+                                     moz_objdir,
+                                     makefile_name='config.mk')
+    # We need to parse config.mk so we can get definitions of things like
+    # OS_COMPILE_CXXFLAGS
+    tupmk.parse(os.path.join(moz_root, 'config'))
 
-    if 'MOZ_DEBUG' in generator_flags:
-        debug = 1
-    else:
-        debug = 0
+    # Work around the fact that Google codebases don't compile cleanly with
+    # -pedantic.
+    cpp = tup_cpp.TupCpp(tupmk, moz_objdir,
+                         filter_out=['-pedantic'],
+                         target_srcs_flag=True)
 
     # Find the list of targets that derive from the gyp file(s) being built.
     needed_targets = set()
@@ -233,8 +261,5 @@ def GenerateOutput(target_list, target_dicts, data, params):
             needed_targets.add(target)
             build_file_, _, _ = gyp.common.ParseQualifiedTarget(target)
 
-    generator = TupfileGenerator(target_dicts, data, options, flavor, debug,
-                                 generator_flags['MOZ_ROOT'],
-                                 generator_flags['CC'],
-                                 generator_flags['OBJ_SUFFIX'])
+    generator = TupfileGenerator(target_dicts, data, options, flavor, tupmk, cpp)
     generator.ProcessTargets(needed_targets)

@@ -11,7 +11,7 @@ from optparse import OptionParser
 class TupCpp(object):
     def __init__(self, tupmk, moz_objdir, host_srcs_flag=False,
                  target_srcs_flag=False, extra_includes="", js_src=False,
-                 extra_deps=[]):
+                 extra_deps=[], filter_out=[]):
         self.tupmk = tupmk
         self.moz_objdir = moz_objdir
         self.host_srcs_flag = host_srcs_flag
@@ -19,6 +19,8 @@ class TupCpp(object):
         self.extra_includes = extra_includes
         self.js_src = js_src
         self.extra_deps = extra_deps
+        self.extra_flags = ""
+        self.filter_out = filter_out
 
         self.cpp_flags = ['STL_FLAGS',
                           'VISIBILITY_FLAGS',
@@ -72,7 +74,7 @@ class TupCpp(object):
             value = self.tupmk.get_var(flag_group, variables=variables)
             for flag in value:
                 # Skip the make-specific dependency flags.
-                if not flag in ['-MD', '-MF', '/.pp']:
+                if not flag in ['-MD', '-MF', '/.pp'] and not flag in self.filter_out:
                     if '@tupjob' in flag:
                         print >> sys.stderr, "Error: @tupjob in flag:", flag
                         sys.exit(1)
@@ -147,6 +149,8 @@ class TupCpp(object):
                 all_flags.extend(test_includes)
 
                 all_flags_string = " ".join(all_flags)
+                if self.extra_flags:
+                    all_flags_string += " " + self.extra_flags
 
                 fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
 
@@ -180,15 +184,18 @@ class TupCpp(object):
                 all_flags = self.get_all_flags(flags, filename)
                 print ": %s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (filename + ".o", print_string, ld_string, " ".join(all_flags), filename)
 
-    def generate_cpp_rules(self, cppsrcs=[]):
+    def generate_cpp_rules(self, cppsrcs=[], csrcs=[], flags=""):
         # Some Tupfiles (eg: ipc/ipdl) pass in cppsrcs manually.
         if not cppsrcs:
             cppsrcs = self.tupmk.get_var('CPPSRCS')
+        if not csrcs:
+            csrcs = self.tupmk.get_var('CSRCS')
         cpp_unit_tests = self.tupmk.get_var('CPP_UNIT_TESTS')
-        csrcs = self.tupmk.get_var('CSRCS')
         host_cppsrcs = self.tupmk.get_var('HOST_CPPSRCS')
         host_csrcs = self.tupmk.get_var('HOST_CSRCS')
         vpath = self.tupmk.get_var('VPATH')
+
+        self.extra_flags = flags
 
         test_includes = []
         if cpp_unit_tests:
