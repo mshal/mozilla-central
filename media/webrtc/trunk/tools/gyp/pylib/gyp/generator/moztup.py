@@ -91,10 +91,13 @@ class TupfileGenerator(object):
         # Now write a Makefile for this target
         build_file, target, toolset = gyp.common.ParseQualifiedTarget(
             qualified_target)
-        build_file = os.path.abspath(build_file)
-        self.WriteTargetRules(qualified_target, spec, build_file)
+        dir_target = os.path.dirname(build_file)
 
-    def WriteTargetRules(self, qualified_target, spec, build_file):
+        # Only write out rules for targets required by our directory.
+        if not dir_target:
+            self.WriteTargetRules(qualified_target, spec, dir_target)
+
+    def WriteTargetRules(self, qualified_target, spec, dirname):
         configs = spec['configurations']
         data = {}
         #TODO: handle actions/rules/copies
@@ -190,20 +193,13 @@ class TupfileGenerator(object):
         else:
             # Maybe nothing?
             return False
-        self.WriteTupRules(data)
+        self.WriteTupRules(data, dirname)
         return True
 
-#    def WriteCompileRules(self, data, srcs_name, display_string, cc_string,
-#                          flag_string, obj_suffix):
-#        if srcs_name in data:
-#            srcs = data[srcs_name]
-#            for filename in srcs:
-#                print ": %s | $(MOZ_ROOT)/dist/include/<installed-headers> |> ^ %s %%f^ %s -c %%f -o %%o %s |> %%B.%s" % (filename, display_string, cc_string, flag_string, obj_suffix)
-#
     def GetFlag(self, data, flag):
         return list(data[flag]) if flag in data else []
 
-    def WriteTupRules(self, data):
+    def WriteTupRules(self, data, dirname):
         if self.tupmk.get_var('MOZ_DEBUG'):
             suffix = "Debug"
         else:
@@ -223,15 +219,24 @@ class TupfileGenerator(object):
         for inc in includes:
             inc = inc.replace('$(srcdir)', '.')
             inc = inc.replace('$(DEPTH)', self.tupmk.moz_root)
+            inc = inc.replace('$(DIST)', os.path.join(self.tupmk.moz_root, 'dist'))
             cflag_string += ' ' + inc
             cxxflag_string += ' ' + inc
 
+        cppsrcs = []
         if 'CPPSRCS' in data:
-            self.cpp.generate_cpp_rules(cppsrcs=data['CPPSRCS'],
-                                        flags=cxxflag_string)
+            for src in data['CPPSRCS']:
+                cppsrcs.append(os.path.join(dirname, src))
+
+        csrcs = []
         if 'CSRCS' in data:
-            self.cpp.generate_cpp_rules(csrcs=data['CSRCS'],
-                                        flags=cflag_string)
+            for src in data['CSRCS']:
+                csrcs.append(os.path.join(dirname, src))
+
+        if cppsrcs:
+            self.cpp.generate_cpp_rules(cppsrcs=cppsrcs, flags=cxxflag_string)
+        if csrcs:
+            self.cpp.generate_cpp_rules(csrcs=csrcs, flags=cflag_string)
 
 def GenerateOutput(target_list, target_dicts, data, params):
     options = params['options']

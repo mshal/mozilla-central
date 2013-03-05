@@ -128,7 +128,7 @@ class TupCpp(object):
             obj_prefix_string = ""
             dist_include_dependency = True
 
-        deps = self.extra_deps
+        deps = list(self.extra_deps)
         if dist_include_dependency:
             deps.append("$(MOZ_ROOT)/dist/include/<installed-headers>")
 
