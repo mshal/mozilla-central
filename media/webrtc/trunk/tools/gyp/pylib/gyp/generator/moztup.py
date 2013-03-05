@@ -93,8 +93,11 @@ class TupfileGenerator(object):
             qualified_target)
         dir_target = os.path.dirname(build_file)
 
-        # Only write out rules for targets required by our directory.
-        if not dir_target:
+        # Only write out rules for targets required by our directory.  As a bit
+        # of a hack, we also allow '../signaling' so that
+        # media/webrtc/signalingtest will be compiled (which re-uses the
+        # media/webrtc/signaling, but with a different debug flag)
+        if not dir_target or dir_target == '../signaling':
             self.WriteTargetRules(qualified_target, spec, dir_target)
 
     def WriteTargetRules(self, qualified_target, spec, dirname):
@@ -216,8 +219,12 @@ class TupfileGenerator(object):
 
         cflag_string = ' '.join(cflags)
         cxxflag_string = ' '.join(cxxflags)
+
+        if not dirname:
+            dirname = '.'
+
         for inc in includes:
-            inc = inc.replace('$(srcdir)', '.')
+            inc = inc.replace('$(srcdir)', dirname)
             inc = inc.replace('$(DEPTH)', self.tupmk.moz_root)
             inc = inc.replace('$(DIST)', os.path.join(self.tupmk.moz_root, 'dist'))
             cflag_string += ' ' + inc
