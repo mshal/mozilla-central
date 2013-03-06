@@ -18,6 +18,7 @@ class TupCpp(object):
         self.target_srcs_flag = target_srcs_flag
         self.extra_includes = extra_includes
         self.js_src = js_src
+        self.nsprpub = nsprpub
         self.extra_deps = extra_deps
         self.extra_flags = ""
         self.filter_out = filter_out
@@ -106,7 +107,7 @@ class TupCpp(object):
             # cause a circular dependency. However, some host programs *do* use
             # headers from dist/include, so we can't just remove the input for all
             # host programs.
-            if not self.js_src:
+            if not self.js_src and not self.nsprpub:
                 dist_include_dependency = True
         else:
             obj_prefix_string = ""

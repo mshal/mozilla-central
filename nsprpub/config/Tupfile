@@ -4,4 +4,4 @@
 
 include_rules
 
-include $(MOZ_ROOT)/build/tup/compile.tup
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_nsprpub_config.py $(MOZ_ROOT) @(MOZ_OBJDIR)
