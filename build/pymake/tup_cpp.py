@@ -11,7 +11,7 @@ from optparse import OptionParser
 class TupCpp(object):
     def __init__(self, tupmk, moz_objdir, host_srcs_flag=False,
                  target_srcs_flag=False, extra_includes="", js_src=False,
-                 extra_deps=[], filter_out=[]):
+                 nsprpub=False, extra_deps=[], filter_out=[]):
         self.tupmk = tupmk
         self.moz_objdir = moz_objdir
         self.host_srcs_flag = host_srcs_flag
@@ -22,28 +22,12 @@ class TupCpp(object):
         self.extra_flags = ""
         self.filter_out = filter_out
 
-        self.cpp_flags = ['STL_FLAGS',
-                          'VISIBILITY_FLAGS',
-                          'DEFINES',
-                          'INCLUDES',
-                          'DSO_CFLAGS',
-                          'DSO_PIC_CFLAGS',
-                          'CXXFLAGS',
-                          'RTL_FLAGS',
-                          'OS_CPPFLAGS',
-                          'OS_COMPILE_CXXFLAGS',
-                          ]
+        self.cpp_flags = ['COMPILE_CXXFLAGS']
 
-        self.c_flags = ['VISIBILITY_FLAGS',
-                        'DEFINES',
-                        'INCLUDES',
-                        'DSO_CFLAGS',
-                        'DSO_PIC_CFLAGS',
-                        'CFLAGS',
-                        'RTL_FLAGS',
-                        'OS_CPPFLAGS',
-                        'OS_COMPILE_CFLAGS',
-                        ]
+        if nsprpub:
+            self.c_flags = ['CFLAGS']
+        else:
+            self.c_flags = ['COMPILE_CFLAGS']
 
         self.host_cpp_flags = ['HOST_CXXFLAGS',
                                'INCLUDES',
@@ -262,6 +246,7 @@ if __name__ == '__main__':
                     host_srcs_flag=options.host_srcs,
                     target_srcs_flag=options.target_srcs,
                     extra_includes=options.tup_extra_includes,
-                    js_src=options.js_src)
+                    js_src=options.js_src,
+                    nsprpub=options.nsprpub)
 
     tupcpp.generate_cpp_rules()

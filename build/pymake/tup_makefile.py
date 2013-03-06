@@ -154,7 +154,10 @@ class TupMakefile(object):
                         # needed can greatly slow down some cases (such as
                         # dist/include), so we only grab it if need_config_mk is
                         # set.
-                        if self.need_config_mk and not self.get_var('INCLUDED_CONFIG_MK', makefile):
+                        already_included = self.get_var('INCLUDED_CONFIG_MK')
+                        if not already_included:
+                            already_included = self.get_var('NSPR_CONFIG_MK')
+                        if self.need_config_mk and not already_included:
                             config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
                             self.process_makefile(makefile, context, config_mk)
                         continue
