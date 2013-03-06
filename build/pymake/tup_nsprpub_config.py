@@ -15,7 +15,8 @@ moz_root = sys.argv[1]
 moz_objdir = sys.argv[2]
 tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
                                  nsprpub=True)
-cpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True, nsprpub=True)
+cpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True, nsprpub=True,
+                     dist_include_dep=False)
 
 tupmk.parse('.')
 

@@ -11,17 +11,18 @@ from optparse import OptionParser
 class TupCpp(object):
     def __init__(self, tupmk, moz_objdir, host_srcs_flag=False,
                  target_srcs_flag=False, extra_includes="", js_src=False,
-                 nsprpub=False, extra_deps=[], filter_out=[]):
+                 nsprpub=False, extra_deps=[], filter_out=[],
+                 dist_include_dep=True):
         self.tupmk = tupmk
         self.moz_objdir = moz_objdir
         self.host_srcs_flag = host_srcs_flag
         self.target_srcs_flag = target_srcs_flag
         self.extra_includes = extra_includes
         self.js_src = js_src
-        self.nsprpub = nsprpub
         self.extra_deps = extra_deps
         self.extra_flags = ""
         self.filter_out = filter_out
+        self.dist_include_dep = dist_include_dep
 
         self.cpp_flags = ['COMPILE_CXXFLAGS']
 
@@ -107,11 +108,11 @@ class TupCpp(object):
             # cause a circular dependency. However, some host programs *do* use
             # headers from dist/include, so we can't just remove the input for all
             # host programs.
-            if not self.js_src and not self.nsprpub:
-                dist_include_dependency = True
+            if not self.js_src:
+                dist_include_dependency = self.dist_include_dep
         else:
             obj_prefix_string = ""
-            dist_include_dependency = True
+            dist_include_dependency = self.dist_include_dep
 
         deps = list(self.extra_deps)
         if dist_include_dependency:
