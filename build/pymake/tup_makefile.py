@@ -74,6 +74,13 @@ class TupMakefile(object):
 
         if nsprpub:
             self.topsrcdir = os.path.join(moz_root, 'nsprpub')
+            # nsprpub's rules.mk passes in '-c' explicitly, but we use the
+            # AS_DASH_C_FLAG in tup_cpp to support that variable for the
+            # top-level rules.mk
+            self.autoconf_makefile.variables.set('AS_DASH_C_FLAG',
+                                                 pymake.data.Variables.FLAVOR_SIMPLE,
+                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
+                                                 '-c')
         else:
             # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
             # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
