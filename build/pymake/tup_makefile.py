@@ -11,7 +11,7 @@ import pymake.parser
 class TupMakefile(object):
     def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in',
                  allow_includes=False, always_enabled=False, need_config_mk=False,
-                 js_src=False):
+                 js_src=False, nsprpub=False):
         self.subdir_makefile = None
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
@@ -29,6 +29,8 @@ class TupMakefile(object):
                                              moz_root)
         if js_src:
             depth = os.path.join(moz_root, moz_objdir, 'js', 'src')
+        elif nsprpub:
+            depth = os.path.join(moz_root, moz_objdir, 'nsprpub')
         else:
             depth = os.path.join(moz_root, moz_objdir)
         self.autoconf_makefile.variables.set('DEPTH',
@@ -70,15 +72,19 @@ class TupMakefile(object):
         self.process_makefile(self.autoconf_makefile, self.context, autoconf_path)
         self.process_makefile(self.autoconf_makefile, self.context, browser_build_mk)
 
-        # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
-        # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
-        # want, so put that in _OBJ_SUFFIX as well (since that value gets put
-        # back into the original OBJ_SUFFIX).
-        obj_suffix = self.get_var('OBJ_SUFFIX', self.autoconf_makefile)
-        self.autoconf_makefile.variables.set('_OBJ_SUFFIX',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             obj_suffix[0])
+        if nsprpub:
+            self.topsrcdir = os.path.join(moz_root, 'nsprpub')
+        else:
+            # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
+            # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
+            # want, so put that in _OBJ_SUFFIX as well (since that value gets
+            # put back into the original OBJ_SUFFIX).
+            self.topsrcdir = moz_root
+            obj_suffix = self.get_var('OBJ_SUFFIX', self.autoconf_makefile)
+            self.autoconf_makefile.variables.set('_OBJ_SUFFIX',
+                                                 pymake.data.Variables.FLAVOR_SIMPLE,
+                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
+                                                 obj_suffix[0])
 
         self.allow_includes = False
         self.process_makefile(self.autoconf_makefile, self.context, root_makefile_path)
@@ -102,9 +108,17 @@ class TupMakefile(object):
                 'db/sqlite3/src',
                 'js/src',
                 'security/nss',
+                'nsprpub',
                 ]:
             tier = os.path.join(moz_root, dirname)
             self.enabled_dirs[tier] = True
+
+        # Once we have parsed autoconf.mk and build.mk, we can set the "true"
+        # topsrcdir for nsprpub.
+        self.autoconf_makefile.variables.set('topsrcdir',
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             self.topsrcdir)
 
     def process_statements(self, makefile, context, dirname, statements):
         for s in statements:
@@ -141,7 +155,7 @@ class TupMakefile(object):
                         # dist/include), so we only grab it if need_config_mk is
                         # set.
                         if self.need_config_mk and not self.get_var('INCLUDED_CONFIG_MK', makefile):
-                            config_mk = os.path.join(self.moz_root, 'config/config.mk')
+                            config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
                             self.process_makefile(makefile, context, config_mk)
                         continue
                     elif '/baseconfig.mk' in include_filename:
@@ -325,6 +339,7 @@ class TupMakefile(object):
         if not os.path.exists(makefile_in):
             print >> sys.stderr, "Error: Unable to find file: ", makefile_in
             sys.exit(1)
+        value = self.makefile_is_enabled(subdir)
         if self.always_enabled or self.makefile_is_enabled(subdir):
             self.process_makefile(makefile, self.context, makefile_in)
 

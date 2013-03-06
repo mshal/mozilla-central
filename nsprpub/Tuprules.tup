@@ -1,0 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Everything under nsprpub needs to use the nsprpub autoconf.mk, not the
+# top-level autoconf.mk. This gets passed in through compile*.tup
+TUP_CPP_FLAGS = --nsprpub

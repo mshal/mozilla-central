@@ -235,6 +235,8 @@ if __name__ == '__main__':
                  help='Compile only the non-HOST (target) sources.')
     p.add_option('--js-src', action='store_true', dest='js_src', default=False,
                  help='Enable special treatment of js/src/*')
+    p.add_option('--nsprpub', action='store_true', dest='nsprpub', default=False,
+                 help='Enable special treatment of nsprpub/*')
     p.add_option('-I', dest='tup_extra_includes', default=[], type=str,
                  action='append',
                  help='Extra include directories to pass to the compiler that are not in the Makefile')
@@ -252,7 +254,8 @@ if __name__ == '__main__':
 
     tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
                                      need_config_mk=True,
-                                     js_src=options.js_src)
+                                     js_src=options.js_src,
+                                     nsprpub=options.nsprpub)
     tupmk.parse('.')
 
     tupcpp = TupCpp(tupmk, moz_objdir,
