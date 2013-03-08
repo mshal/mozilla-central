@@ -1,0 +1,12 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# nss Makefiles need $(shell)
+export SHELL
+
+# nss Makefiles use 'Makefile' rather than 'Makefile.in'. Also turn on the
+# --security flag to enable special treatment (reading in the
+# security/build/Makefile.in for extra settings normally passed in by recursive
+# make).
+TUP_CPP_FLAGS += -m Makefile --security
