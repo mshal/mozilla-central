@@ -1,0 +1,14 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+export SHELL
+
+# List of directories that contain PRIVATE_EXPORTS
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/cmd/lib
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/certdb
+
+# --allow-includes needed for mfbt, which defines exports in exported_headers.mk
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile PRIVATE_EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)
