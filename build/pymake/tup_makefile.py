@@ -15,48 +15,28 @@ class TupMakefile(object):
         self.subdir_makefile = None
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
-        self.autoconf_makefile.variables.set('srcdir',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             '.')
-        self.autoconf_makefile.variables.set('topsrcdir',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             moz_root)
-        self.autoconf_makefile.variables.set('MOZILLA_DIR',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             moz_root)
+        self.set_var('srcdir', '.')
+        self.set_var('topsrcdir', moz_root)
+        self.set_var('MOZILLA_DIR', moz_root)
+
         if js_src:
             depth = os.path.join(moz_root, moz_objdir, 'js', 'src')
         elif nsprpub:
             depth = os.path.join(moz_root, moz_objdir, 'nsprpub')
         else:
             depth = os.path.join(moz_root, moz_objdir)
-        self.autoconf_makefile.variables.set('DEPTH',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             depth)
-        self.autoconf_makefile.variables.set('DIST',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             os.path.join(moz_root, 'dist'))
+        self.set_var('DEPTH', depth)
+        self.set_var('DIST', os.path.join(moz_root, 'dist'))
 
         # This is used in some -I flags, and we need to make sure it gets set to
         # something so that "-I" isn't passed in without an argument. It isn't
         # needed for tup, since we generate XPIDLSRCS a little differently from
         # make.
-        self.autoconf_makefile.variables.set('XPIDL_GEN_DIR',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             '.')
+        self.set_var('XPIDL_GEN_DIR', '.')
 
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk
-        self.autoconf_makefile.variables.set('INCLUDED_RCS_MK',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             '1')
+        self.set_var('INCLUDED_RCS_MK', '1')
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
@@ -77,10 +57,7 @@ class TupMakefile(object):
             # nsprpub's rules.mk passes in '-c' explicitly, but we use the
             # AS_DASH_C_FLAG in tup_cpp to support that variable for the
             # top-level rules.mk
-            self.autoconf_makefile.variables.set('AS_DASH_C_FLAG',
-                                                 pymake.data.Variables.FLAVOR_SIMPLE,
-                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
-                                                 '-c')
+            self.set_var('AS_DASH_C_FLAG', '-c')
         else:
             # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
             # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
@@ -88,10 +65,7 @@ class TupMakefile(object):
             # put back into the original OBJ_SUFFIX).
             self.topsrcdir = moz_root
             obj_suffix = self.get_var('OBJ_SUFFIX', self.autoconf_makefile)
-            self.autoconf_makefile.variables.set('_OBJ_SUFFIX',
-                                                 pymake.data.Variables.FLAVOR_SIMPLE,
-                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
-                                                 obj_suffix[0])
+            self.set_var('_OBJ_SUFFIX', obj_suffix[0])
 
         self.allow_includes = False
         self.process_makefile(self.autoconf_makefile, self.context, root_makefile_path)
@@ -103,10 +77,8 @@ class TupMakefile(object):
         self.allow_includes = allow_includes
 
         if security:
-            self.autoconf_makefile.variables.set('SOURCE_MD_DIR',
-                                                 pymake.data.Variables.FLAVOR_SIMPLE,
-                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
-                                                 os.path.join(moz_root, 'dist'))
+            self.set_var('SOURCE_MD_DIR', os.path.join(moz_root, 'dist'))
+
             # The security/ Makefiles are a little weird - first make recurses
             # into build/Makefile, then executes sub-makes with a bunch of
             # variables defined at the command-line (DEFAULT_GMAKE_FLAGS). Here
@@ -114,10 +86,7 @@ class TupMakefile(object):
             for gmake_flag in self.get_var('DEFAULT_GMAKE_FLAGS', makefile=self.autoconf_makefile):
                 parts = gmake_flag.split('=', 1)
                 if(len(parts) == 2 and (parts[1] == '0' or parts[1] == '1')):
-                    self.autoconf_makefile.variables.set(parts[0],
-                                                         pymake.data.Variables.FLAVOR_SIMPLE,
-                                                         pymake.data.Variables.SOURCE_AUTOMATIC,
-                                                         parts[1])
+                    self.set_var(parts[0], parts[1])
 
         # enabled_dirs is our cache of directories that are enabled. By default,
         # all directories in tier_platform_dirs are enabled. Others are set to
@@ -146,10 +115,7 @@ class TupMakefile(object):
 
         # Once we have parsed autoconf.mk and build.mk, we can set the "true"
         # topsrcdir for nsprpub.
-        self.autoconf_makefile.variables.set('topsrcdir',
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             self.topsrcdir)
+        self.set_var('topsrcdir', self.topsrcdir)
 
     def process_statements(self, makefile, context, dirname, statements):
         for s in statements:
@@ -252,6 +218,12 @@ class TupMakefile(object):
         statements = pymake.parser.parsefile(filename)
 
         self.process_statements(makefile, context, os.path.dirname(filename), statements)
+
+    def set_var(self, varname, value):
+        self.autoconf_makefile.variables.set(varname,
+                                             pymake.data.Variables.FLAVOR_SIMPLE,
+                                             pymake.data.Variables.SOURCE_AUTOMATIC,
+                                             value)
 
     def get_var(self, varname, makefile=None, variables=None):
         if makefile is None:
