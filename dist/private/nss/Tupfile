@@ -8,10 +8,29 @@ export SHELL
 
 # List of directories that contain PRIVATE_EXPORTS
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/cmd/lib
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/base
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/certdb
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/certhigh
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/ckfw
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/dev
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/freebl
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/include
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/certsel
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/checker
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/crlsel
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/params
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/module
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/pki
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/system
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/results
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/store
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/top
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/util
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/nss
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/pk11wrap
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/pki
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/softoken
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/util
 
 # --allow-includes needed for mfbt, which defines exports in exported_headers.mk
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile PRIVATE_EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)
