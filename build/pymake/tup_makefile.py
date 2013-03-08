@@ -103,6 +103,10 @@ class TupMakefile(object):
         self.allow_includes = allow_includes
 
         if security:
+            self.autoconf_makefile.variables.set('SOURCE_MD_DIR',
+                                                 pymake.data.Variables.FLAVOR_SIMPLE,
+                                                 pymake.data.Variables.SOURCE_AUTOMATIC,
+                                                 os.path.join(moz_root, 'dist'))
             # The security/ Makefiles are a little weird - first make recurses
             # into build/Makefile, then executes sub-makes with a bunch of
             # variables defined at the command-line (DEFAULT_GMAKE_FLAGS). Here

@@ -9,6 +9,9 @@ export SHELL
 # List of directories that contain PRIVATE_EXPORTS
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/cmd/lib
 EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/certdb
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/freebl
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/nss
+EXPORT_DIRS += $(MOZ_ROOT)/security/nss/lib/softoken
 
 # --allow-includes needed for mfbt, which defines exports in exported_headers.mk
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py --allow-includes -m Makefile PRIVATE_EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(EXPORT_DIRS)
