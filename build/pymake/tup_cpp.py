@@ -11,7 +11,7 @@ from optparse import OptionParser
 class TupCpp(object):
     def __init__(self, tupmk, moz_objdir, host_srcs_flag=False,
                  target_srcs_flag=False, extra_includes="", js_src=False,
-                 nsprpub=False, extra_deps=[], filter_out=[],
+                 nsprpub=False, security=False, extra_deps=[], filter_out=[],
                  dist_include_dep=True):
         self.tupmk = tupmk
         self.moz_objdir = moz_objdir
@@ -26,7 +26,7 @@ class TupCpp(object):
 
         self.cpp_flags = ['COMPILE_CXXFLAGS']
 
-        if nsprpub:
+        if nsprpub or security:
             self.c_flags = ['CFLAGS']
         else:
             self.c_flags = ['COMPILE_CFLAGS']
@@ -223,9 +223,13 @@ if __name__ == '__main__':
                  help='Enable special treatment of js/src/*')
     p.add_option('--nsprpub', action='store_true', dest='nsprpub', default=False,
                  help='Enable special treatment of nsprpub/*')
+    p.add_option('--security', action='store_true', dest='security', default=False,
+                 help='Enable special treatment of security/*')
     p.add_option('-I', dest='tup_extra_includes', default=[], type=str,
                  action='append',
                  help='Extra include directories to pass to the compiler that are not in the Makefile')
+    p.add_option('-m', dest='makefile', default='Makefile.in',
+                 help='Optional: Name of the Makefile (defaults to Makefile.in)')
 
     (options, args) = p.parse_args()
 
@@ -239,9 +243,11 @@ if __name__ == '__main__':
     moz_objdir = args[1]
 
     tupmk = tup_makefile.TupMakefile(moz_root, moz_objdir, allow_includes=True,
+                                     makefile_name=options.makefile,
                                      need_config_mk=True,
                                      js_src=options.js_src,
-                                     nsprpub=options.nsprpub)
+                                     nsprpub=options.nsprpub,
+                                     security=options.security)
     tupmk.parse('.')
 
     tupcpp = TupCpp(tupmk, moz_objdir,
@@ -249,6 +255,7 @@ if __name__ == '__main__':
                     target_srcs_flag=options.target_srcs,
                     extra_includes=options.tup_extra_includes,
                     js_src=options.js_src,
-                    nsprpub=options.nsprpub)
+                    nsprpub=options.nsprpub,
+                    security=options.security)
 
     tupcpp.generate_cpp_rules()

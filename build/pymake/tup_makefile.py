@@ -11,7 +11,7 @@ import pymake.parser
 class TupMakefile(object):
     def __init__(self, moz_root, moz_objdir, makefile_name='Makefile.in',
                  allow_includes=False, always_enabled=False, need_config_mk=False,
-                 js_src=False, nsprpub=False):
+                 js_src=False, nsprpub=False, security=False):
         self.subdir_makefile = None
         self.autoconf_makefile = pymake.data.Makefile()
         self.autoconf_makefile.variables = pymake.data.Variables()
@@ -95,7 +95,25 @@ class TupMakefile(object):
 
         self.allow_includes = False
         self.process_makefile(self.autoconf_makefile, self.context, root_makefile_path)
+        if security:
+            build_makefile = os.path.join(moz_root, 'security', 'build',
+                                          'Makefile.in')
+            self.process_makefile(self.autoconf_makefile, self.context,
+                                  build_makefile)
         self.allow_includes = allow_includes
+
+        if security:
+            # The security/ Makefiles are a little weird - first make recurses
+            # into build/Makefile, then executes sub-makes with a bunch of
+            # variables defined at the command-line (DEFAULT_GMAKE_FLAGS). Here
+            # we pull out those defines and add them to our base variable set.
+            for gmake_flag in self.get_var('DEFAULT_GMAKE_FLAGS', makefile=self.autoconf_makefile):
+                parts = gmake_flag.split('=', 1)
+                if(len(parts) == 2 and (parts[1] == '0' or parts[1] == '1')):
+                    self.autoconf_makefile.variables.set(parts[0],
+                                                         pymake.data.Variables.FLAVOR_SIMPLE,
+                                                         pymake.data.Variables.SOURCE_AUTOMATIC,
+                                                         parts[1])
 
         # enabled_dirs is our cache of directories that are enabled. By default,
         # all directories in tier_platform_dirs are enabled. Others are set to
@@ -115,6 +133,8 @@ class TupMakefile(object):
                 'db/sqlite3/src',
                 'js/src',
                 'security/nss',
+                'security/manager',
+                'security/dbm',
                 'nsprpub',
                 ]:
             tier = os.path.join(moz_root, dirname)
@@ -143,10 +163,8 @@ class TupMakefile(object):
 
                 s.execute(makefile, context)
             elif isinstance(s, pymake.parserdata.Include):
-                # Includes are generally ignored. The Makefiles in security/nss
-                # are an exception, since much of the data is actually defined
-                # in security/coreconf/* and the manifest.mn files, which are
-                # included by the Makefile.
+                # Certain includes are generally ignored, such as those
+                # specifically used by the make backend.
                 if self.allow_includes:
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
@@ -163,7 +181,17 @@ class TupMakefile(object):
                         # set.
                         already_included = self.get_var('INCLUDED_CONFIG_MK')
                         if not already_included:
+                            # This variable is defined in
+                            # nsprpub/config/config.mk, so we can get our
+                            # definitions from there for Makefiles in nsprpub/
                             already_included = self.get_var('NSPR_CONFIG_MK')
+                        if not already_included:
+                            # This variable is set by
+                            # security/coreconf/config.mk, so we can use it
+                            # to see if that config file has already been
+                            # included for Makefiles under security/
+                            already_included = self.get_var('USE_UTIL_DIRECTLY')
+
                         if self.need_config_mk and not already_included:
                             config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
                             self.process_makefile(makefile, context, config_mk)
@@ -296,13 +324,17 @@ class TupMakefile(object):
         return self.enabled_dirs[subdir]
 
     def vpath_resolve(self, subdir, vpath, filename):
-        # When parsing manifest.mn, for example, VPATH may not be set.
-        if not vpath:
-            vpath = ['.']
-
         for p, dirs in self.subdir_makefile._patternvpaths:
             if p.match(filename):
                 vpath.extend(dirs)
+
+        # Since we are using Makefile.in, @srcdir@ won't be substituted.
+        # We just want to use the current directory in such cases.
+        vpath = [path.replace('@srcdir@', '.') for path in vpath]
+
+        # When parsing manifest.mn, for example, VPATH may not be set.
+        if '.' not in vpath:
+            vpath.append('.')
 
         # Don't use the wild-carding method if we:
         # 1) Just have a single VPATH (ie: the current directory), or
@@ -310,8 +342,11 @@ class TupMakefile(object):
         #    VPATH to kick in. Otherwise tup returns errors when non-existent
         #    directories are used.
         if len(vpath) == 1 or filename.find('/') != -1:
-            if(subdir == '.'):
-                return filename
+            if subdir == '.':
+                if vpath[0] == '.':
+                    return filename
+                else:
+                    return os.path.join(vpath[0], filename)
             else:
                 return os.path.join(subdir, filename)
 
@@ -326,10 +361,6 @@ class TupMakefile(object):
         returned_path = []
         wildcard_filename = filename + "*"
         for path in vpath:
-
-            # Since we are using Makefile.in, @srcdir@ won't be substituted.
-            # We just want to use the current directory in such cases.
-            path = path.replace('@srcdir@', '.')
 
             if path == '.':
                 fullpath = os.path.join(subdir, wildcard_filename)
