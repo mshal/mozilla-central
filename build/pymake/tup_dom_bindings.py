@@ -36,6 +36,7 @@ for idl in all_webidl_files:
 
 cpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True)
 cpp.generate_cpp_rules()
+cpp.generate_desc_file()
 
 # With the make build, the Test webidl files are converted to *Binding.cpp files
 # in the dom/bindings/ directory, but are not compiled until make recurses into
@@ -56,3 +57,4 @@ if test_idls:
 
     cpp.extra_includes = ['test']
     cpp.generate_cpp_rules(testsrcs)
+    cpp.generate_desc_file(static_library_name='dombindings_test_s')
