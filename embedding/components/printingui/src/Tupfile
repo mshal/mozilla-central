@@ -1,0 +1,21 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+PLATFORM_DIR = unixshared
+
+ifeq ($(MOZ_WIDGET_TOOLKIT),os2)
+PLATFORM_DIR = os2
+endif
+
+ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
+PLATFORM_DIR = win
+endif
+
+ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
+PLATFORM_DIR = mac
+endif
+
+: $(PLATFORM_DIR)/libprintingui_s.a.desc |> !cp |>
