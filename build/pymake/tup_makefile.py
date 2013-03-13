@@ -219,11 +219,13 @@ class TupMakefile(object):
 
         self.process_statements(makefile, context, os.path.dirname(filename), statements)
 
-    def set_var(self, varname, value):
-        self.autoconf_makefile.variables.set(varname,
-                                             pymake.data.Variables.FLAVOR_SIMPLE,
-                                             pymake.data.Variables.SOURCE_AUTOMATIC,
-                                             value)
+    def set_var(self, varname, value, makefile=None):
+        if makefile is None:
+            makefile = self.autoconf_makefile
+        makefile.variables.set(varname,
+                               pymake.data.Variables.FLAVOR_SIMPLE,
+                               pymake.data.Variables.SOURCE_MAKEFILE,
+                               value)
 
     def get_var(self, varname, makefile=None, variables=None):
         if makefile is None:
