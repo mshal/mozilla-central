@@ -245,6 +245,9 @@ class TupfileGenerator(object):
         if csrcs:
             self.cpp.generate_cpp_rules(csrcs=csrcs, flags=cflag_string)
 
+        if 'FORCE_STATIC_LIB' in data:
+            self.cpp.generate_desc_file(static_library_name=data['LIBRARY_NAME'])
+
 def GenerateOutput(target_list, target_dicts, data, params):
     options = params['options']
     flavor = GetFlavor(params)

@@ -23,6 +23,7 @@ class TupCpp(object):
         self.extra_flags = ""
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
+        self.objs = []
 
         self.cpp_flags = ['COMPILE_CXXFLAGS']
 
@@ -141,7 +142,9 @@ class TupCpp(object):
                 fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
 
                 # Create a tup :-rule for each cpp file to compile it
-                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s%%B.%s {objs}" % (fullpath, extra_deps_string, print_string, cc_string, compile_flag, all_flags_string, obj_prefix_string, obj_suffix)
+                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s%%B.%s" % (fullpath, extra_deps_string, print_string, cc_string, compile_flag, all_flags_string, obj_prefix_string, obj_suffix)
+                basename, ext = os.path.splitext(os.path.basename(fullpath))
+                self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
 
     def generate_asm_rules(self):
         srcs = self.tupmk.get_var('ASFILES')
@@ -162,7 +165,9 @@ class TupCpp(object):
 
         for filename in srcs:
             fullpath = self.tupmk.vpath_resolve('.', vpath, filename)
-            print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s {objs}" % (fullpath, extra_deps_string, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
+            print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (fullpath, extra_deps_string, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
+            basename, ext = os.path.splitext(os.path.basename(fullpath))
+            self.objs.append("%s.%s" % (basename, obj_suffix))
 
     def generate_simple_link_rules(self, srcs, print_string, ld_string, flags):
         if srcs:
@@ -208,14 +213,20 @@ class TupCpp(object):
                                                 'LD [host]', '$(HOST_CXX)',
                                                 self.host_link_flags)
 
-    def generate_desc_file(self):
-        static_library_name = tupmk.get_var('STATIC_LIBRARY_NAME')
+    def generate_desc_file(self, static_library_name=None):
+        if not static_library_name:
+            static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
         if static_library_name:
-            output = '%s%s.%s.%s' % (tupmk.get_var_string('LIB_PREFIX'),
-                                     static_library_name[0],
-                                     tupmk.get_var_string('LIB_SUFFIX'),
-                                     tupmk.get_var_string('LIBS_DESC_SUFFIX'))
-            print ": {objs} |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %%f --relative-path $(MOZ_ROOT) |> %s" % (output)
+            output = '%s%s.%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
+                                     static_library_name,
+                                     self.tupmk.get_var_string('LIB_SUFFIX'),
+                                     self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
+            objs = ' '.join(self.objs)
+
+            # Clear out the objects for any future libraries in the same
+            # directory (eg: some gyp files have multiple libraries)
+            self.objs = []
+            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %%f --relative-path $(MOZ_ROOT) |> %s" % (objs, output)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
