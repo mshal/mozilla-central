@@ -63,3 +63,4 @@ print ' | $(MOZ_ROOT)/dist/include/<installed-headers>'
 
 tupcpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True)
 tupcpp.generate_cpp_rules(cppsrcs)
+tupcpp.generate_desc_file()
