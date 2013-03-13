@@ -35,3 +35,4 @@ if tupmk.get_var('MOZ_VP8_ENCODER'):
 
 cpp.extra_deps = ['asm_enc_offsets.asm']
 cpp.generate_cpp_rules()
+cpp.generate_desc_file()
