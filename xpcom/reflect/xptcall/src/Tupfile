@@ -5,3 +5,15 @@
 include_rules
 
 include $(MOZ_ROOT)/build/tup/compile.tup
+
+osdir = unix
+
+ifeq ($(OS_ARCH),OS2)
+osdir = os2
+endif
+
+ifeq ($(OS_ARCH),WINNT)
+osdir = win32
+endif
+
+: md/$(osdir)/libxptcmd.a.desc |> !cp |>

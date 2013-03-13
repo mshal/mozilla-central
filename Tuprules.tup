@@ -14,3 +14,4 @@ PYTHONPATH = $(MOZ_ROOT)/config/pythonpath.py -I$(MOZ_ROOT)/other-licenses/ply
 PYHEADER = $(PYTHON) $(PYTHONPATH) $(MOZ_ROOT)/xpcom/idl-parser/header.py
 
 !ln = |> ^ LN %o -> %f^ ln -s %f %o |> %b
+!cp = |> ^ CP %f -> %o^ cp %f %o |> %b
