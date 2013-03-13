@@ -269,5 +269,5 @@ if __name__ == '__main__':
 
     tupcpp.generate_cpp_rules()
 
-    if options.target_srcs:
+    if options.target_srcs and not tupmk.get_var('FORCE_SHARED_LIB'):
         tupcpp.generate_desc_file()
