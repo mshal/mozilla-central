@@ -124,6 +124,11 @@ class TupCpp(object):
         else:
             extra_deps_string = ""
 
+        # This is only used by widget/xremoteclient/ - we need to make sure
+        # that only the LIBCPPSRCS go into the library, not the PROGCPPSRCS
+        # (though we compile all CPPSRCS == LIBCPPSRCS + PROGCPPSRCS)
+        libcppsrcs = self.tupmk.get_var('LIBCPPSRCS')
+
         if srcs:
             for filename in srcs:
 
@@ -148,7 +153,9 @@ class TupCpp(object):
                 # Put all objects into self.objs, except for host srcs since
                 # they don't end up in libraries.
                 if not host_prefix:
-                    self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
+                    # libcppsrcs is specific to widget/xremoteclient/
+                    if not libcppsrcs or filename in libcppsrcs:
+                        self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
 
     def generate_asm_rules(self):
         srcs = self.tupmk.get_var('ASFILES')
