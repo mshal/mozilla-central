@@ -144,7 +144,11 @@ class TupCpp(object):
                 # Create a tup :-rule for each cpp file to compile it
                 print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s%%B.%s" % (fullpath, extra_deps_string, print_string, cc_string, compile_flag, all_flags_string, obj_prefix_string, obj_suffix)
                 basename, ext = os.path.splitext(os.path.basename(fullpath))
-                self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
+
+                # Put all objects into self.objs, except for host srcs since
+                # they don't end up in libraries.
+                if not host_prefix:
+                    self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
 
     def generate_asm_rules(self):
         srcs = self.tupmk.get_var('ASFILES')
