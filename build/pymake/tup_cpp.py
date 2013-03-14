@@ -216,17 +216,64 @@ class TupCpp(object):
     def generate_desc_file(self, static_library_name=None):
         if not static_library_name:
             static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
+
         if static_library_name:
             output = '%s%s.%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
                                      static_library_name,
                                      self.tupmk.get_var_string('LIB_SUFFIX'),
                                      self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
-            objs = ' '.join(self.objs)
+            inputs = ' '.join(self.objs)
+            cmd_inputs = ' '.join(self.objs)
+
+            # Tup's gyp support creates files in the directory where the gyp
+            # file is processed, rather than in some subdirectory like with
+            # make. Therefore, we have to trim the library path to be the root
+            # of the gyp directory.
+            gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
+                        "media/webrtc/trunk/src/modules",
+                        "media/webrtc/trunk/src/common_audio",
+                        "media/webrtc/trunk/src/system_wrappers/source",
+                        "media/webrtc/trunk/src/common_video",
+                        "media/webrtc/trunk/src/video_engine",
+                        "media/webrtc/trunk/src/voice_engine",
+                        "media/webrtc/trunk/third_party/libyuv",
+                        "media/mtransport/third_party/nICEr",
+                        "media/mtransport/third_party/nrappkit",
+                        ]
+
+            actual_path_map = {"libxpt.a": "xpcom/typelib/xpt/src",
+                               "libffi.a": "js/src/ctypes/libffi",
+                               }
+
+            for lib in self.tupmk.get_var('SHARED_LIBRARY_LIBS'):
+                # Our libraries are not in the autoconf objdir, so remove
+                # that from the path.
+                if self.moz_objdir in lib:
+                    lib = lib.replace(self.moz_objdir + os.path.sep, '')
+
+                # For gyp modules, the library is in the root gyp directory.
+                for gyp_dir in gyp_dirs:
+                    index = lib.find(gyp_dir)
+                    if index != -1:
+                        lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
+                        break
+
+                # Some .a files have dist/lib, or strange paths - point them to
+                # their actual locations.
+                basename = os.path.basename(lib)
+                if basename in actual_path_map:
+                    lib = os.path.join(moz_root, actual_path_map[basename], basename)
+
+                # The actual file used by expandlibs_gen.py is either the .a
+                # file, or the .a.desc file, depending on which exists. However,
+                # on the command-line we have to specify just the .a file.
+                inputs += ' %s*' % (lib)
+                cmd_inputs += ' %s' % (lib)
 
             # Clear out the objects for any future libraries in the same
             # directory (eg: some gyp files have multiple libraries)
             self.objs = []
-            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %%f --relative-path $(MOZ_ROOT) |> %s" % (objs, output)
+            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:

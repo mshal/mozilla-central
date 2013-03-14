@@ -18,7 +18,7 @@ def generate(args, path_base):
         if isObject(arg):
             if os.path.exists(arg):
                 if path_base:
-                    path = os.path.join(path_base, arg)
+                    path = os.path.normpath(os.path.join(path_base, arg))
                 else:
                     path = os.path.abspath(arg)
                 desc['OBJS'].append(path)
@@ -27,7 +27,7 @@ def generate(args, path_base):
         elif os.path.splitext(arg)[1] == conf.LIB_SUFFIX:
             if os.path.exists(arg) or os.path.exists(arg + conf.LIBS_DESC_SUFFIX):
                 if path_base:
-                    path = os.path.join(path_base, arg)
+                    path = os.path.normpath(os.path.join(path_base, arg))
                 else:
                     path = os.path.abspath(arg)
                 desc['LIBS'].append(path)
