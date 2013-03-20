@@ -25,6 +25,7 @@ del tupmk.subdir_makefile.variables._map['ASFILES']
 
 cpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True, security=True)
 cpp.generate_cpp_rules()
+cpp.generate_security_archive()
 
 # Now parse again with FREEBL_CHILD_BUILD set.
 tupmk.set_var('FREEBL_CHILD_BUILD', '1')

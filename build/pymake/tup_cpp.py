@@ -286,6 +286,19 @@ class TupCpp(object):
             self.objs = []
             print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
 
+    def generate_security_archive(self):
+        targets = self.tupmk.get_var('TARGETS')
+        objdir = self.tupmk.get_var_string('OBJDIR') + '/'
+
+        # See if we should build an archive (.a) file
+        library = self.tupmk.get_var_string('LIBRARY')
+        if library and library in targets:
+            output = library.replace(objdir, '')
+            ar = self.tupmk.get_var_string('AR')
+            inputs = ' '.join(self.objs)
+            self.objs = []
+            print ": %s |> ^ AR %%o^ %s %%o %%f |> %s" % (inputs, ar, output)
+
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         sys.exit('usage: %s [--host-srcs] [--target-srcs] MOZ_ROOT MOZ_OBJDIR [TUP_EXTRA_INCLUDES...]' % sys.argv[0])
@@ -340,3 +353,5 @@ if __name__ == '__main__':
 
     if options.target_srcs and not tupmk.get_var('FORCE_SHARED_LIB'):
         tupcpp.generate_desc_file()
+    if options.security:
+        tupcpp.generate_security_archive()
