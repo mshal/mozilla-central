@@ -28,6 +28,7 @@ cpp.generate_cpp_rules()
 cpp.generate_security_library()
 
 # Now parse again with FREEBL_CHILD_BUILD set.
+tupmk.subdir_makefile = None
 tupmk.set_var('FREEBL_CHILD_BUILD', '1')
 tupmk.parse('.')
 

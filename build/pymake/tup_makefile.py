@@ -221,7 +221,10 @@ class TupMakefile(object):
 
     def set_var(self, varname, value, makefile=None):
         if makefile is None:
-            makefile = self.autoconf_makefile
+            if self.subdir_makefile:
+                makefile = self.subdir_makefile
+            else:
+                makefile = self.autoconf_makefile
         makefile.variables.set(varname,
                                pymake.data.Variables.FLAVOR_SIMPLE,
                                pymake.data.Variables.SOURCE_MAKEFILE,

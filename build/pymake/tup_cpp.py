@@ -309,21 +309,16 @@ class TupCpp(object):
             mapfile = tupmk.get_var_string('MAPFILE')
             mapfile = mapfile.replace(objdir, '')
             output_mapfile = mapfile + '.processed'
-            # TODO: Fix self.tupmk.subdir_makefile in set_var
-            self.tupmk.set_var('<', mapfile, makefile=self.tupmk.subdir_makefile)
-            self.tupmk.set_var('@', output_mapfile, makefile=self.tupmk.subdir_makefile)
+            self.tupmk.set_var('<', mapfile)
+            self.tupmk.set_var('@', output_mapfile)
 
             process_map_file = self.tupmk.get_var_string('PROCESS_MAP_FILE')
             print ": |> ^ Generate %%o^ %s |> %s" % (process_map_file, output_mapfile)
 
             # Now that we have a proper map file, generate the linker rule
-            self.tupmk.set_var('@', shared_library,
-                               makefile=self.tupmk.subdir_makefile)
-            self.tupmk.set_var('MAPFILE', output_mapfile,
-                               makefile=self.tupmk.subdir_makefile)
-
-            self.tupmk.set_var('DIST', os.path.join(self.tupmk.moz_root, 'dist'),
-                               makefile=self.tupmk.subdir_makefile)
+            self.tupmk.set_var('@', shared_library)
+            self.tupmk.set_var('MAPFILE', output_mapfile)
+            self.tupmk.set_var('DIST', os.path.join(self.tupmk.moz_root, 'dist'))
 
             extra_flags = ""
             for i in ['SUB_SHLOBJS', 'LD_LIBS', 'EXTRA_LIBS', 'EXTRA_SHARED_LIBS', 'OS_LIBS']:
