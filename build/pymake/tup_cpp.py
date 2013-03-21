@@ -286,18 +286,51 @@ class TupCpp(object):
             self.objs = []
             print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
 
-    def generate_security_archive(self):
+    def generate_security_library(self):
         targets = self.tupmk.get_var('TARGETS')
         objdir = self.tupmk.get_var_string('OBJDIR') + '/'
+
+        inputs = ' '.join(self.objs)
+        self.objs = []
 
         # See if we should build an archive (.a) file
         library = self.tupmk.get_var_string('LIBRARY')
         if library and library in targets:
             output = library.replace(objdir, '')
             ar = self.tupmk.get_var_string('AR')
-            inputs = ' '.join(self.objs)
-            self.objs = []
             print ": %s |> ^ AR %%o^ %s %%o %%f |> %s" % (inputs, ar, output)
+
+        # See if we should build a shared library
+        shared_library = self.tupmk.get_var_string('SHARED_LIBRARY')
+        if shared_library and shared_library in targets:
+            output = shared_library.replace(objdir, '')
+
+            # First process the map file into something the linker can use
+            mapfile = tupmk.get_var_string('MAPFILE')
+            mapfile = mapfile.replace(objdir, '')
+            output_mapfile = mapfile + '.processed'
+            # TODO: Fix self.tupmk.subdir_makefile in set_var
+            self.tupmk.set_var('<', mapfile, makefile=self.tupmk.subdir_makefile)
+            self.tupmk.set_var('@', output_mapfile, makefile=self.tupmk.subdir_makefile)
+
+            process_map_file = self.tupmk.get_var_string('PROCESS_MAP_FILE')
+            print ": |> ^ Generate %%o^ %s |> %s" % (process_map_file, output_mapfile)
+
+            # Now that we have a proper map file, generate the linker rule
+            self.tupmk.set_var('@', shared_library,
+                               makefile=self.tupmk.subdir_makefile)
+            self.tupmk.set_var('MAPFILE', output_mapfile,
+                               makefile=self.tupmk.subdir_makefile)
+
+            self.tupmk.set_var('DIST', os.path.join(self.tupmk.moz_root, 'dist'),
+                               makefile=self.tupmk.subdir_makefile)
+
+            extra_flags = ""
+            for i in ['SUB_SHLOBJS', 'LD_LIBS', 'EXTRA_LIBS', 'EXTRA_SHARED_LIBS', 'OS_LIBS']:
+                extra_flags += ' ' + self.tupmk.get_var_string(i)
+
+            mkshlib = self.tupmk.get_var_string('MKSHLIB')
+#            print ": %s | %s |> ^ SHLIB %%o^ %s -o %%o %%f %s |> %s" % (inputs, output_mapfile, mkshlib, extra_flags, output)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
@@ -354,4 +387,4 @@ if __name__ == '__main__':
     if options.target_srcs and not tupmk.get_var('FORCE_SHARED_LIB'):
         tupcpp.generate_desc_file()
     if options.security:
-        tupcpp.generate_security_archive()
+        tupcpp.generate_security_library()
