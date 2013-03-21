@@ -1,0 +1,40 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+libs += $(MOZ_ROOT)/security/nss/lib/certdb/libcertdb.a
+libs += $(MOZ_ROOT)/security/nss/lib/certhigh/libcerthi.a
+libs += $(MOZ_ROOT)/security/nss/lib/crmf/libcrmf.a
+libs += $(MOZ_ROOT)/security/nss/lib/cryptohi/libcryptohi.a
+libs += $(MOZ_ROOT)/security/dbm/src/libdbm.a
+libs += $(MOZ_ROOT)/security/nss/lib/freebl/libfreebl.a
+libs += $(MOZ_ROOT)/security/nss/lib/jar/libjar.a
+libs += $(MOZ_ROOT)/security/nss/lib/nss/libnss.a
+libs += $(MOZ_ROOT)/security/nss/lib/base/libnssb.a
+libs += $(MOZ_ROOT)/security/nss/lib/ckfw/libnssckfw.a
+libs += $(MOZ_ROOT)/security/nss/lib/softoken/legacydb/libnssdbm.a
+libs += $(MOZ_ROOT)/security/nss/lib/dev/libnssdev.a
+libs += $(MOZ_ROOT)/security/nss/lib/pki/libnsspki.a
+libs += $(MOZ_ROOT)/security/nss/lib/util/libnssutil.a
+libs += $(MOZ_ROOT)/security/nss/lib/pk11wrap/libpk11wrap.a
+libs += $(MOZ_ROOT)/security/nss/lib/pkcs12/libpkcs12.a
+libs += $(MOZ_ROOT)/security/nss/lib/pkcs7/libpkcs7.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/certsel/libpkixcertsel.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/checker/libpkixchecker.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/crlsel/libpkixcrlsel.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/module/libpkixmodule.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/params/libpkixparams.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/pki/libpkixpki.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/results/libpkixresults.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/store/libpkixstore.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix_pl_nss/system/libpkixsystem.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/top/libpkixtop.a
+libs += $(MOZ_ROOT)/security/nss/lib/libpkix/pkix/util/libpkixutil.a
+libs += $(MOZ_ROOT)/security/nss/cmd/lib/libsectool.a
+libs += $(MOZ_ROOT)/security/nss/lib/smime/libsmime.a
+libs += $(MOZ_ROOT)/security/nss/lib/softoken/libsoftokn.a
+libs += $(MOZ_ROOT)/security/nss/lib/ssl/libssl.a
+
+: foreach $(libs) |> !cp |> %b <installed-archives>
