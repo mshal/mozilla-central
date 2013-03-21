@@ -86,7 +86,12 @@ class TupMakefile(object):
             for gmake_flag in self.get_var('DEFAULT_GMAKE_FLAGS', makefile=self.autoconf_makefile):
                 parts = gmake_flag.split('=', 1)
                 if(len(parts) == 2 and (parts[1] == '0' or parts[1] == '1')):
-                    self.set_var(parts[0], parts[1])
+                    self.set_var(parts[0], parts[1],
+                                 source=pymake.data.Variables.SOURCE_COMMANDLINE)
+            # We need to also override NSS_ENABLE_ZLIB, similar to
+            # security/build/Makefile.in
+            self.set_var('NSS_ENABLE_ZLIB', '',
+                         source=pymake.data.Variables.SOURCE_COMMANDLINE)
 
         # enabled_dirs is our cache of directories that are enabled. By default,
         # all directories in tier_platform_dirs are enabled. Others are set to
@@ -219,7 +224,8 @@ class TupMakefile(object):
 
         self.process_statements(makefile, context, os.path.dirname(filename), statements)
 
-    def set_var(self, varname, value, makefile=None):
+    def set_var(self, varname, value, makefile=None,
+                source=pymake.data.Variables.SOURCE_MAKEFILE):
         if makefile is None:
             if self.subdir_makefile:
                 makefile = self.subdir_makefile
@@ -227,7 +233,7 @@ class TupMakefile(object):
                 makefile = self.autoconf_makefile
         makefile.variables.set(varname,
                                pymake.data.Variables.FLAVOR_SIMPLE,
-                               pymake.data.Variables.SOURCE_MAKEFILE,
+                               source,
                                value)
 
     def get_var(self, varname, makefile=None, variables=None):
