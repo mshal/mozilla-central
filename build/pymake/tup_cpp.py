@@ -224,67 +224,137 @@ class TupCpp(object):
                                                 'LD [host]', '$(HOST_CXX)',
                                                 self.host_link_flags)
 
+    def resolve_library(self, lib):
+        system_libs = {"-lpthread", "-lc", "-ldl"}
+        conversions = {
+                       # Libraries that show up as '-lfoo'
+                       "-lmozsqlite3": "db/sqlite3/src/libmozsqlite3.so",
+                       "-lxpcom": "xpcom/stub/libxpcom.so",
+                       # Libraries that show up as '../dist/lib/libbaz.a' or
+                       # have a '.libs' path element in them.
+                       "libmozalloc.a": "memory/mozalloc/libmozalloc.a",
+                       "libxpt.a": "xpcom/typelib/xpt/src/libxpt.a",
+                       "libffi.a": "js/src/ctypes/libffi/libffi.a",
+                       "libfreebl.a": "security/nss/lib/freebl/libfreebl.a",
+                       }
+        if lib.startswith('-L') or lib in system_libs:
+            return lib, None
+        basename = os.path.basename(lib)
+        if basename in conversions:
+            path = os.path.join('$(MOZ_ROOT)', conversions[basename])
+            print >> sys.stderr, "[35mConvert:[0m %s -> %s" % (lib, path)
+            return path, path
+        else:
+            print >> sys.stderr, "[34mUnknown: [0m", lib
+            return lib, None
+
+    def resolve_libraries(self, libraries):
+        converted_libs = []
+        deps = []
+        for lib in libraries:
+            arg, dep = self.resolve_library(lib)
+            converted_libs.append(arg)
+            if dep:
+                deps.append(dep)
+        return converted_libs, deps
+
     def generate_desc_file(self, static_library_name=None):
-        if not static_library_name:
-            static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
+        lib_prefix = self.tupmk.get_var_string('LIB_PREFIX')
+        lib_suffix = self.tupmk.get_var_string('LIB_SUFFIX')
 
-        if static_library_name:
-            output = '%s%s.%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
-                                     static_library_name,
-                                     self.tupmk.get_var_string('LIB_SUFFIX'),
-                                     self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
+        if self.tupmk.get_var('FORCE_SHARED_LIB'):
+            library_name = '%s%s%s' % (self.tupmk.get_var_string('DLL_PREFIX'),
+                                       self.tupmk.get_var_string('SHARED_LIBRARY_NAME'),
+                                       self.tupmk.get_var_string('DLL_SUFFIX'))
+            self.tupmk.set_var('@', library_name)
             inputs = ' '.join(self.objs)
-            cmd_inputs = ' '.join(self.objs)
-
-            # Tup's gyp support creates files in the directory where the gyp
-            # file is processed, rather than in some subdirectory like with
-            # make. Therefore, we have to trim the library path to be the root
-            # of the gyp directory.
-            gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
-                        "media/webrtc/trunk/src/modules",
-                        "media/webrtc/trunk/src/common_audio",
-                        "media/webrtc/trunk/src/system_wrappers/source",
-                        "media/webrtc/trunk/src/common_video",
-                        "media/webrtc/trunk/src/video_engine",
-                        "media/webrtc/trunk/src/voice_engine",
-                        "media/webrtc/trunk/third_party/libyuv",
-                        "media/mtransport/third_party/nICEr",
-                        "media/mtransport/third_party/nrappkit",
-                        ]
-
-            actual_path_map = {"libxpt.a": "xpcom/typelib/xpt/src",
-                               "libffi.a": "js/src/ctypes/libffi",
-                               }
-
-            for lib in self.tupmk.get_var('SHARED_LIBRARY_LIBS'):
-                # Our libraries are not in the autoconf objdir, so remove
-                # that from the path.
-                if self.moz_objdir in lib:
-                    lib = lib.replace(self.moz_objdir + os.path.sep, '')
-
-                # For gyp modules, the library is in the root gyp directory.
-                for gyp_dir in gyp_dirs:
-                    index = lib.find(gyp_dir)
-                    if index != -1:
-                        lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
-                        break
-
-                # Some .a files have dist/lib, or strange paths - point them to
-                # their actual locations.
-                basename = os.path.basename(lib)
-                if basename in actual_path_map:
-                    lib = os.path.join(moz_root, actual_path_map[basename], basename)
-
-                # The actual file used by expandlibs_gen.py is either the .a
-                # file, or the .a.desc file, depending on which exists. However,
-                # on the command-line we have to specify just the .a file.
-                inputs += ' %s*' % (lib)
-                cmd_inputs += ' %s' % (lib)
-
-            # Clear out the objects for any future libraries in the same
-            # directory (eg: some gyp files have multiple libraries)
             self.objs = []
-            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
+
+            # In make, EXTRA_DSO_LIBS is converted by the EXPAND_MOZLIBNAME
+            # macro called from rules.mk. We expand it here before evaluating
+            # EXTRA_DSO_LDOPTS, where it is used.
+            extra_dso_libs = self.tupmk.get_var_string('EXTRA_DSO_LIBS')
+            if extra_dso_libs:
+                extra_dso_libs = '$(MOZ_ROOT)/dist/lib/%s%s.%s' % (lib_prefix,
+                                                                   extra_dso_libs,
+                                                                   lib_suffix)
+                self.tupmk.set_var('EXTRA_DSO_LIBS', extra_dso_libs)
+
+            extra_dso_ldopts = self.tupmk.get_var('EXTRA_DSO_LDOPTS')
+
+            actual_libs, _ = self.resolve_libraries(extra_dso_ldopts)
+            print >> sys.stderr, "[33mExtra dso ldopts:[0m ", extra_dso_ldopts
+            print >> sys.stderr, "[33mactual libs:[0m ", actual_libs
+            lib_deps = ' '.join([lib.replace('.a', '.so') for lib in actual_libs])
+
+            expandlibs_exec = "$(PYTHON) $(PYTHONPATH)"
+            expandlibs_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
+            expandlibs_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
+            expandlibs_exec += " --target %o"
+            expandlibs_exec += " " + self.tupmk.get_var_string('EXPAND_MKSHLIB_ARGS')
+            expandlibs_exec += " --"
+            expandlibs_exec += " " + self.tupmk.get_var_string('MKSHLIB')
+            expandlibs_exec += " %f"
+            expandlibs_exec += " " + self.tupmk.get_var_string('LDFLAGS')
+            expandlibs_exec += " " + lib_deps
+            expandlibs_exec += " " + self.tupmk.get_var_string('OS_LIBS')
+
+#            print ": %s | %s |> ^ SHLIB %%o^ %s |> %s" % (inputs, lib_deps, expandlibs_exec, library_name)
+        else:
+            if not static_library_name:
+                static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
+
+            if static_library_name:
+                output = '%s%s.%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
+                                         static_library_name,
+                                         self.tupmk.get_var_string('LIB_SUFFIX'),
+                                         self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
+                inputs = ' '.join(self.objs)
+                cmd_inputs = ' '.join(self.objs)
+
+                # Tup's gyp support creates files in the directory where the gyp
+                # file is processed, rather than in some subdirectory like with
+                # make. Therefore, we have to trim the library path to be the root
+                # of the gyp directory.
+                gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
+                            "media/webrtc/trunk/src/modules",
+                            "media/webrtc/trunk/src/common_audio",
+                            "media/webrtc/trunk/src/system_wrappers/source",
+                            "media/webrtc/trunk/src/common_video",
+                            "media/webrtc/trunk/src/video_engine",
+                            "media/webrtc/trunk/src/voice_engine",
+                            "media/webrtc/trunk/third_party/libyuv",
+                            "media/mtransport/third_party/nICEr",
+                            "media/mtransport/third_party/nrappkit",
+                            ]
+
+                for lib in self.tupmk.get_var('SHARED_LIBRARY_LIBS'):
+                    # Our libraries are not in the autoconf objdir, so remove
+                    # that from the path.
+                    if self.moz_objdir in lib:
+                        lib = lib.replace(self.moz_objdir + os.path.sep, '')
+
+                    # For gyp modules, the library is in the root gyp directory.
+                    for gyp_dir in gyp_dirs:
+                        index = lib.find(gyp_dir)
+                        if index != -1:
+                            lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
+                            break
+
+                    # Some .a files have dist/lib, or strange paths - point them to
+                    # their actual locations.
+                    lib, _ = self.resolve_library(lib)
+
+                    # The actual file used by expandlibs_gen.py is either the .a
+                    # file, or the .a.desc file, depending on which exists. However,
+                    # on the command-line we have to specify just the .a file.
+                    inputs += ' %s*' % (lib)
+                    cmd_inputs += ' %s' % (lib)
+
+                # Clear out the objects for any future libraries in the same
+                # directory (eg: some gyp files have multiple libraries)
+                self.objs = []
+                print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
 
     def generate_security_library(self):
         targets = self.tupmk.get_var('TARGETS')
@@ -320,12 +390,18 @@ class TupCpp(object):
             self.tupmk.set_var('MAPFILE', output_mapfile)
             self.tupmk.set_var('DIST', os.path.join(self.tupmk.moz_root, 'dist'))
 
+            extra_inputs = output_mapfile
             extra_flags = ""
             for i in ['SUB_SHLOBJS', 'LD_LIBS', 'EXTRA_LIBS', 'EXTRA_SHARED_LIBS', 'OS_LIBS']:
-                extra_flags += ' ' + self.tupmk.get_var_string(i)
+                values = self.tupmk.get_var(i)
+                resolved_values, lib_deps = self.resolve_libraries(values)
+                for lib in lib_deps:
+                    extra_inputs += ' ' + lib
+                print >> sys.stderr, "[33m%s: [0m'%s' -> '%s'" % (i, ' '.join(values), ' '.join(resolved_values))
+                extra_flags += ' ' + ' '.join(resolved_values)
 
             mkshlib = self.tupmk.get_var_string('MKSHLIB')
-#            print ": %s | %s |> ^ SHLIB %%o^ %s -o %%o %%f %s |> %s" % (inputs, output_mapfile, mkshlib, extra_flags, output)
+#            print ": %s | %s $(MOZ_ROOT)/dist/lib/<installed-archives> |> ^ SHLIB %%o^ %s -o %%o %%f %s |> %s" % (inputs, extra_inputs, mkshlib, extra_flags, output)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
@@ -379,7 +455,7 @@ if __name__ == '__main__':
 
     tupcpp.generate_cpp_rules()
 
-    if options.target_srcs and not tupmk.get_var('FORCE_SHARED_LIB'):
+    if options.target_srcs:
         tupcpp.generate_desc_file()
     if options.security:
         tupcpp.generate_security_library()
