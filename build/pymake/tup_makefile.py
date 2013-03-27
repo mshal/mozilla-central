@@ -85,9 +85,16 @@ class TupMakefile(object):
             # we pull out those defines and add them to our base variable set.
             for gmake_flag in self.get_var('DEFAULT_GMAKE_FLAGS', makefile=self.autoconf_makefile):
                 parts = gmake_flag.split('=', 1)
-                if(len(parts) == 2 and (parts[1] == '0' or parts[1] == '1')):
-                    self.set_var(parts[0], parts[1],
-                                 source=pymake.data.Variables.SOURCE_COMMANDLINE)
+                if(len(parts) == 2):
+                    # It is a bit difficult to pull out all the flags correctly
+                    # because of the spacing in variable definitions and the way
+                    # pymake parses them. Here we include anything that is
+                    # obviously a binary flag (value is 0 or 1), as well as the
+                    # SQLITE defines that we need.
+                    if(parts[1] == '0' or parts[1] == '1' or
+                       parts[0].startswith('SQLITE')):
+                        self.set_var(parts[0], parts[1],
+                                     source=pymake.data.Variables.SOURCE_COMMANDLINE)
             # We need to also override NSS_ENABLE_ZLIB, similar to
             # security/build/Makefile.in
             self.set_var('NSS_ENABLE_ZLIB', '',
