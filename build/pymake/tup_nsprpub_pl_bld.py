@@ -35,3 +35,4 @@ gen_pl_bld += """echo "#define _PRODUCTION \\"%s\\"") > %%o""" % (prod)
 print ": %s |> %s |> _pl_bld.h" % (config_now, gen_pl_bld)
 
 cpp.generate_cpp_rules()
+cpp.generate_nsprpub_library()

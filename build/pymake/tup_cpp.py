@@ -67,6 +67,9 @@ class TupCpp(object):
                         sys.exit(1)
                     # TODO: Also error if /home/foo is in flags? Or run in chroot?
 
+                    # No need to have two copies of these.
+                    flag = flag.replace('system_wrappers_js', 'system_wrappers')
+
                     if 'ipc/ipdl/_ipdlheaders' in flag:
                         # Make stores the ipdl headers in the objdir, but we
                         # generate them from tup so they are relative to the
@@ -230,23 +233,126 @@ class TupCpp(object):
                        # Libraries that show up as '-lfoo'
                        "-lmozsqlite3": "db/sqlite3/src/libmozsqlite3.so",
                        "-lxpcom": "xpcom/stub/libxpcom.so",
+                       "-lsoundtouch": "media/libsoundtouch/src/libsoundtouch.so",
+                       "-lcrmf": "security/nss/lib/crmf/libcrmf.a",
+                       "-lmozalloc": "memory/mozalloc/libmozalloc.so",
+                       "-lxul": "toolkit/library/libxul.so",
+                       "-lnspr4": "nsprpub/pr/src/libnspr4.so",
+                       "-lnss3": "security/nss/lib/nss/libnss3.so",
+                       "-lnssutil3": "security/nss/lib/util/libnssutil3.so",
+                       "-lplc4": "nsprpub/lib/libc/src/libplc4.so",
+                       "-lplds4": "nsprpub/lib/ds/libplds4.so",
+                       "-lsmime3": "security/nss/lib/smime/libsmime3.so",
+                       "-lssl3": "security/nss/lib/ssl/libssl3.so",
                        # Libraries that show up as '../dist/lib/libbaz.a' or
                        # have a '.libs' path element in them.
-                       "libmozalloc.a": "memory/mozalloc/libmozalloc.a",
+                       "libmozalloc.a": "memory/mozalloc/libmozalloc.so",
                        "libxpt.a": "xpcom/typelib/xpt/src/libxpt.a",
                        "libffi.a": "js/src/ctypes/libffi/libffi.a",
                        "libfreebl.a": "security/nss/lib/freebl/libfreebl.a",
+                       "libjs_static.a": "js/src/libjs_static.a",
+                       "libxpcomglue_s.a": "xpcom/glue/libxpcomglue_s.a",
+                       "libunicharutil_external_s.a": "intl/unicharutil/util/libunicharutil_external_s.a",
+                       "libmozz.a": "modules/zlib/src/libmozz.a",
+                       "libxul.so": "toolkit/library/libxul.so",
+                       "libxul.a": "toolkit/library/libxul.so",
+                       "libdbm.a": "security/dbm/src/libdbm.a",
+                       "libgkmedias.a": "layout/media/libgkmedias.a",
+                       "libmtransport.a": "media/mtransport/build/libmtransport.a",
+                       "libecc.a": "media/webrtc/signaling/libecc.a",
+                       "libsipcc.a": "media/webrtc/signaling/libsipcc.a",
+                       "libmozsqlite3.a": "db/sqlite3/src/libmozsqlite3.so",
+                       # libraries for libxul normally in staticlib/
+                       "libnecko.a": "netwerk/build/libnecko.a",
+                       "libuconv.a": "intl/uconv/src/libuconv.a",
+                       "libi18n.a": "intl/build/libi18n.a",
+                       "libchardet.a": "intl/chardet/src/libchardet.a",
+                       "libjar50.a": "modules/libjar/libjar50.a",
+                       "libstartupcache.a": "startupcache/libstartupcache.a",
+                       "libpref.a": "modules/libpref/src/libpref.a",
+                       "libhtmlpars.a": "parser/htmlparser/src/libhtmlpars.a",
+                       "libidentity.a": "toolkit/identity/libidentity.a",
+                       "libimglib2.a": "image/build/libimglib2.a",
+                       "libmediasniffer.a": "toolkit/components/mediasniffer/libmediasniffer.a",
+                       "libgkgfx.a": "gfx/src/libgkgfx.a",
+                       "libgklayout.a": "layout/build/libgklayout.a",
+                       "libdocshell.a": "docshell/build/libdocshell.a",
+                       "libembedcomponents.a": "embedding/components/build/libembedcomponents.a",
+                       "libwebbrwsr.a": "embedding/browser/build/libwebbrwsr.a",
+                       "libnsappshell.a": "xpfe/appshell/src/libnsappshell.a",
+                       "libtxmgr.a": "editor/txmgr/src/libtxmgr.a",
+                       "libcommandlines.a": "toolkit/components/commandlines/libcommandlines.a",
+                       "libtoolkitcomps.a": "toolkit/components/build/libtoolkitcomps.a",
+                       "libpipboot.a": "security/manager/boot/src/libpipboot.a",
+                       "libpipnss.a": "security/manager/ssl/src/libpipnss.a",
+                       "libappcomps.a": "xpfe/components/build/libappcomps.a",
+                       "libjsreflect.a": "toolkit/components/reflect/libjsreflect.a",
+                       "libcomposer.a": "editor/composer/src/libcomposer.a",
+                       "libtelemetry.a": "toolkit/components/telemetry/libtelemetry.a",
+                       "libjsinspector.a": "toolkit/devtools/debugger/libjsinspector.a",
+                       "libjsdebugger.a": "js/ductwork/debugger/libjsdebugger.a",
+                       "libstoragecomps.a": "storage/build/libstoragecomps.a",
+                       "librdf.a": "rdf/build/librdf.a",
+                       "libwindowds.a": "xpfe/components/windowds/libwindowds.a",
+                       "libjsctypes.a": "toolkit/components/ctypes/libjsctypes.a",
+                       "libjsperf.a": "toolkit/components/perf/libjsperf.a",
+                       "libgkplugin.a": "dom/plugins/base/libgkplugin.a",
+                       "libunixproxy.a": "toolkit/system/unixproxy/libunixproxy.a",
+                       "libjsd.a": "js/jsd/libjsd.a",
+                       "libautoconfig.a": "extensions/pref/autoconfig/src/libautoconfig.a",
+                       "libauth.a": "extensions/auth/libauth.a",
+                       "libcookie.a": "extensions/cookie/libcookie.a",
+                       "libpermissions.a": "extensions/permissions/libpermissions.a",
+                       "libuniversalchardet.a": "extensions/universalchardet/src/xpcom/libuniversalchardet.a",
+                       "libfileview.a": "toolkit/components/filepicker/libfileview.a",
+                       "libplaces.a": "toolkit/components/places/libplaces.a",
+                       "libtkautocomplete.a": "toolkit/components/autocomplete/libtkautocomplete.a",
+                       "libsatchel.a": "toolkit/components/satchel/libsatchel.a",
+                       "libpippki.a": "security/manager/pki/src/libpippki.a",
+                       "libwidget_gtk2.a": "widget/gtk2/libwidget_gtk2.a",
+                       "libimgicon.a": "image/decoders/icon/libimgicon.a",
+                       "libprofiler.a": "tools/profiler/libprofiler.a",
+                       "libaccessibility.a": "accessible/build/libaccessibility.a",
+                       "libremoteservice.a": "toolkit/components/remote/libremoteservice.a",
+                       "libspellchecker.a": "extensions/spellcheck/src/libspellchecker.a",
+                       "libzipwriter.a": "modules/libjar/zipwriter/src/libzipwriter.a",
+                       "libservices-crypto.a": "services/crypto/component/libservices-crypto.a",
+                       "libnkgio.a": "extensions/gio/libnkgio.a",
+                       "libpeerconnection.a": "dom/media/bridge/libpeerconnection.a",
+                       "libjsipc_s.a": "js/ipc/libjsipc_s.a",
+                       "libdomipc_s.a": "dom/ipc/libdomipc_s.a",
+                       "libdomplugins_s.a": "dom/plugins/ipc/libdomplugins_s.a",
+                       "libmozipc_s.a": "ipc/glue/libmozipc_s.a",
+                       "libmozipdlgen_s.a": "ipc/ipdl/libmozipdlgen_s.a",
+                       "libipcshell_s.a": "ipc/testshell/libipcshell_s.a",
+                       "libgfxipc_s.a": "gfx/ipc/libgfxipc_s.a",
+                       "libhal_s.a": "hal/libhal_s.a",
+                       "libdombindings_s.a": "dom/bindings/libdombindings_s.a",
+                       "libxpcom_core.a": "xpcom/build/libxpcom_core.a",
+                       "libucvutil_s.a": "intl/uconv/util/libucvutil_s.a",
+                       "libchromium_s.a": "ipc/chromium/libchromium_s.a",
+                       "libsnappy_s.a": "other-licenses/snappy/libsnappy_s.a",
+                       "libgtkxtbin.a": "widget/gtkxtbin/libgtkxtbin.a",
+                       "libthebes.a": "gfx/thebes/libthebes.a",
+                       "libgl.a": "gfx/gl/libgl.a",
+                       "libycbcr.a": "gfx/ycbcr/libycbcr.a",
                        }
         if lib.startswith('-L') or lib in system_libs:
             return lib, None
         basename = os.path.basename(lib)
         if basename in conversions:
             path = os.path.join('$(MOZ_ROOT)', conversions[basename])
-            print >> sys.stderr, "[35mConvert:[0m %s -> %s" % (lib, path)
-            return path, path
+            if path.endswith('.a'):
+                # The actual file used by expandlibs_gen.py is either the .a
+                # file, or the .a.desc file, depending on which exists. However,
+                # on the command-line we have to specify just the .a file.
+                dep = path + '*'
+            else:
+                dep = path
+            return path, dep
         else:
-            print >> sys.stderr, "[34mUnknown: [0m", lib
-            return lib, None
+            dep = lib + '*'
+            return lib, dep
 
     def resolve_libraries(self, libraries):
         converted_libs = []
@@ -282,32 +388,46 @@ class TupCpp(object):
 
             extra_dso_ldopts = self.tupmk.get_var('EXTRA_DSO_LDOPTS')
 
-            actual_libs, _ = self.resolve_libraries(extra_dso_ldopts)
-            print >> sys.stderr, "[33mExtra dso ldopts:[0m ", extra_dso_ldopts
-            print >> sys.stderr, "[33mactual libs:[0m ", actual_libs
-            lib_deps = ' '.join([lib.replace('.a', '.so') for lib in actual_libs])
+            actual_libs, lib_deps = self.resolve_libraries(extra_dso_ldopts)
+
+            for lib in self.tupmk.get_var('SHARED_LIBRARY_LIBS'):
+                # Our libraries are not in the autoconf objdir, so remove
+                # that from the path.
+                if self.moz_objdir in lib:
+                    lib = lib.replace(self.moz_objdir + os.path.sep, '')
+                lib, dep = self.resolve_library(lib)
+                actual_libs.append(lib)
+                if dep:
+                    lib_deps.append(dep)
+
+            lib_deps_string = ' '.join(lib_deps)
 
             expandlibs_exec = "$(PYTHON) $(PYTHONPATH)"
             expandlibs_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
             expandlibs_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
+            expandlibs_exec += " --relative-path $(MOZ_ROOT)"
             expandlibs_exec += " --target %o"
             expandlibs_exec += " " + self.tupmk.get_var_string('EXPAND_MKSHLIB_ARGS')
             expandlibs_exec += " --"
             expandlibs_exec += " " + self.tupmk.get_var_string('MKSHLIB')
             expandlibs_exec += " %f"
             expandlibs_exec += " " + self.tupmk.get_var_string('LDFLAGS')
-            expandlibs_exec += " " + lib_deps
+            if self.tupmk.get_var('IS_COMPONENT'):
+                expandlibs_exec += ' ' + self.tupmk.get_var_string('MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS')
+                expandlibs_exec += ' -Wl,-Bsymbolic'
+            expandlibs_exec += " " + ' '.join(actual_libs)
             expandlibs_exec += " " + self.tupmk.get_var_string('OS_LIBS')
 
-#            print ": %s | %s |> ^ SHLIB %%o^ %s |> %s" % (inputs, lib_deps, expandlibs_exec, library_name)
+            print ": %s | %s |> ^ SHLIB %%o^ %s |> %s" % (inputs, lib_deps_string, expandlibs_exec, library_name)
         else:
             if not static_library_name:
                 static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
 
             if static_library_name:
-                output = '%s%s.%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
-                                         static_library_name,
-                                         self.tupmk.get_var_string('LIB_SUFFIX'),
+                output = '%s%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
+                                      static_library_name,
+                                      self.tupmk.get_var_string('LIB_SUFFIX'))
+                output_desc = '%s.%s' % (output,
                                          self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
                 inputs = ' '.join(self.objs)
                 cmd_inputs = ' '.join(self.objs)
@@ -343,18 +463,19 @@ class TupCpp(object):
 
                     # Some .a files have dist/lib, or strange paths - point them to
                     # their actual locations.
-                    lib, _ = self.resolve_library(lib)
+                    lib, dep = self.resolve_library(lib)
 
-                    # The actual file used by expandlibs_gen.py is either the .a
-                    # file, or the .a.desc file, depending on which exists. However,
-                    # on the command-line we have to specify just the .a file.
-                    inputs += ' %s*' % (lib)
+                    if dep:
+                        inputs += ' %s' % (dep)
                     cmd_inputs += ' %s' % (lib)
 
                 # Clear out the objects for any future libraries in the same
                 # directory (eg: some gyp files have multiple libraries)
                 self.objs = []
-                print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output)
+                print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output_desc)
+
+                if self.tupmk.get_var('SDK_LIBRARY') or self.tupmk.get_var('DIST_INSTALL') or self.tupmk.get_var('NO_EXPAND_LIBS'):
+                    print ": %s |> ^ expandlibs_exec.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_exec.py --relative-path $(MOZ_ROOT) --target %%o --extract -- %s %s %%o %s |> %s" % (inputs, self.tupmk.get_var_string('AR'), self.tupmk.get_var_string('AR_FLAGS'), cmd_inputs, output)
 
     def generate_security_library(self):
         targets = self.tupmk.get_var('TARGETS')
@@ -368,7 +489,7 @@ class TupCpp(object):
         if library and library in targets:
             output = library.replace(objdir, '')
             ar = self.tupmk.get_var_string('AR')
-            print ": %s |> ^ AR %%o^ %s %%o %%f |> %s" % (inputs, ar, output)
+            print ": %s |> ^ AR[nss] %%o^ %s %%o %%f |> %s" % (inputs, ar, output)
 
         # See if we should build a shared library
         shared_library = self.tupmk.get_var_string('SHARED_LIBRARY')
@@ -392,16 +513,51 @@ class TupCpp(object):
 
             extra_inputs = output_mapfile
             extra_flags = ""
-            for i in ['SUB_SHLOBJS', 'LD_LIBS', 'EXTRA_LIBS', 'EXTRA_SHARED_LIBS', 'OS_LIBS']:
+            for i in ['LD_LIBS', 'EXTRA_LIBS', 'EXTRA_SHARED_LIBS', 'OS_LIBS']:
                 values = self.tupmk.get_var(i)
                 resolved_values, lib_deps = self.resolve_libraries(values)
                 for lib in lib_deps:
                     extra_inputs += ' ' + lib
-                print >> sys.stderr, "[33m%s: [0m'%s' -> '%s'" % (i, ' '.join(values), ' '.join(resolved_values))
                 extra_flags += ' ' + ' '.join(resolved_values)
 
+            for i in self.tupmk.get_var('SHARED_LIBRARY_DIRS'):
+                inputs += ' ' + os.path.join(i, '*.o')
+
             mkshlib = self.tupmk.get_var_string('MKSHLIB')
-#            print ": %s | %s $(MOZ_ROOT)/dist/lib/<installed-archives> |> ^ SHLIB %%o^ %s -o %%o %%f %s |> %s" % (inputs, extra_inputs, mkshlib, extra_flags, output)
+            print ": %s | %s $(MOZ_ROOT)/dist/lib/<installed-archives> |> ^ SHLIB %%o^ %s -o %%o %%f %s |> %s" % (inputs, extra_inputs, mkshlib, extra_flags, output)
+
+    def generate_nsprpub_library(self, objs=None):
+        if not objs:
+            objs = self.objs
+        self.objs = []
+
+        library_name = self.tupmk.get_var_string('LIBRARY_NAME')
+        library_version = self.tupmk.get_var_string('LIBRARY_VERSION')
+        lib_suffix = self.tupmk.get_var_string('LIB_SUFFIX')
+        dll_suffix = self.tupmk.get_var_string('DLL_SUFFIX')
+        library = 'lib%s%s.%s' % (library_name, library_version, lib_suffix)
+        shlib = 'lib%s%s.%s' % (library_name, library_version, dll_suffix)
+
+        self.tupmk.set_var('@', library)
+        lib_command = self.tupmk.get_var_string('AR')
+        lib_command += ' ' + self.tupmk.get_var_string('AR_FLAGS')
+        inputs = ' '.join(objs)
+        lib_command += ' ' + inputs
+        lib_command += self.tupmk.get_var_string('AR_EXTRA_ARGS')
+        lib_command += ' && %s %%o' % self.tupmk.get_var_string('RANLIB')
+        print ": %s |> ^ AR[nsprpub] %%o^ %s |> %s" % (inputs, lib_command, library)
+
+        self.tupmk.set_var('@', shlib)
+        mkshlib = self.tupmk.get_var_string('MKSHLIB')
+        if mkshlib:
+            mkshlib += ' ' + inputs
+            mkshlib += ' ' + self.tupmk.get_var_string('RES')
+            mkshlib += ' ' + self.tupmk.get_var_string('LDFLAGS')
+            mkshlib += ' ' + self.tupmk.get_var_string('WRAP_LDFLAGS')
+            extra_libs, deps = self.resolve_libraries(self.tupmk.get_var('EXTRA_LIBS'))
+            mkshlib += ' ' + ' '.join(extra_libs)
+            inputs += ' ' + ' '.join(deps)
+            print ": %s |> ^ SHLIB[nsprpub] %%o^ %s |> %s" % (inputs, mkshlib, shlib)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
@@ -459,3 +615,5 @@ if __name__ == '__main__':
         tupcpp.generate_desc_file()
     if options.security:
         tupcpp.generate_security_library()
+    if options.nsprpub:
+        tupcpp.generate_nsprpub_library()

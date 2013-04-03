@@ -34,6 +34,10 @@ for flag in tupmk.get_var('COMPILE'):
 
 all_flags.append('-I' + libffi_path)
 
+# OS-specific? This seems to magically appear from libtool
+all_flags.append('-fPIC')
+all_flags.append('-DPIC')
+
 if srcs:
     # Compile each src file
     print ": foreach",

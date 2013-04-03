@@ -32,8 +32,11 @@ gen_pr_bld += """echo "#define _PRODUCTION \\"%s\\"") > %%o""" % (prod)
 
 print ": ../../config/now |> %s |> _pr_bld.h" % (gen_pr_bld)
 
+objs = tupmk.get_var('OBJS')
+
 # Clear out ASFILES. We build them already in the appropriate md/ directory,
 # so we don't want to compile them again here.
 del tupmk.subdir_makefile.variables._map['ASFILES']
 
 cpp.generate_cpp_rules(csrcs=['prvrsion.c'])
+cpp.generate_nsprpub_library(objs)
