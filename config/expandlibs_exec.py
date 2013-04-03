@@ -68,9 +68,14 @@ class ExpandArgsMore(ExpandArgs):
         newlist = []
         for arg in args:
             if os.path.splitext(arg)[1] == conf.LIB_SUFFIX:
-                if os.path.exists(arg + conf.LIBS_DESC_SUFFIX):
+                if arg == self.target:
+                    use_desc = False
+                else:
+                    use_desc = True
+
+                if use_desc and os.path.exists(arg + conf.LIBS_DESC_SUFFIX):
                     newlist += self._extract(self._expand_desc(arg))
-                elif os.path.exists(arg) and len(ar_extract):
+                elif use_desc and os.path.exists(arg) and len(ar_extract):
                     tmp = tempfile.mkdtemp(dir=os.curdir)
                     self.tmp.append(tmp)
                     subprocess.call(ar_extract + [os.path.abspath(arg)], cwd=tmp)
@@ -293,7 +298,7 @@ def main():
             deps.pop(0)
         # Remove command
         deps.pop(0)
-    with ExpandArgsMore(args) as args:
+    with ExpandArgsMore(args, options.target) as args:
         if options.extract:
             args.extract()
         if options.symbol_order:
