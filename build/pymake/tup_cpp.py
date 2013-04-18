@@ -24,6 +24,7 @@ class TupCpp(object):
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
         self.objs = []
+        self.security = security
 
         self.cpp_flags = ['COMPILE_CXXFLAGS']
 
@@ -75,7 +76,7 @@ class TupCpp(object):
                         # generate them from tup so they are relative to the
                         # srcdir.
                         all_flags.append('-I' + os.path.join(self.tupmk.moz_root, 'ipc/ipdl/_ipdlheaders'))
-                    elif flag.startswith('-I/'):
+                    elif flag.startswith('-I/') or flag.startswith('-Wl,-rpath-link,/'):
 
                         # Search for the objdir in a -I/full/path flag to see if
                         # we need to strip out the build directory. Passing in a
@@ -91,7 +92,11 @@ class TupCpp(object):
                             # Flags that reference our build directory, like
                             # -I/home/user/mozilla/objdir/foo get converted to
                             # -I$(MOZ_ROOT)/foo
-                            all_flags.append('-I$(MOZ_ROOT)' + flag[index + len(self.moz_objdir):])
+                            if flag.startswith('-I'):
+                                prefix = '-I'
+                            else:
+                                prefix = '-Wl,-rpath-link,'
+                            all_flags.append('%s$(MOZ_ROOT)%s' % (prefix, flag[index + len(self.moz_objdir):]))
                     else:
                         all_flags.append(flag)
         return all_flags
@@ -262,6 +267,12 @@ class TupCpp(object):
                        "libecc.a": "media/webrtc/signaling/libecc.a",
                        "libsipcc.a": "media/webrtc/signaling/libsipcc.a",
                        "libmozsqlite3.a": "db/sqlite3/src/libmozsqlite3.so",
+                       "libjar.a": "security/nss/lib/jar/libjar.a",
+                       "libsectool.a": "security/nss/cmd/lib/libsectool.a",
+                       "libmar.a": "modules/libmar/src/libmar.a",
+                       "libbz2.a": "modules/libbz2/src/libbz2.a",
+                       "libbreakpad_linux_common_s.a": "toolkit/crashreporter/google-breakpad/src/common/linux/libbreakpad_linux_common_s.a",
+                       "libeditline.a": "js/src/editline/libeditline.a",
                        # libraries for libxul normally in staticlib/
                        "libnecko.a": "netwerk/build/libnecko.a",
                        "libuconv.a": "intl/uconv/src/libuconv.a",
@@ -336,6 +347,10 @@ class TupCpp(object):
                        "libthebes.a": "gfx/thebes/libthebes.a",
                        "libgl.a": "gfx/gl/libgl.a",
                        "libycbcr.a": "gfx/ycbcr/libycbcr.a",
+                       # libraries for linking firefox
+                       "libxpcomglue.a": "xpcom/glue/standalone/libxpcomglue.a",
+                       "libmemory.a": "memory/build/libmemory.a",
+                       "libmozglue.a": "mozglue/build/libmozglue.a",
                        }
         if lib.startswith('-L') or lib in system_libs:
             return lib, None
@@ -351,7 +366,12 @@ class TupCpp(object):
                 dep = path
             return path, dep
         else:
-            dep = lib + '*'
+            if lib.startswith('-'):
+                # Flags (like -Wl,foo) aren't files, so don't return them as
+                # dependencies.
+                dep = None
+            else:
+                dep = lib + '*'
             return lib, dep
 
     def resolve_libraries(self, libraries):
@@ -364,17 +384,54 @@ class TupCpp(object):
                 deps.append(dep)
         return converted_libs, deps
 
+    def get_objs(self, varname=None):
+        if varname:
+            objs = self.tupmk.get_var(varname)
+            if objs:
+                return objs
+        objs = self.objs
+        self.objs = []
+        return objs
+
     def generate_desc_file(self, static_library_name=None):
         lib_prefix = self.tupmk.get_var_string('LIB_PREFIX')
         lib_suffix = self.tupmk.get_var_string('LIB_SUFFIX')
+        program = self.tupmk.get_var_string('PROGRAM')
+
+        if program and not self.security:
+            program_exec = "$(PYTHON) $(PYTHONPATH)"
+            program_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
+            program_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
+            program_exec += " --relative-path $(MOZ_ROOT)"
+            program_exec += " --target %o"
+            program_exec += " --"
+            program_exec += ' ' + tupmk.get_var_string('CCC')
+            program_exec += ' -o %s' % program
+            program_exec += ' ' + tupmk.get_var_string('CXXFLAGS')
+            inputs = ' '.join(self.get_objs('PROGOBJS'))
+            program_exec += ' ' + inputs
+
+            flags1 = ['RESFILE', 'WIN32_EXE_LDFLAGS', 'LDFLAGS', 'WRAP_LDFLAGS', 'LIBS_DIR']
+            program_exec += ' ' + ' '.join(self.get_all_flags(flags1, program))
+
+            libs = tupmk.get_var('LIBS')
+            libs.extend(tupmk.get_var('MOZ_GLUE_PROGRAM_LDFLAGS'))
+            libs.extend(tupmk.get_var('OS_LIBS'))
+            libs.extend(tupmk.get_var('EXTRA_LIBS'))
+            actual_libs, lib_deps = self.resolve_libraries(libs)
+            inputs += ' ' + ' '.join(lib_deps)
+            program_exec += ' ' + ' '.join(actual_libs)
+
+            flags2 = ['BIN_FLAGS', 'EXE_DEF_FILE']
+            program_exec += ' ' + ' '.join(self.get_all_flags(flags2, program))
+            print ": %s | $(MOZ_ROOT)/dist/bin/<installed-libs> |> ^ LINK %%o^ %s |> %s" % (inputs, program_exec, program)
 
         if self.tupmk.get_var('FORCE_SHARED_LIB'):
             library_name = '%s%s%s' % (self.tupmk.get_var_string('DLL_PREFIX'),
                                        self.tupmk.get_var_string('SHARED_LIBRARY_NAME'),
                                        self.tupmk.get_var_string('DLL_SUFFIX'))
             self.tupmk.set_var('@', library_name)
-            inputs = ' '.join(self.objs)
-            self.objs = []
+            inputs = ' '.join(self.get_objs('OBJS'))
 
             # In make, EXTRA_DSO_LIBS is converted by the EXPAND_MOZLIBNAME
             # macro called from rules.mk. We expand it here before evaluating
@@ -429,8 +486,8 @@ class TupCpp(object):
                                       self.tupmk.get_var_string('LIB_SUFFIX'))
                 output_desc = '%s.%s' % (output,
                                          self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
-                inputs = ' '.join(self.objs)
-                cmd_inputs = ' '.join(self.objs)
+                inputs = ' '.join(self.get_objs('OBJS'))
+                cmd_inputs = inputs
 
                 # Tup's gyp support creates files in the directory where the gyp
                 # file is processed, rather than in some subdirectory like with
@@ -469,9 +526,6 @@ class TupCpp(object):
                         inputs += ' %s' % (dep)
                     cmd_inputs += ' %s' % (lib)
 
-                # Clear out the objects for any future libraries in the same
-                # directory (eg: some gyp files have multiple libraries)
-                self.objs = []
                 print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output_desc)
 
                 if self.tupmk.get_var('SDK_LIBRARY') or self.tupmk.get_var('DIST_INSTALL') or self.tupmk.get_var('NO_EXPAND_LIBS'):
@@ -481,8 +535,7 @@ class TupCpp(object):
         targets = self.tupmk.get_var('TARGETS')
         objdir = self.tupmk.get_var_string('OBJDIR') + '/'
 
-        inputs = ' '.join(self.objs)
-        self.objs = []
+        inputs = ' '.join(self.get_objs())
 
         # See if we should build an archive (.a) file
         library = self.tupmk.get_var_string('LIBRARY')

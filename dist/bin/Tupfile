@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# TODO: Libfreebl3?
+libs += $(MOZ_ROOT)/memory/mozalloc/libmozalloc.so
+libs += $(MOZ_ROOT)/db/sqlite3/src/libmozsqlite3.so
+libs += $(MOZ_ROOT)/nsprpub/pr/src/libnspr4.so
+libs += $(MOZ_ROOT)/security/nss/lib/nss/libnss3.so
+libs += $(MOZ_ROOT)/security/nss/lib/ckfw/builtins/libnssckbi.so
+libs += $(MOZ_ROOT)/security/nss/lib/softoken/legacydb/libnssdbm3.so
+libs += $(MOZ_ROOT)/security/nss/lib/util/libnssutil3.so
+libs += $(MOZ_ROOT)/nsprpub/lib/libc/src/libplc4.so
+libs += $(MOZ_ROOT)/nsprpub/lib/ds/libplds4.so
+libs += $(MOZ_ROOT)/security/nss/lib/smime/libsmime3.so
+libs += $(MOZ_ROOT)/security/nss/lib/softoken/libsoftokn3.so
+libs += $(MOZ_ROOT)/media/libsoundtouch/src/libsoundtouch.so
+libs += $(MOZ_ROOT)/security/nss/lib/ssl/libssl3.so
+libs += $(MOZ_ROOT)/xpcom/stub/libxpcom.so
+libs += $(MOZ_ROOT)/toolkit/library/libxul.so
+
+: foreach $(libs) |> !ln |> %b | <installed-libs>
