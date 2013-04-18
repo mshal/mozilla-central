@@ -18,7 +18,14 @@ libs += $(MOZ_ROOT)/security/nss/lib/smime/libsmime3.so
 libs += $(MOZ_ROOT)/security/nss/lib/softoken/libsoftokn3.so
 libs += $(MOZ_ROOT)/media/libsoundtouch/src/libsoundtouch.so
 libs += $(MOZ_ROOT)/security/nss/lib/ssl/libssl3.so
-libs += $(MOZ_ROOT)/xpcom/stub/libxpcom.so
 libs += $(MOZ_ROOT)/toolkit/library/libxul.so
 
 : foreach $(libs) |> !ln |> %b | <installed-libs>
+
+# libxpcom.so can't be symlinked because it uses realpath() to tell us where
+# dependentlibs.list is
+programs += $(MOZ_ROOT)/xpcom/stub/libxpcom.so
+programs += $(MOZ_ROOT)/browser/app/firefox
+: foreach $(programs) |> !cp |> %b
+
+: *.so |> $(PYTHON) $(MOZ_ROOT)/xpcom/stub/dependentlibs.py libxpcom.so -L . > %o |> dependentlibs.list
