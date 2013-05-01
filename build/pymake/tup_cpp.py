@@ -550,7 +550,7 @@ class TupCpp(object):
             output = shared_library.replace(objdir, '')
 
             # First process the map file into something the linker can use
-            mapfile = tupmk.get_var_string('MAPFILE')
+            mapfile = self.tupmk.get_var_string('MAPFILE')
             mapfile = mapfile.replace(objdir, '')
             output_mapfile = mapfile + '.processed'
             self.tupmk.set_var('<', mapfile)

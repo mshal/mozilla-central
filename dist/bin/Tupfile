@@ -4,7 +4,6 @@
 
 include_rules
 
-# TODO: Libfreebl3?
 libs += $(MOZ_ROOT)/memory/mozalloc/libmozalloc.so
 libs += $(MOZ_ROOT)/db/sqlite3/src/libmozsqlite3.so
 libs += $(MOZ_ROOT)/nsprpub/pr/src/libnspr4.so
@@ -18,6 +17,7 @@ libs += $(MOZ_ROOT)/security/nss/lib/smime/libsmime3.so
 libs += $(MOZ_ROOT)/security/nss/lib/softoken/libsoftokn3.so
 libs += $(MOZ_ROOT)/media/libsoundtouch/src/libsoundtouch.so
 libs += $(MOZ_ROOT)/security/nss/lib/ssl/libssl3.so
+libs += $(MOZ_ROOT)/security/nss/lib/freebl/libfreebl3.so
 libs += $(MOZ_ROOT)/toolkit/library/libxul.so
 
 : foreach $(libs) |> !ln |> %b | <installed-libs>
