@@ -12,3 +12,7 @@ run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py _FILES $(MOZ_ROOT) @(MOZ_OB
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXPORT_RESOURCE $(MOZ_ROOT) @(MOZ_OBJDIR) $(MOZ_ROOT)/intl/locale/src
 
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py _RES_FILES $(MOZ_ROOT) @(MOZ_OBJDIR) $(MOZ_ROOT)/netwerk/test
+
+extra_files += $(MOZ_ROOT)/layout/svg/svg.css
+extra_files += $(MOZ_ROOT)/xpcom/tests/test.properties
+: foreach $(extra_files) |> !ln |>

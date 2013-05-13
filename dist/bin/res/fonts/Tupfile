@@ -7,3 +7,5 @@ include_rules
 res_dirs += $(MOZ_ROOT)/layout/mathml
 
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py font_properties $(MOZ_ROOT) @(MOZ_OBJDIR) $(res_dirs)
+
+: $(MOZ_ROOT)/layout/mathml/mathfont.properties |> ^ Preprocess %f -> %o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py --marker=%% $(DEFINES) $(ACDEFINES) %f > %o |> %b
