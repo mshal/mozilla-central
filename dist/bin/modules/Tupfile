@@ -47,3 +47,18 @@ js_dirs += $(MOZ_ROOT)/toolkit/mozapps/shared
 js_dirs += $(MOZ_ROOT)/tools/profiler
 
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXTRA_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(js_dirs)
+
+pp_js_dirs += $(MOZ_ROOT)/browser/devtools/highlighter
+pp_js_dirs += $(MOZ_ROOT)/browser/components/migration/src
+pp_js_dirs += $(MOZ_ROOT)/dom/apps/src
+pp_js_dirs += $(MOZ_ROOT)/dom/identity
+pp_js_dirs += $(MOZ_ROOT)/toolkit/components/osfile
+pp_js_dirs += $(MOZ_ROOT)/toolkit/components/places
+pp_js_dirs += $(MOZ_ROOT)/toolkit/components/url-classifier
+pp_js_dirs += $(MOZ_ROOT)/toolkit/content
+pp_js_dirs += $(MOZ_ROOT)/toolkit/mozapps/extensions
+pp_js_dirs += $(MOZ_ROOT)/toolkit/mozapps/shared
+pp_js_dirs += $(MOZ_ROOT)/toolkit/webapps
+
+export SHELL
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(pp_js_dirs)
