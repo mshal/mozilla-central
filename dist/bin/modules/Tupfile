@@ -1,0 +1,49 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+js_dirs += $(MOZ_ROOT)/browser/components
+js_dirs += $(MOZ_ROOT)/browser/components/downloads/src
+js_dirs += $(MOZ_ROOT)/browser/components/places/src
+js_dirs += $(MOZ_ROOT)/browser/components/thumbnails
+js_dirs += $(MOZ_ROOT)/browser/devtools/highlighter
+js_dirs += $(MOZ_ROOT)/browser/devtools/sourceeditor
+js_dirs += $(MOZ_ROOT)/browser/devtools/webconsole
+js_dirs += $(MOZ_ROOT)/browser/modules
+js_dirs += $(MOZ_ROOT)/content/base/src
+js_dirs += $(MOZ_ROOT)/dom/activities/src
+js_dirs += $(MOZ_ROOT)/dom/alarm
+js_dirs += $(MOZ_ROOT)/dom/apps/src
+js_dirs += $(MOZ_ROOT)/dom/base
+js_dirs += $(MOZ_ROOT)/dom/browser-element
+js_dirs += $(MOZ_ROOT)/dom/contacts
+js_dirs += $(MOZ_ROOT)/dom/permission
+js_dirs += $(MOZ_ROOT)/dom/phonenumberutils
+js_dirs += $(MOZ_ROOT)/dom/settings
+js_dirs += $(MOZ_ROOT)/intl/locale/src
+js_dirs += $(MOZ_ROOT)/js/ductwork/debugger
+js_dirs += $(MOZ_ROOT)/js/xpconnect/loader
+js_dirs += $(MOZ_ROOT)/netwerk/base/src
+js_dirs += $(MOZ_ROOT)/netwerk/protocol/http
+js_dirs += $(MOZ_ROOT)/toolkit/components/contentprefs
+js_dirs += $(MOZ_ROOT)/toolkit/components/ctypes
+js_dirs += $(MOZ_ROOT)/toolkit/components/microformats
+js_dirs += $(MOZ_ROOT)/toolkit/components/perf
+js_dirs += $(MOZ_ROOT)/toolkit/components/places
+js_dirs += $(MOZ_ROOT)/toolkit/components/prompts/src
+js_dirs += $(MOZ_ROOT)/toolkit/components/reflect
+js_dirs += $(MOZ_ROOT)/toolkit/components/satchel
+js_dirs += $(MOZ_ROOT)/toolkit/components/social
+js_dirs += $(MOZ_ROOT)/toolkit/components/telemetry
+js_dirs += $(MOZ_ROOT)/toolkit/content
+js_dirs += $(MOZ_ROOT)/toolkit/crashreporter
+js_dirs += $(MOZ_ROOT)/toolkit/forgetaboutsite
+js_dirs += $(MOZ_ROOT)/toolkit/identity
+js_dirs += $(MOZ_ROOT)/toolkit/mozapps/downloads
+js_dirs += $(MOZ_ROOT)/toolkit/mozapps/extensions
+js_dirs += $(MOZ_ROOT)/toolkit/mozapps/shared
+js_dirs += $(MOZ_ROOT)/tools/profiler
+
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXTRA_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(js_dirs)
