@@ -12,6 +12,9 @@ if len(sys.argv) < 4:
     sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR sub/dir1 [sub/dir2...]' % sys.argv[0])
 
 p = OptionParser()
+p.add_option('--destdir', dest='destdir', default=None,
+             help='Optional: Only files for this destination directory will be '
+             'installed.')
 (options, args) = p.parse_args()
 
 tupmk = tup_makefile.TupMakefile(args[0], args[1])
@@ -32,3 +35,21 @@ for subdir in args[2:]:
                 print fullpath,
 
         print " |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %s %%f > %%o |> %%b" % (defines, acdefines)
+
+    if options.destdir:
+        install_targets = tupmk.get_var('INSTALL_TARGETS')
+        for target in install_targets:
+            dest = tupmk.get_var_string('%s_DEST' % (target))
+            if dest == '/' + options.destdir:
+                files = tupmk.get_var('%s_FILES' % (target))
+                for f in files:
+                    print ": foreach %s/%s |> !ln |> %%b" % (subdir, f)
+
+        pp_targets = tupmk.get_var('PP_TARGETS')
+        for target in pp_targets:
+            dest = tupmk.get_var_string('%s_PATH' % (target))
+            if dest == '/' + options.destdir:
+                files = tupmk.get_var(target)
+                flags = tupmk.get_var_string('%s_FLAGS' % target)
+                for f in files:
+                    print ": foreach %s/%s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %s %s %%f > %%o |> %%b" % (subdir, f, flags, defines, acdefines)

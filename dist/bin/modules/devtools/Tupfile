@@ -1,0 +1,25 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+devtools += $(MOZ_ROOT)/browser/devtools/commandline/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/debugger/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/highlighter/CmdInspect.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/layoutview/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/markupview/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/scratchpad/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/shared/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/styleeditor/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/styleinspector/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/responsivedesign/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/tilt/*.jsm
+devtools += $(MOZ_ROOT)/browser/devtools/tilt/*.js
+devtools += $(MOZ_ROOT)/toolkit/devtools/*.jsm
+devtools += $(MOZ_ROOT)/toolkit/devtools/debugger/*.jsm
+devtools += $(MOZ_ROOT)/toolkit/devtools/debugger/server/*.jsm
+devtools += $(MOZ_ROOT)/toolkit/devtools/webconsole/*.jsm
+devtools += $(MOZ_ROOT)/toolkit/devtools/sourcemap/*.jsm
+
+: foreach $(devtools) |> !ln |>
