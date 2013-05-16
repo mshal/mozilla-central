@@ -8,4 +8,4 @@ js_dirs += $(MOZ_ROOT)/browser/components/sessionstore/src
 
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXTRA_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(js_dirs)
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(js_dirs)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py EXTRA_PP_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(js_dirs)

@@ -61,4 +61,4 @@ pp_js_dirs += $(MOZ_ROOT)/toolkit/mozapps/shared
 pp_js_dirs += $(MOZ_ROOT)/toolkit/webapps
 
 export SHELL
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py $(MOZ_ROOT) @(MOZ_OBJDIR) $(pp_js_dirs)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py EXTRA_PP_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(pp_js_dirs)

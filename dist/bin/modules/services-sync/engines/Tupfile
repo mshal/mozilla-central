@@ -6,4 +6,4 @@ include_rules
 
 dirs += $(MOZ_ROOT)/services/sync
 
-run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py --destdir=modules/services-sync/engines $(MOZ_ROOT) @(MOZ_OBJDIR) $(dirs)
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py --destdir=modules/services-sync/engines EXTRA_PP_JS_MODULES $(MOZ_ROOT) @(MOZ_OBJDIR) $(dirs)

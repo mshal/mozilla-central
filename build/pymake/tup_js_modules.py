@@ -8,8 +8,8 @@ import os
 import tup_makefile
 from optparse import OptionParser
 
-if len(sys.argv) < 4:
-    sys.exit('usage: %s MOZ_ROOT MOZ_OBJDIR sub/dir1 [sub/dir2...]' % sys.argv[0])
+if len(sys.argv) < 5:
+    sys.exit('usage: %s EXTRA_PP_JS_MODULES MOZ_ROOT MOZ_OBJDIR sub/dir1 [sub/dir2...]' % sys.argv[0])
 
 p = OptionParser()
 p.add_option('--destdir', dest='destdir', default=None,
@@ -17,12 +17,13 @@ p.add_option('--destdir', dest='destdir', default=None,
              'installed.')
 (options, args) = p.parse_args()
 
-tupmk = tup_makefile.TupMakefile(args[0], args[1])
+pp_var = args[0]
+tupmk = tup_makefile.TupMakefile(args[1], args[2])
 
-for subdir in args[2:]:
+for subdir in args[3:]:
     tupmk.parse(subdir)
 
-    pp_js_modules = tupmk.get_var('EXTRA_PP_JS_MODULES')
+    pp_js_modules = tupmk.get_var(pp_var)
     vpath = tupmk.get_var('VPATH')
     defines = tupmk.get_var_string('DEFINES')
     acdefines = tupmk.get_var_string('ACDEFINES')
