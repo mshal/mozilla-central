@@ -62,3 +62,28 @@ component_dirs += $(MOZ_ROOT)/xpcom/ds
 component_dirs += $(MOZ_ROOT)/xpcom/sample
 
 run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXTRA_COMPONENTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(component_dirs)
+
+pp_component_dirs += $(MOZ_ROOT)/b2g/components
+pp_component_dirs += $(MOZ_ROOT)/browser/components/feeds/src
+pp_component_dirs += $(MOZ_ROOT)/browser/components
+pp_component_dirs += $(MOZ_ROOT)/browser/components/migration/src
+pp_component_dirs += $(MOZ_ROOT)/browser/components/privatebrowsing/src
+pp_component_dirs += $(MOZ_ROOT)/browser/fuel/src
+pp_component_dirs += $(MOZ_ROOT)/dom/apps/src
+pp_component_dirs += $(MOZ_ROOT)/dom/base
+pp_component_dirs += $(MOZ_ROOT)/image/decoders/icon/qt
+pp_component_dirs += $(MOZ_ROOT)/mobile/android/components
+pp_component_dirs += $(MOZ_ROOT)/mobile/xul/components
+pp_component_dirs += $(MOZ_ROOT)/testing/marionette/components
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/filepicker
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/passwordmgr
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/satchel
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/search
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/telemetry
+pp_component_dirs += $(MOZ_ROOT)/toolkit/components/url-classifier
+pp_component_dirs += $(MOZ_ROOT)/toolkit/mozapps/downloads
+pp_component_dirs += $(MOZ_ROOT)/toolkit/mozapps/extensions
+pp_component_dirs += $(MOZ_ROOT)/toolkit/mozapps/update
+pp_component_dirs += $(MOZ_ROOT)/xulrunner/setup
+
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py EXTRA_PP_COMPONENTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(pp_component_dirs)

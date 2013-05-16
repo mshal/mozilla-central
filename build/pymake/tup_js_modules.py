@@ -35,7 +35,7 @@ for subdir in args[3:]:
             if fullpath:
                 print fullpath,
 
-        print " |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %s %%f > %%o |> %%b" % (defines, acdefines)
+        print " | $(MOZ_ROOT)/config/buildid |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %s %%f > %%o |> %%b" % (defines, acdefines)
 
     if options.destdir:
         install_targets = tupmk.get_var('INSTALL_TARGETS')
