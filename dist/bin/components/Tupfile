@@ -1,0 +1,64 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+component_dirs += $(MOZ_ROOT)/browser/components/build
+component_dirs += $(MOZ_ROOT)/browser/components/downloads/src
+component_dirs += $(MOZ_ROOT)/browser/components/feeds/src
+component_dirs += $(MOZ_ROOT)/browser/components/migration/src
+component_dirs += $(MOZ_ROOT)/browser/components/places/src
+component_dirs += $(MOZ_ROOT)/browser/components/privatebrowsing/src
+component_dirs += $(MOZ_ROOT)/browser/components/sessionstore/src
+component_dirs += $(MOZ_ROOT)/browser/components/shell/src
+component_dirs += $(MOZ_ROOT)/browser/components/sidebar
+component_dirs += $(MOZ_ROOT)/browser/components/thumbnails
+component_dirs += $(MOZ_ROOT)/browser/fuel/src
+component_dirs += $(MOZ_ROOT)/content/base/src
+component_dirs += $(MOZ_ROOT)/content/xslt/src/xslt
+component_dirs += $(MOZ_ROOT)/dom/activities/src
+component_dirs += $(MOZ_ROOT)/dom/alarm
+component_dirs += $(MOZ_ROOT)/dom/apps/src
+component_dirs += $(MOZ_ROOT)/dom/base
+component_dirs += $(MOZ_ROOT)/dom/browser-element
+component_dirs += $(MOZ_ROOT)/dom/contacts
+component_dirs += $(MOZ_ROOT)/dom/identity
+component_dirs += $(MOZ_ROOT)/dom/media
+component_dirs += $(MOZ_ROOT)/dom/messages
+component_dirs += $(MOZ_ROOT)/dom/network/src
+component_dirs += $(MOZ_ROOT)/dom/permission
+component_dirs += $(MOZ_ROOT)/dom/settings
+component_dirs += $(MOZ_ROOT)/dom/system
+component_dirs += $(MOZ_ROOT)/layout/tools/reftest
+component_dirs += $(MOZ_ROOT)/netwerk/protocol/app
+component_dirs += $(MOZ_ROOT)/netwerk/test/httpserver
+component_dirs += $(MOZ_ROOT)/services/aitc
+component_dirs += $(MOZ_ROOT)/services/notifications
+component_dirs += $(MOZ_ROOT)/services/sync
+component_dirs += $(MOZ_ROOT)/toolkit/components
+component_dirs += $(MOZ_ROOT)/toolkit/components/console
+component_dirs += $(MOZ_ROOT)/toolkit/components/contentprefs
+component_dirs += $(MOZ_ROOT)/toolkit/components/downloads
+component_dirs += $(MOZ_ROOT)/toolkit/components/feeds
+component_dirs += $(MOZ_ROOT)/toolkit/components/filepicker
+component_dirs += $(MOZ_ROOT)/toolkit/components/passwordmgr
+component_dirs += $(MOZ_ROOT)/toolkit/components/places
+component_dirs += $(MOZ_ROOT)/toolkit/components/prompts/src
+component_dirs += $(MOZ_ROOT)/toolkit/components/satchel
+component_dirs += $(MOZ_ROOT)/toolkit/components/search
+component_dirs += $(MOZ_ROOT)/toolkit/components/telemetry
+component_dirs += $(MOZ_ROOT)/toolkit/components/url-classifier
+component_dirs += $(MOZ_ROOT)/toolkit/components/urlformatter
+component_dirs += $(MOZ_ROOT)/toolkit/mozapps/downloads
+component_dirs += $(MOZ_ROOT)/toolkit/mozapps/extensions
+component_dirs += $(MOZ_ROOT)/toolkit/mozapps/handling
+component_dirs += $(MOZ_ROOT)/toolkit/mozapps/plugins
+component_dirs += $(MOZ_ROOT)/toolkit/mozapps/update
+component_dirs += $(MOZ_ROOT)/toolkit/system/dbus
+component_dirs += $(MOZ_ROOT)/toolkit/system/gnome
+component_dirs += $(MOZ_ROOT)/uriloader/exthandler
+component_dirs += $(MOZ_ROOT)/xpcom/ds
+component_dirs += $(MOZ_ROOT)/xpcom/sample
+
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_export.py EXTRA_COMPONENTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(component_dirs)
