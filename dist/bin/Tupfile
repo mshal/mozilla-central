@@ -22,6 +22,9 @@ libs += $(MOZ_ROOT)/toolkit/library/libxul.so
 
 : foreach $(libs) |> !ln |> %b | <installed-libs>
 
+prefs += $(MOZ_ROOT)/modules/libpref/src/greprefs.js
+: foreach $(prefs) |> !ln |>
+
 # libxpcom.so can't be symlinked because it uses realpath() to tell us where
 # dependentlibs.list is
 programs += $(MOZ_ROOT)/xpcom/stub/libxpcom.so

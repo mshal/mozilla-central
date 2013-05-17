@@ -5,3 +5,11 @@
 include_rules
 
 include $(MOZ_ROOT)/build/tup/compile.tup
+
+GREPREF_FILES += $(MOZ_ROOT)/netwerk/base/public/security-prefs.js
+GREPREF_FILES += init/all.js
+
+DEFINES += -DOS_ARCH=$(OS_ARCH)
+DEFINES += -DMOZ_WIDGET_TOOLKIT=$(MOZ_WIDGET_TOOLKIT)
+
+: $(GREPREF_FILES) |> ^ Preprocessor.py %f -> %o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py $(DEFINES) $(ACDEFINES) %f > %o |> greprefs.js
