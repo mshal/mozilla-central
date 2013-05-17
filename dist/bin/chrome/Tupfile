@@ -1,0 +1,106 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+DEFINES += -Dtarget="$(target)"
+DEFINES += -DCC="$(CC)"
+DEFINES += -DCC_VERSION="$(CC_VERSION)"
+DEFINES += -DCFLAGS="$(CFLAGS)"
+DEFINES += -DCXX="$(CXX)"
+DEFINES += -DCXX_VERSION="$(CXX_VERSION)"
+DEFINES += -DCXXFLAGS="$(CXXFLAGS)"
+DEFINES += -DCPPFLAGS="$(CPPFLAGS)"
+DEFINES += -Dac_configure_args="$(ac_configure_args)"
+DEFINES += -DPRE_RELEASE_SUFFIX=""
+DEFINES += -DAB_CD=en-US
+!jarmaker = |> ^ JarMaker.py %o^ $(PYTHON) $(MOZ_ROOT)/config/JarMaker.py -n -j . -t $(MOZ_ROOT) -f jar $(DEFINES) $(ACDEFINES) $(JARMAKER_FLAGS) %f |>
+
+mnfiles += $(MOZ_ROOT)/accessible/src/jsat/jar.mn
+mnfiles += $(MOZ_ROOT)/content/xbl/builtin/unix/jar.mn
+mnfiles += $(MOZ_ROOT)/content/xml/document/resources/jar.mn
+mnfiles += $(MOZ_ROOT)/docshell/resources/content/jar.mn
+mnfiles += $(MOZ_ROOT)/dom/ipc/jar.mn
+mnfiles += $(MOZ_ROOT)/dom/src/jar.mn
+mnfiles += $(MOZ_ROOT)/intl/uconv/src/jar.mn
+mnfiles += $(MOZ_ROOT)/js/ipc/jar.mn
+mnfiles += $(MOZ_ROOT)/layout/generic/jar.mn
+mnfiles += $(MOZ_ROOT)/layout/ipc/jar.mn
+mnfiles += $(MOZ_ROOT)/layout/mathml/jar.mn
+mnfiles += $(MOZ_ROOT)/layout/style/jar.mn
+mnfiles += $(MOZ_ROOT)/layout/style/xbl-marquee/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/aboutmemory/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/alerts/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/apppicker/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/console/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/cookie/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/filepicker/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/passwordmgr/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/printing/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/prompts/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/satchel/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/typeaheadfind/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/url-classifier/tests/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/viewconfig/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/components/viewsource/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/content/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/crashreporter/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/devtools/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/downloads/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/extensions/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/handling/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/plugins/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/preferences/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/mozapps/update/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/obsolete/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/profile/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/themes/gnomestripe/global/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/themes/gnomestripe/mozapps/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/themes/winstripe/global/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/themes/winstripe/mozapps/jar.mn
+: $(mnfiles) |> !jarmaker |> toolkit.jar | toolkit.manifest
+
+mnfiles=
+mnfiles += $(MOZ_ROOT)/browser/base/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/branding/nightly/content/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/certerror/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/downloads/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/feeds/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/migration/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/places/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/preferences/in-content/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/preferences/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/privatebrowsing/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/search/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/sessionstore/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/shell/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/components/tabview/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/devtools/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/themes/gnomestripe/communicator/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/themes/gnomestripe/jar.mn
+: $(mnfiles) |> !jarmaker |> browser.jar | browser.manifest
+
+mnfiles=
+mnfiles += $(MOZ_ROOT)/browser/branding/nightly/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/browser/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/dom/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/netwerk/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/security/manager/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/services/sync/locales/jar.mn
+mnfiles += $(MOZ_ROOT)/toolkit/locales/jar.mn
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/browser/locales/en-US
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/dom/locales/en-US
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/netwerk/locales/en-US
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/security/manager/locales/en-US
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/services/sync/locales/en-US
+JARMAKER_FLAGS += -c $(MOZ_ROOT)/toolkit/locales/en-US
+# TODO: browser/locales/jar.mn tries to also create webapprt/chrome files if
+# MOZ_WEBAPP_RUNTIME is set.
+JARMAKER_FLAGS += -UMOZ_WEBAPP_RUNTIME
+: $(mnfiles) |> !jarmaker |> en-US.jar | en-US.manifest
+
+mnfiles=
+JARMAKER_FLAGS=
+mnfiles += $(MOZ_ROOT)/security/manager/pki/resources/jar.mn
+: $(mnfiles) |> !jarmaker |> pippki.jar | pippki.manifest
