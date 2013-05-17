@@ -74,6 +74,7 @@ class JarMaker(object):
     self.outputFormat = outputFormat
     self.useJarfileManifest = useJarfileManifest
     self.useChromeManifest = useChromeManifest
+    self.updateChromeManifest = True
     self.pp = Preprocessor()
     self.topsourcedir = None
     self.sourcedirs = []
@@ -100,6 +101,8 @@ class JarMaker(object):
                  help="verbose output")
     p.add_option('-e', action="store_true",
                  help="create chrome.manifest instead of jarfile.manifest")
+    p.add_option('-n', action="store_true",
+                 help="don't update chrome.manifest when creating jarfile.manifest")
     p.add_option('--both-manifests', action="store_true",
                  dest="bothManifests",
                  help="create chrome.manifest and jarfile.manifest")
@@ -151,7 +154,8 @@ class JarMaker(object):
     if self.useJarfileManifest:
       self.updateManifest(jarPath + '.manifest', chromebasepath % '',
                           register)
-      addEntriesToListFile(chromeManifest, ['manifest chrome/%s.manifest' % (os.path.basename(jarPath),)])
+      if self.updateChromeManifest:
+        addEntriesToListFile(chromeManifest, ['manifest chrome/%s.manifest' % (os.path.basename(jarPath),)])
     if self.useChromeManifest:
       self.updateManifest(chromeManifest, chromebasepath % 'chrome/',
                           register)
@@ -436,6 +440,8 @@ def main():
   if options.bothManifests:
     jm.useChromeManifest = True
     jm.useJarfileManifest = True
+  if options.n:
+    jm.updateChromeManifest = False
   if options.l10n_base:
     if not options.relativesrcdir:
       p.error('relativesrcdir required when using l10n-base')
@@ -460,8 +466,9 @@ def main():
   if not args:
     infile = sys.stdin
   else:
-    infile,  = args
-  jm.makeJar(infile, options.j)
+    infile = args
+  for f in infile:
+    jm.makeJar(f, options.j)
 
 if __name__ == "__main__":
   main()
