@@ -234,6 +234,7 @@ class TupCpp(object):
 
     def generate_xpidl_rules(self):
         xpidlsrcs = self.tupmk.get_var('XPIDLSRCS')
+        xpidlsrcs.extend(self.tupmk.get_var('SDK_XPIDLSRCS'))
         if xpidlsrcs:
             xpidl_module = self.tupmk.get_var_string('XPIDL_MODULE')
             if not xpidl_module:
