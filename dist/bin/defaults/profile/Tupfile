@@ -1,0 +1,12 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+: $(MOZ_ROOT)/browser/locales/generic/profile/bookmarks.html.in |> ^ Preprocess %f -> %o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py -I$(MOZ_ROOT)/browser/locales/$(MOZ_UI_LOCALE)/profile/bookmarks.inc -DAB_CD=$(MOZ_UI_LOCALE) %f > %o |> %B
+
+extra_files += $(MOZ_ROOT)/browser/app/profile/prefs.js
+extra_files += $(MOZ_ROOT)/browser/locales/generic/profile/localstore.rdf
+extra_files += $(MOZ_ROOT)/browser/locales/generic/profile/mimeTypes.rdf
+: foreach $(extra_files) |> !ln |>

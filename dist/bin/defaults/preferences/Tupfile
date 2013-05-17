@@ -1,0 +1,17 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+pref_dirs += $(MOZ_ROOT)/browser/app
+pref_dirs += $(MOZ_ROOT)/$(MOZ_BRANDING_DIRECTORY)
+pref_dirs += $(MOZ_ROOT)/services/aitc
+pref_dirs += $(MOZ_ROOT)/services/common
+pref_dirs += $(MOZ_ROOT)/services/notifications
+pref_dirs += $(MOZ_ROOT)/services/sync
+
+run $(PYTHON) $(MOZ_ROOT)/build/pymake/tup_js_modules.py PREF_JS_EXPORTS $(MOZ_ROOT) @(MOZ_OBJDIR) $(pref_dirs)
+
+DEFINES += -DAB_CD=$(MOZ_UI_LOCALE)
+: foreach $(MOZ_ROOT)/browser/locales/en-US/firefox-l10n.js |> ^ Preprocessor.py %f -> %o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py $(DEFINES) $(ACDEFINES) %f > %o |> %b
