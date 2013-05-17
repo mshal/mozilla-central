@@ -232,6 +232,21 @@ class TupCpp(object):
                                                 'LD [host]', '$(HOST_CXX)',
                                                 self.host_link_flags)
 
+    def generate_xpidl_rules(self):
+        xpidlsrcs = self.tupmk.get_var('XPIDLSRCS')
+        if xpidlsrcs:
+            xpidl_module = self.tupmk.get_var_string('XPIDL_MODULE')
+            if not xpidl_module:
+                xpidl_module = self.tupmk.get_var_string('MODULE')
+            flags = self.tupmk.get_var_string('XPIDL_FLAGS')
+            vpath = self.tupmk.get_var('VPATH')
+            print ": foreach ",
+            for xpidl in xpidlsrcs:
+                fullpath = self.tupmk.vpath_resolve('.', vpath, xpidl)
+                print ' ', fullpath,
+            print " | $(MOZ_ROOT)/dist/idl/<installed-idls> |> ^ typelib.py %%o^ $(PYTHON) $(PYTHONPATH) -I$(MOZ_ROOT)/xpcom/typelib/xpt/tools $(MOZ_ROOT)/xpcom/idl-parser/typelib.py %s %%f --cachedir=$(MOZ_ROOT)/dist/idl -o %%o |> %%B.xpt {xpts}" % (flags)
+            print ": {xpts} |> ^ xpt.py link %%o^ $(PYTHON) $(MOZ_ROOT)/xpcom/typelib/xpt/tools/xpt.py link %%o %%f |> %s.xpt" % (xpidl_module)
+
     def resolve_library(self, lib):
         system_libs = {"-lpthread", "-lc", "-ldl"}
         conversions = {
@@ -663,6 +678,7 @@ if __name__ == '__main__':
                     security=options.security)
 
     tupcpp.generate_cpp_rules()
+    tupcpp.generate_xpidl_rules()
 
     if options.target_srcs:
         tupcpp.generate_desc_file()
