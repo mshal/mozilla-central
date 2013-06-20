@@ -228,6 +228,52 @@ class MozbuildSandbox(Sandbox):
 
         Sandbox.exec_file(self, path)
 
+    def mozbuild_enabled(self, path, root):
+        """Returns True if the given moz.build file is enabled in the current
+        build environment.
+
+        This is used by the tup backend, since it starts in a leaf directory
+        and needs to work upward to check if it's enabled.
+        """
+        paths = os.path.split(path)
+        parent = paths[0]
+        child = paths[1]
+
+        while True:
+            mozbuild_file = os.path.join(parent, 'moz.build')
+            if os.path.exists(mozbuild_file):
+                # Check our parent's *DIRS variables to see if we are enabled
+                sandbox = MozbuildSandbox(self.config, mozbuild_file)
+                sandbox.exec_file(mozbuild_file, filesystem_absolute=True)
+                dir_vars = ['DIRS', 'PARALLEL_DIRS', 'TOOL_DIRS']
+
+                if self.config.substs.get('ENABLE_TESTS', False) == '1':
+                    dir_vars.extend(['TEST_DIRS', 'TEST_TOOL_DIRS'])
+
+                for var in dir_vars:
+                    if not var in sandbox:
+                        continue
+                    if child in sandbox[var]:
+                        return self.mozbuild_enabled(parent, root)
+
+                # Also check the top-level moz.build file for TIERS
+                if parent == root:
+                    for tier, values in sandbox['TIERS'].items():
+                        if child in values['regular']:
+                            return True
+
+            if parent == root:
+                # If we reached the top and still aren't enabled, then
+                # we are disabled.
+                return False
+
+            # Recurse up the tree looking for a parent moz.build file
+            paths = os.path.split(parent)
+            parent = paths[0]
+            child = os.path.join(paths[1], child)
+
+        return False
+
     def _add_tier_directory(self, tier, reldir, static=False):
         """Register a tier directory with the build."""
         if isinstance(reldir, text_type):
