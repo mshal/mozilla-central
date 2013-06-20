@@ -1,0 +1,5 @@
+include_rules
+
+: $(MOZ_ROOT)/@(MOZ_OBJDIR)/netwerk/necko-config.h |> !ln |> %b $(MOZ_ROOT)/<installed-headers>
+
+include $(MOZ_ROOT)/build/tup/compile.tup
