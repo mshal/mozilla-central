@@ -68,7 +68,7 @@ if __name__ == '__main__':
     env.topsrcdir = root_path
 
     mozbuild_file = os.path.join(os.getcwd(), 'moz.build')
-    sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file)
+    sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root)
 
     if mozbuild:
         direnabled = sandbox.mozbuild_enabled(os.getcwd(), env.topsrcdir)
@@ -94,3 +94,6 @@ if __name__ == '__main__':
     if 'ASFILES' in sandbox:
         from tup import asm
         asm.generate_rules(sandbox)
+    if os.path.exists('jar.mn'):
+        from tup import jarmn
+        jarmn.generate_rules(sandbox)
