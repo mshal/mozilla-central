@@ -12,7 +12,8 @@ class MozbuildMakeSandbox(MozbuildSandbox):
     """
     def __init__(self, config, path):
         MozbuildSandbox.__init__(self, config, path)
-        self.makevars = {}
+        self.makefile = None
+        self.objs = []
 
     def get_string(self, name):
         value = self[name]
@@ -20,9 +21,16 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             return ' '.join(value)
         return value
 
+    def vpath_resolve(self, filename):
+        if self.makefile:
+            return self.makefile.vpath_resolve('.', self['VPATH'], filename)
+        return filename
+
     def __getitem__(self, name):
-        if name in self.makevars:
-            return self.makevars[name]
+        if self.makefile:
+            value = self.makefile.get_var(name)
+            if value:
+                return value
 
         try:
             return super(MozbuildMakeSandbox, self).__getitem__(name)
@@ -30,19 +38,3 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             pass
 
         return []
-
-    def __setitem__(self, name, value):
-        if name in self.makevars:
-            self.makevars[name] = value
-            return
-
-        try:
-            return self._globals.__setitem__(name, value)
-        # For things not yet in moz.build
-        except KeyError:
-            pass
-        # For things that moz.build supports but may still be in a Makefile
-        except ValueError:
-            pass
-
-        self.makevars[name] = value
