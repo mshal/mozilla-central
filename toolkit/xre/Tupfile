@@ -4,4 +4,6 @@
 
 include_rules
 
+export SHELL
+
 include $(MOZ_ROOT)/build/tup/compile.tup
