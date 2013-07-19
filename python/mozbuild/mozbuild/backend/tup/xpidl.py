@@ -11,7 +11,7 @@ def generate_rules(sandbox):
             xpidl_module = sandbox['MODULE']
             if not xpidl_module:
                 return
-        flags = ' '.join(sandbox['XPIDL_FLAGS'])
+        flags = sandbox.get_string('XPIDL_FLAGS')
         for xpidl in xpidlsrcs:
             # Install the .idl file in dist/idl/
             print ": foreach %s |> !cp |> $(MOZ_ROOT)/dist/idl/%%b | $(MOZ_ROOT)/<installed-idls>" % (xpidl)

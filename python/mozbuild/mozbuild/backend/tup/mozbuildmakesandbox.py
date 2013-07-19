@@ -14,6 +14,12 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         MozbuildSandbox.__init__(self, config, path)
         self.makevars = {}
 
+    def get_string(self, name):
+        value = self[name]
+        if type(value) == list:
+            return ' '.join(value)
+        return value
+
     def __getitem__(self, name):
         if name in self.makevars:
             return self.makevars[name]
