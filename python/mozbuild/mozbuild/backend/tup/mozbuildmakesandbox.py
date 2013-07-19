@@ -10,10 +10,11 @@ class MozbuildMakeSandbox(MozbuildSandbox):
     """Support class to handle both moz.build and Makefile.in variables
     at the same time.
     """
-    def __init__(self, config, path):
+    def __init__(self, config, path, moz_root):
         MozbuildSandbox.__init__(self, config, path)
         self.makefile = None
         self.objs = []
+        self.moz_root = moz_root
 
     def get_string(self, name):
         value = self[name]
