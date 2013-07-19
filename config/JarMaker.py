@@ -18,6 +18,7 @@ from optparse import OptionParser
 from MozZipFile import ZipFile
 from cStringIO import StringIO
 from datetime import datetime
+from collections import defaultdict
 
 from utils import pushback_iter, lockFile
 from Preprocessor import Preprocessor
@@ -81,6 +82,10 @@ class JarMaker(object):
     self.l10nmerge = None
     self.relativesrcdir = None
     self.rootManifestAppId = None
+    self.tupSupport = False
+    self.jarfile = None
+    self.outputs = defaultdict(dict)
+    self.topsourcecount = None
 
   def getCommandLineParser(self):
     '''Get a optparse.OptionParser for jarmaker.
@@ -92,8 +97,8 @@ class JarMaker(object):
     # the perl versions didn't grok strings right
     p = self.pp.getCommandLineParser(unescapeDefines = True)
     p.add_option('-f', type="choice", default="jar",
-                 choices=('jar', 'flat', 'symlink'),
-                 help="fileformat used for output", metavar="[jar, flat, symlink]")
+                 choices=('jar', 'flat', 'symlink', 'list'),
+                 help="fileformat used for output", metavar="[jar, flat, symlink, list]")
     p.add_option('-v', action="store_true", dest="verbose",
                  help="verbose output")
     p.add_option('-q', action="store_false", dest="verbose",
@@ -103,6 +108,11 @@ class JarMaker(object):
     p.add_option('--both-manifests', action="store_true",
                  dest="bothManifests",
                  help="create chrome.manifest and jarfile.manifest")
+    p.add_option('--tup-support', action="store_true",
+                 dest="tupSupport",
+                 help="enable tup support")
+    p.add_option('--jarfile', type="string",
+                 help="name of jarfile to process in jar.mn - if unspecified, all jar files are processed.")
     p.add_option('-s', type="string", action="append", default=[],
                  help="source directory")
     p.add_option('-t', type="string",
@@ -136,6 +146,11 @@ class JarMaker(object):
     self.pp.out = None
     pass
 
+  def getTupManifest(self, jarPath):
+    cwdparts = os.getcwd().split(os.path.sep)
+    manifestFile = '_'.join(cwdparts[-self.topsourcecount:]) + '.manifest'
+    return os.path.join(jarPath, manifestFile)
+
   def finalizeJar(self, jarPath, chromebasepath, register,
                   doZip=True):
     '''Helper method to write out the chrome registration entries to
@@ -147,9 +162,16 @@ class JarMaker(object):
     if not register:
       return
 
+    if self.outputFormat == 'list':
+      self.outputs[jarPath][self.getTupManifest(jarPath)] = 1
+      return
+
     chromeManifest = os.path.join(os.path.dirname(jarPath),
                                   '..', 'chrome.manifest')
 
+    if self.tupSupport:
+      self.updateManifest(self.getTupManifest(jarPath),
+                          chromebasepath % '', register)
     if self.useJarfileManifest:
       self.updateManifest(jarPath + '.manifest', chromebasepath.format(''),
                           register)
@@ -203,6 +225,8 @@ class JarMaker(object):
     '''
     # making paths absolute, guess srcdir if file and add to sourcedirs
     _normpath = lambda p: os.path.normpath(os.path.abspath(p))
+    if not self.topsourcecount:
+        self.topsourcecount = self.topsourcedir.count(os.path.sep) + 1
     self.topsourcedir = _normpath(self.topsourcedir)
     self.sourcedirs = [_normpath(p) for p in self.sourcedirs]
     if self.localedirs:
@@ -225,7 +249,17 @@ class JarMaker(object):
         if m.group('jarfile') is None:
           # comment
           continue
-        self.processJarSection(m.group('jarfile'), lines, jardir)
+        if not self.jarfile or self.jarfile == m.group('jarfile'):
+          self.processJarSection(m.group('jarfile'), lines, jardir)
+        else:
+          # If we aren't processing this jarfile for this invocation of
+          # JarMaker, skip to the next jar section.
+          while True:
+            l = lines.next()
+            m = self.jarline.match(l)
+            if m:
+              lines.pushback(l)
+              break
     except StopIteration:
       # we read the file
       pass
@@ -278,6 +312,13 @@ class JarMaker(object):
       jf = ZipFile(jarfilepath, 'a', lock = True)
       outHelper = self.OutputHelper_jar(jf)
     else:
+      # Count the number of ../'s we need to prepend symlinks with from
+      # the destination directory.
+      self.destpathcount = 0
+      for elem in jarfile.split(os.sep):
+        if elem != '..':
+          self.destpathcount += 1
+
       outHelper = getattr(self, 'OutputHelper_' + self.outputFormat)(jarfile)
     register = {}
     # This loop exits on either
@@ -290,6 +331,8 @@ class JarMaker(object):
           l = lines.next()
         except StopIteration:
           # we're done with this jar.mn, and this jar section
+          if self.outputFormat == 'list':
+            self.outputs[jarfile].update(outHelper.outputs)
           self.finalizeJar(jarfile, chromebasepath, register)
           if jf is not None:
             jf.close()
@@ -310,6 +353,8 @@ class JarMaker(object):
         m = self.entryline.match(l)
         if not m:
           # neither an entry line nor chrome reg, this jar section is done
+          if self.outputFormat == 'list':
+            self.outputs[jarfile].update(outHelper.outputs)
           self.finalizeJar(jarfile, chromebasepath, register)
           if jf is not None:
             jf.close()
@@ -349,29 +394,41 @@ class JarMaker(object):
                            .format(src, ', '.join(src_base)))
       if m.group('optPreprocess'):
         outf = outHelper.getOutput(out)
-        inf = open(realsrc)
-        pp = self.pp.clone()
-        if src[-4:] == '.css':
-          pp.setMarker('%')
-        pp.out = outf
-        pp.do_include(inf)
-        pp.warnUnused(realsrc)
-        outf.close()
-        inf.close()
+        if outf:
+          inf = open(realsrc)
+          pp = self.pp.clone()
+          if src[-4:] == '.css':
+            pp.setMarker('%')
+          pp.out = outf
+          pp.do_include(inf)
+          pp.warnUnused(realsrc)
+          outf.close()
+          inf.close()
         return
       # copy or symlink if newer or overwrite
       if (m.group('optOverwrite')
           or (getModTime(realsrc) >
               outHelper.getDestModTime(m.group('output')))):
         if self.outputFormat == 'symlink':
-          outHelper.symlink(realsrc, out)
+          if self.tupSupport:
+            extradestpathcount = self.destpathcount + out.count(os.path.sep)
+
+            rootrel = realsrc.replace(self.topsourcedir + '/', '')
+            symsrc = '../' * extradestpathcount + rootrel
+          else:
+            symsrc = realsrc
+          outHelper.symlink(symsrc, out)
           return
         outf = outHelper.getOutput(out)
-        # open in binary mode, this can be images etc
-        inf = open(realsrc, 'rb')
-        outf.write(inf.read())
-        outf.close()
-        inf.close()
+        if outf:
+          # open in binary mode, this can be images etc
+          inf = open(realsrc, 'rb')
+          outf.write(inf.read())
+          outf.close()
+          inf.close()
+
+  def getOutputs(self):
+    return self.outputs
 
 
   class OutputHelper_jar(object):
@@ -437,6 +494,19 @@ class JarMaker(object):
         if rv == 0:
           raise WinError()
 
+  class OutputHelper_list(object):
+    '''List the objects rather than actually creating them for
+    tup's parser.
+    '''
+    def __init__(self, basepath):
+      self.basepath = basepath
+      self.outputs = {}
+    def getDestModTime(self, aPath):
+      return 0
+    def getOutput(self, name):
+      self.outputs[os.path.join(self.basepath, name)] = 1
+      return None
+
 def main():
   jm = JarMaker()
   p = jm.getCommandLineParser()
@@ -451,6 +521,15 @@ def main():
   if options.bothManifests:
     jm.useChromeManifest = True
     jm.useJarfileManifest = True
+  if jm.outputFormat == 'list':
+    jm.updateChromeManifest = False
+    jm.useJarfileManifest = False
+  if options.tupSupport:
+    jm.useChromeManifest = False
+    jm.useJarfileManifest = False
+    jm.tupSupport = True
+  if options.jarfile:
+    jm.jarfile = options.jarfile
   if options.l10n_base:
     if not options.relativesrcdir:
       p.error('relativesrcdir required when using l10n-base')
