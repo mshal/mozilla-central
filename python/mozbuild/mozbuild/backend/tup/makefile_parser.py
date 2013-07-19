@@ -234,9 +234,6 @@ class TupMakefile(object):
             return var_tuple[2].resolvesplit(self.makefile, variables)
         return []
 
-    def get_var_string(self, varname, variables=None):
-        return ' '.join(self.get_var(varname, variables))
-
     def vpath_resolve(self, subdir, vpath, filename):
         for p, dirs in self.makefile._patternvpaths:
             if p.match(filename):
