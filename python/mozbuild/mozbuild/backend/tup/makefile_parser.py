@@ -30,7 +30,7 @@ class TupMakefile(object):
         self.set_var('topsrcdir', moz_root)
         self.set_var('MOZILLA_DIR', moz_root)
 
-        self.sandbox = sandbox
+        sandbox.makefile = self
 
         # Get the path relative to moz_root by finding the components of cwd
         # using the length of moz_root. Eg, if our cwd is
@@ -127,10 +127,6 @@ class TupMakefile(object):
                     s.value = s.value.replace('$(DEPTH)', self.moz_root)
 
                 s.execute(self.makefile, self.context)
-                vname = s.vnameexp.resolvestr(self.makefile, self.makefile.variables)
-                if vname not in self.sandbox:
-                    self.sandbox[vname] = []
-                self.sandbox[vname].append(s.value)
             elif isinstance(s, pymake.parserdata.Include):
                 # Certain includes are generally ignored, such as those
                 # specifically used by the make backend.
