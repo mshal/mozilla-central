@@ -91,3 +91,6 @@ if __name__ == '__main__':
     if 'EXPORTS' in sandbox:
         from tup import exports
         exports.generate_rules(sandbox)
+    if 'ASFILES' in sandbox:
+        from tup import asm
+        asm.generate_rules(sandbox)
