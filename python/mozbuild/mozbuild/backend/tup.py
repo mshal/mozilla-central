@@ -68,7 +68,8 @@ if __name__ == '__main__':
     env.topsrcdir = root_path
 
     mozbuild_file = os.path.join(os.getcwd(), 'moz.build')
-    sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root)
+    sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root,
+                                                      moz_objdir)
 
     if mozbuild:
         direnabled = sandbox.mozbuild_enabled(os.getcwd(), env.topsrcdir)
@@ -84,10 +85,10 @@ if __name__ == '__main__':
     if mozbuild:
         sandbox.exec_file(mozbuild_file, filesystem_absolute=True)
     if make:
-        makefile_parser.parse(sandbox, moz_root, moz_objdir, 'Makefile.in')
+        makefile_parser.parse(sandbox, 'Makefile.in')
     else:
         # We at least need config.mk
-        makefile_parser.parse(sandbox, moz_root, moz_objdir, None)
+        makefile_parser.parse(sandbox, None)
 
     if 'XPIDL_SOURCES' in sandbox:
         from tup import xpidl
