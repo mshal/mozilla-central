@@ -11,11 +11,12 @@ class MozbuildMakeSandbox(MozbuildSandbox):
     """Support class to handle both moz.build and Makefile.in variables
     at the same time.
     """
-    def __init__(self, config, path, moz_root):
+    def __init__(self, config, path, moz_root, moz_objdir):
         MozbuildSandbox.__init__(self, config, path)
         self.makefile = None
         self.objs = []
         self.moz_root = moz_root
+        self.moz_objdir = moz_objdir
 
         # Get the path relative to moz_root by finding the components of cwd
         # using the length of moz_root. Eg, if our cwd is
@@ -27,6 +28,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         cwd_parts = cwd.split('/')
         path_count = moz_root.count('/') + 1
         self.relativesrcdir = os.path.join(*cwd_parts[-path_count:])
+        self.outputdir = os.path.join(moz_root, moz_objdir, self.relativesrcdir)
 
     def get_string(self, name):
         value = self[name]
