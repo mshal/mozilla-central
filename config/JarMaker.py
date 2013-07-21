@@ -171,7 +171,7 @@ class JarMaker(object):
 
     if self.tupSupport:
       self.updateManifest(self.getTupManifest(jarPath),
-                          chromebasepath % '', register)
+                          chromebasepath.format(''), register)
     if self.useJarfileManifest:
       self.updateManifest(jarPath + '.manifest', chromebasepath.format(''),
                           register)

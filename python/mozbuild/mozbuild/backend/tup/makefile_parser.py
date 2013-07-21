@@ -8,13 +8,14 @@ import os
 import copy
 import pymake.parser
 
-def parse(sandbox, moz_root, moz_objdir):
-    tupmk = TupMakefile(moz_root, moz_objdir, sandbox)
-    tupmk.process_makefile('Makefile.in')
+def parse(sandbox, moz_root, moz_objdir, makefile):
+    tupmk = TupMakefile(moz_root, moz_objdir, sandbox, makefile)
+    if makefile:
+        tupmk.process_makefile(makefile)
 
 class TupMakefile(object):
     def __init__(self, moz_root, moz_objdir, sandbox,
-                 allow_includes=False, always_enabled=False, need_config_mk=False,
+                 allow_includes=False, always_enabled=False,
                  js_src=False, nsprpub=False, security=False):
         self.makefile = pymake.data.Makefile()
         self.makefile.variables = pymake.data.Variables()
@@ -29,6 +30,8 @@ class TupMakefile(object):
         self.set_var('srcdir', '.')
         self.set_var('topsrcdir', moz_root)
         self.set_var('MOZILLA_DIR', moz_root)
+
+        self.allow_includes = allow_includes
 
         sandbox.makefile = self
 
@@ -60,7 +63,6 @@ class TupMakefile(object):
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.moz_root = moz_root
         self.always_enabled = always_enabled
-        self.need_config_mk = need_config_mk
 
         if nsprpub:
             self.topsrcdir = os.path.join(moz_root, 'nsprpub')
@@ -80,9 +82,10 @@ class TupMakefile(object):
         if security:
             build_makefile = os.path.join(moz_root, 'security', 'build',
                                           'Makefile.in')
-            self.process_makefile(self.context, build_makefile)
+            self.process_makefile(build_makefile)
 
-        self.allow_includes = allow_includes
+        config_mk = os.path.join(moz_root, 'config', 'config.mk')
+        self.process_makefile(config_mk)
 
         if security:
             self.set_var('SOURCE_MD_DIR', os.path.join(moz_root, 'dist'))
@@ -133,33 +136,6 @@ class TupMakefile(object):
                 if self.allow_includes:
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
-                        # Ignore rules.mk, since we are doing our own tup-based
-                        # rules, but make sure we get config.mk if it hasn't
-                        # already been included. Some Makefile.in's include this
-                        # manually, while others rely on rules.mk including it.
-                        # Since we don't include rules.mk, we won't pick it up
-                        # in that case.
-                        #
-                        # Note that extra parsing of config.mk when it's not
-                        # needed can greatly slow down some cases (such as
-                        # dist/include), so we only grab it if need_config_mk is
-                        # set.
-                        already_included = self.get_var('INCLUDED_CONFIG_MK')
-                        if not already_included:
-                            # This variable is defined in
-                            # nsprpub/config/config.mk, so we can get our
-                            # definitions from there for Makefiles in nsprpub/
-                            already_included = self.get_var('NSPR_CONFIG_MK')
-                        if not already_included:
-                            # This variable is set by
-                            # security/coreconf/config.mk, so we can use it
-                            # to see if that config file has already been
-                            # included for Makefiles under security/
-                            already_included = self.get_var('USE_UTIL_DIRECTLY')
-
-                        if self.need_config_mk and not already_included:
-                            config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
-                            self.process_makefile(config_mk)
                         continue
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk
