@@ -8,13 +8,13 @@ import os
 import copy
 import pymake.parser
 
-def parse(sandbox, moz_root, moz_objdir, makefile):
-    tupmk = TupMakefile(moz_root, moz_objdir, sandbox, makefile)
+def parse(sandbox, makefile):
+    tupmk = TupMakefile(sandbox, makefile)
     if makefile:
         tupmk.process_makefile(makefile)
 
 class TupMakefile(object):
-    def __init__(self, moz_root, moz_objdir, sandbox,
+    def __init__(self, sandbox,
                  allow_includes=False, always_enabled=False,
                  js_src=False, nsprpub=False, security=False):
         self.makefile = pymake.data.Makefile()
@@ -28,34 +28,34 @@ class TupMakefile(object):
             self.set_var(key, value)
 
         self.set_var('srcdir', '.')
-        self.set_var('topsrcdir', moz_root)
-        self.set_var('MOZILLA_DIR', moz_root)
+        self.set_var('topsrcdir', sandbox.moz_root)
+        self.set_var('MOZILLA_DIR', sandbox.moz_root)
 
         self.allow_includes = allow_includes
+        self.sandbox = sandbox
 
         sandbox.makefile = self
 
         self.set_var('relativesrcdir', sandbox.relativesrcdir)
 
         if js_src:
-            depth = os.path.join(moz_root, moz_objdir, 'js', 'src')
+            depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'js', 'src')
         elif nsprpub:
-            depth = os.path.join(moz_root, moz_objdir, 'nsprpub')
+            depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'nsprpub')
         else:
-            depth = os.path.join(moz_root, moz_objdir)
+            depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir)
         self.set_var('DEPTH', depth)
-        self.set_var('DIST', os.path.join(moz_root, 'dist'))
+        self.set_var('DIST', os.path.join(sandbox.moz_root, 'dist'))
 
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk
         self.set_var('INCLUDED_RCS_MK', '1')
 
         self.context = pymake.parserdata._EvalContext(weak=False)
-        self.moz_root = moz_root
         self.always_enabled = always_enabled
 
         if nsprpub:
-            self.topsrcdir = os.path.join(moz_root, 'nsprpub')
+            self.topsrcdir = os.path.join(sandbox.moz_root, 'nsprpub')
             # nsprpub's rules.mk passes in '-c' explicitly, but we use the
             # AS_DASH_C_FLAG in tup_cpp to support that variable for the
             # top-level rules.mk
@@ -65,20 +65,20 @@ class TupMakefile(object):
             # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
             # want, so put that in _OBJ_SUFFIX as well (since that value gets
             # put back into the original OBJ_SUFFIX).
-            self.topsrcdir = moz_root
+            self.topsrcdir = sandbox.moz_root
             obj_suffix = self.get_var('OBJ_SUFFIX')
             self.set_var('_OBJ_SUFFIX', obj_suffix[0])
 
         if security:
-            build_makefile = os.path.join(moz_root, 'security', 'build',
+            build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
                                           'Makefile.in')
             self.process_makefile(build_makefile)
 
-        config_mk = os.path.join(moz_root, 'config', 'config.mk')
+        config_mk = os.path.join(sandbox.moz_root, 'config', 'config.mk')
         self.process_makefile(config_mk)
 
         if security:
-            self.set_var('SOURCE_MD_DIR', os.path.join(moz_root, 'dist'))
+            self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, 'dist'))
 
             # The security/ Makefiles are a little weird - first make recurses
             # into build/Makefile, then executes sub-makes with a bunch of
@@ -117,7 +117,7 @@ class TupMakefile(object):
                     # This is for the config/buildid file, since it is not
                     # generated from configure, we won't find it in the
                     # MOZ_OBJDIR.
-                    s.value = s.value.replace('$(DEPTH)', self.moz_root)
+                    s.value = s.value.replace('$(DEPTH)', self.sandbox.moz_root)
 
                 s.execute(self.makefile, self.context)
             elif isinstance(s, pymake.parserdata.Include):
