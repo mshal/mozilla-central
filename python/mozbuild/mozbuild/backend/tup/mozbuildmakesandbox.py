@@ -42,14 +42,24 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         return filename
 
     def __getitem__(self, name):
+        if name == 'relativesrcdir':
+            return self.relativesrcdir
+        if name == 'topsrcdir':
+            return self.moz_root
+
         if self.makefile:
             value = self.makefile.get_var(name)
-            if value:
+            if value is not None:
                 return value
 
         try:
             return super(MozbuildMakeSandbox, self).__getitem__(name)
         except KeyError:
             pass
+
+        if name in self.config.defines:
+            return [self.config.defines[name]]
+        if name in self.config.substs:
+            return [self.config.substs[name]]
 
         return []

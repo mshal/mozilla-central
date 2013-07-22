@@ -61,7 +61,14 @@ def generate_rules(sandbox):
     extra_manifest_files = []
 
     final_target = os.path.join(sandbox.get_string('FINAL_TARGET'), 'chrome')
-    jarmaker_flags = sandbox['MAKE_JARS_FLAGS']
+    jarmaker_flags = []
+    # MAKE_JARS_FLAGS normally comes from config/config.mk
+    jarmaker_flags.append('-t')
+    jarmaker_flags.append(sandbox.get_string('topsrcdir'))
+    jarmaker_flags.append('-f')
+    jarmaker_flags.append(sandbox.get_string('MOZ_CHROME_FILE_FORMAT'))
+    jarmaker_flags.append('--relativesrcdir=%s' % (sandbox.get_string('relativesrcdir')))
+
     jarmaker_flags.extend(sandbox['XULPPFLAGS'])
     jarmaker_flags.extend(sandbox['DEFINES'])
     jarmaker_flags.extend(sandbox['ACDEFINES'])
