@@ -19,10 +19,10 @@ def generate_rules(sandbox):
             # Generate the .h file locally. Put it in the {xpidl} bin for
             # each file so we don't have to duplicate path manipulations
             # here.
-            print ": foreach %s | $(MOZ_ROOT)/<installed-idls> |> ^ python header.py [%%f -> %%o]^ $(PYTHON_PATH) $(PLY_INCLUDE) $(MOZ_ROOT)/xpcom/idl-parser/header.py -I$(DIST)/idl %%f -o %%o --cachedir=$(MOZ_ROOT)/xpcom/idl-parser |> %s/%%B.h | $(MOZ_ROOT)/dist/include/<installed-headers> {%s}" % (xpidl, sandbox.outputdir, xpidl)
+            print ": foreach %s | $(MOZ_ROOT)/<installed-idls> |> ^ python header.py [%%f -> %%o]^ $(PYTHON_PATH) $(PLY_INCLUDE) $(MOZ_ROOT)/xpcom/idl-parser/header.py -I$(DIST)/idl %%f -o %%o --cachedir=$(MOZ_ROOT)/xpcom/idl-parser |> %s/%%B.h | $(MOZ_ROOT)/<installed-headers> {%s}" % (xpidl, sandbox.outputdir, xpidl)
 
             # Install the .h file to dist/include
-            print ": foreach {%s} |> !cp |> $(DIST)/include/%%b | $(MOZ_ROOT)/dist/include/<installed-headers>" % (xpidl)
+            print ": foreach {%s} |> !cp |> $(DIST)/include/%%b | $(MOZ_ROOT)/<installed-headers>" % (xpidl)
 
             # Generate the .xpt file
             print ": foreach %s | $(MOZ_ROOT)/<installed-idls> |> ^ typelib.py %%o^ $(PYTHON_PATH) $(PLY_INCLUDE) -I$(MOZ_ROOT)/xpcom/typelib/xpt/tools $(MOZ_ROOT)/xpcom/idl-parser/typelib.py -I$(DIST)/idl %s %%f --cachedir=$(MOZ_ROOT)/xpcom/idl-parser -o %%o |> %s/%%B.xpt {xpts}" % (xpidl, flags, sandbox.outputdir)
