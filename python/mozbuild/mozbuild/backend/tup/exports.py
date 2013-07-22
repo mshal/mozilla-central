@@ -8,7 +8,7 @@ def generate_exports(exports, namespace=""):
     if namespace:
         namespace += '/'
     for export in strings:
-        print ": foreach %s |> !cp |> $(MOZ_ROOT)/dist/include/%s%%b | $(MOZ_ROOT)/<installed-headers>" % (export, namespace)
+        print ": foreach %s |> !cp |> $(DIST)/include/%s%%b | $(MOZ_ROOT)/<installed-headers>" % (export, namespace)
 
     children = exports.get_children()
     for subdir in sorted(children):
