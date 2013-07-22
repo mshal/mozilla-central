@@ -4,6 +4,6 @@
 
 include_rules
 
-: |> $(PYTHON) generate-stylestructlist.py > %o |> nsStyleStructList.h
+: |> $(PYTHON) generate-stylestructlist.py > %o |> nsStyleStructList.h | $(MOZ_ROOT)/<generated-headers>
 
 include $(MOZ_ROOT)/build/tup/compile.tup
