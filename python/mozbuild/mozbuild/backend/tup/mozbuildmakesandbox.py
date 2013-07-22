@@ -46,6 +46,8 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             return self.relativesrcdir
         if name == 'topsrcdir':
             return self.moz_root
+        if name == 'DIST':
+            return os.path.join(self.moz_root, self.moz_objdir, 'dist')
 
         if self.makefile:
             value = self.makefile.get_var(name)
