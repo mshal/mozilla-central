@@ -8,10 +8,9 @@ import os
 import copy
 import pymake.parser
 
-def parse(sandbox, makefile):
-    tupmk = TupMakefile(sandbox, makefile)
-    if makefile:
-        tupmk.process_makefile(makefile)
+def parse(sandbox):
+    tupmk = TupMakefile(sandbox)
+    tupmk.process_makefile('Makefile.in')
 
 class TupMakefile(object):
     def __init__(self, sandbox,
@@ -28,7 +27,6 @@ class TupMakefile(object):
             self.set_var(key, value)
 
         self.set_var('srcdir', '.')
-        self.set_var('topsrcdir', sandbox.moz_root)
         self.set_var('MOZILLA_DIR', sandbox.moz_root)
 
         self.allow_includes = allow_includes
@@ -54,28 +52,10 @@ class TupMakefile(object):
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.always_enabled = always_enabled
 
-        if nsprpub:
-            self.topsrcdir = os.path.join(sandbox.moz_root, 'nsprpub')
-            # nsprpub's rules.mk passes in '-c' explicitly, but we use the
-            # AS_DASH_C_FLAG in tup_cpp to support that variable for the
-            # top-level rules.mk
-            self.set_var('AS_DASH_C_FLAG', '-c')
-        else:
-            # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
-            # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
-            # want, so put that in _OBJ_SUFFIX as well (since that value gets
-            # put back into the original OBJ_SUFFIX).
-            self.topsrcdir = sandbox.moz_root
-            obj_suffix = self.get_var('OBJ_SUFFIX')
-            self.set_var('_OBJ_SUFFIX', obj_suffix[0])
-
         if security:
             build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
                                           'Makefile.in')
             self.process_makefile(build_makefile)
-
-        config_mk = os.path.join(sandbox.moz_root, 'config', 'config.mk')
-        self.process_makefile(config_mk)
 
         if security:
             self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, 'dist'))
@@ -101,10 +81,6 @@ class TupMakefile(object):
             self.set_var('NSS_ENABLE_ZLIB', '',
                          source=pymake.data.Variables.SOURCE_COMMANDLINE)
 
-        # Once we have parsed autoconf.mk and build.mk, we can set the "true"
-        # topsrcdir for nsprpub.
-        self.set_var('topsrcdir', self.topsrcdir)
-
     def process_statements(self, dirname, statements):
         for s in statements:
             if isinstance(s, pymake.parserdata.SetVariable):
@@ -126,9 +102,13 @@ class TupMakefile(object):
                 if self.allow_includes:
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
+                        # Ignore rules.mk
                         continue
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk
+                        continue
+                    elif '/config.mk' in include_filename:
+                        # Ignore config.mk
                         continue
                     elif '$(MKDEPENDENCIES)' in include_filename:
                         # Make dependencies aren't needed for tup, and this
@@ -194,7 +174,7 @@ class TupMakefile(object):
         var_tuple = variables.get(varname)
         if var_tuple is not None and var_tuple[2] is not None:
             return var_tuple[2].resolvesplit(self.makefile, variables)
-        return []
+        return None
 
     def vpath_resolve(self, subdir, vpath, filename):
         for p, dirs in self.makefile._patternvpaths:
