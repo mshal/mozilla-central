@@ -25,6 +25,6 @@ def generate_rules(sandbox):
 
     for filename in asfiles:
         fullpath = sandbox.vpath_resolve(filename)
-        print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (fullpath, extra_deps_string, asm_compiler, asoutoption, asflags, as_dash_c_flag, obj_suffix)
+        print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %s/%%B.%s" % (fullpath, extra_deps_string, asm_compiler, asoutoption, asflags, as_dash_c_flag, sandbox.outputdir, obj_suffix)
         basename, ext = os.path.splitext(os.path.basename(fullpath))
         sandbox.objs.append("%s.%s" % (basename, obj_suffix))
