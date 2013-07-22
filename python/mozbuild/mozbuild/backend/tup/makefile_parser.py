@@ -43,7 +43,6 @@ class TupMakefile(object):
         else:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir)
         self.set_var('DEPTH', depth)
-        self.set_var('DIST', os.path.join(sandbox.moz_root, 'dist'))
 
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk

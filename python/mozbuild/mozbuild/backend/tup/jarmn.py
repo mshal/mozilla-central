@@ -60,7 +60,16 @@ def generate_rules(sandbox):
     # TODO
     extra_manifest_files = []
 
-    final_target = os.path.join(sandbox.get_string('FINAL_TARGET'), 'chrome')
+    xpi_name = sandbox.get_string('XPI_NAME')
+    dist = sandbox.get_string('DIST')
+    dist_subdir = sandbox.get_string('DIST_SUBDIR')
+    if xpi_name:
+        final_target = os.path.join(dist, 'xpi-stage', xpi_name)
+    else:
+        if dist_subdir:
+            final_target = os.path.join(dist, 'bin', dist_subdir)
+        else:
+            final_target = os.path.join(dist, 'bin')
     jarmaker_flags = []
     # MAKE_JARS_FLAGS normally comes from config/config.mk
     jarmaker_flags.append('-t')
