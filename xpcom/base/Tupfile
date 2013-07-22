@@ -7,7 +7,7 @@ include_rules
 # We generate ErrorListCxxDefines.h from ErrorList.h using regex.  The -n option
 # suppresses printing the pattern space, and the p at the end prints it anyway,
 # so we don't print lines that don't match the pattern to start with.
-: ErrorList.h |> sed -n 's/.*ERROR(\([A-Z_0-9]*\).*/#define \1 nsresult::\1/p' < %f > %o |> ErrorListCxxDefines.h
-: ErrorList.h |> sed 's/.*ERROR(\([A-Z_0-9]*\),\( *\)\(.*\))[^)]*/#define \1 \2((nsresult)(\3))/' < %f > %o |> ErrorListCDefines.h
+: ErrorList.h |> sed -n 's/.*ERROR(\([A-Z_0-9]*\).*/#define \1 nsresult::\1/p' < %f > %o |> ErrorListCxxDefines.h | $(MOZ_ROOT)/<generated-headers>
+: ErrorList.h |> sed 's/.*ERROR(\([A-Z_0-9]*\),\( *\)\(.*\))[^)]*/#define \1 \2((nsresult)(\3))/' < %f > %o |> ErrorListCDefines.h | $(MOZ_ROOT)/<generated-headers>
 
 include $(MOZ_ROOT)/build/tup/compile.tup
