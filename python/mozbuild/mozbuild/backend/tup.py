@@ -79,16 +79,12 @@ if __name__ == '__main__':
     if not direnabled:
         sys.exit(0)
 
-    sys.path.append(os.path.join(os.getcwd(), moz_root, 'build', 'pymake'))
-    from tup import makefile_parser
-
     if mozbuild:
         sandbox.exec_file(mozbuild_file, filesystem_absolute=True)
     if make:
-        makefile_parser.parse(sandbox, 'Makefile.in')
-    else:
-        # We at least need config.mk
-        makefile_parser.parse(sandbox, None)
+        sys.path.append(os.path.join(os.getcwd(), moz_root, 'build', 'pymake'))
+        from tup import makefile_parser
+        makefile_parser.parse(sandbox)
 
     if 'XPIDL_SOURCES' in sandbox:
         from tup import xpidl
