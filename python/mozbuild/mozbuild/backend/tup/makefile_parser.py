@@ -163,10 +163,14 @@ class TupMakefile(object):
 
     def set_var(self, varname, value,
                 source=pymake.data.Variables.SOURCE_MAKEFILE):
+        if type(value) == list:
+            realval = ' '.join(value)
+        else:
+            realval = value
         self.makefile.variables.set(varname,
                                     pymake.data.Variables.FLAVOR_SIMPLE,
                                     source,
-                                    value)
+                                    realval)
 
     def get_var(self, varname, variables=None):
         if variables is None:
