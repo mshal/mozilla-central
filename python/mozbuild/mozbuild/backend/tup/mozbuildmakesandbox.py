@@ -35,6 +35,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.set_var('topsrcdir', self.moz_root)
         self.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
         self.set_var('AB_CD', self.get_string('MOZ_UI_LOCALE'))
+        self.set_var('LOCALE_SRCDIR', 'en-US')
 
     def set_var(self, name, value):
         self.variables[name] = value
