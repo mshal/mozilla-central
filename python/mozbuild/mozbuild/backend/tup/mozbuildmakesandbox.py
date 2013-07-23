@@ -31,14 +31,19 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.relativesrcdir = os.path.join(*cwd_parts[-path_count:])
         self.outputdir = os.path.join(moz_root, moz_objdir, self.relativesrcdir)
 
+        self.set_var('abs_srcdir', '.')
         self.set_var('relativesrcdir', self.relativesrcdir)
         self.set_var('topsrcdir', self.moz_root)
         self.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
         self.set_var('AB_CD', self.get_string('MOZ_UI_LOCALE'))
         self.set_var('LOCALE_SRCDIR', 'en-US')
+        self.set_var('ACDEFINES', self.config.substs['ACDEFINES'].split(' '))
 
     def set_var(self, name, value):
-        self.variables[name] = value
+        if type(value) == list:
+            self.variables[name] = value
+        else:
+            self.variables[name] = [value]
 
     def get_string(self, name):
         value = self[name]
@@ -53,7 +58,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
 
     def __getitem__(self, name):
         if name in self.variables:
-            return [self.variables[name]]
+            return self.variables[name]
 
         if self.makefile:
             value = self.makefile.get_var(name)
