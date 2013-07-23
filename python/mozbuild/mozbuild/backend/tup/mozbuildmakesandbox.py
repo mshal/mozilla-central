@@ -34,6 +34,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.set_var('relativesrcdir', self.relativesrcdir)
         self.set_var('topsrcdir', self.moz_root)
         self.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
+        self.set_var('AB_CD', self.get_string('MOZ_UI_LOCALE'))
 
     def set_var(self, name, value):
         self.variables[name] = value
@@ -51,7 +52,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
 
     def __getitem__(self, name):
         if name in self.variables:
-            return self.variables[name]
+            return [self.variables[name]]
 
         if self.makefile:
             value = self.makefile.get_var(name)

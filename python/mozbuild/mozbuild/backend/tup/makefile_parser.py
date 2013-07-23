@@ -25,6 +25,8 @@ class TupMakefile(object):
             self.set_var(key, value)
         for key, value in sandbox.config.substs.iteritems():
             self.set_var(key, value)
+        for key, value in sandbox.variables.iteritems():
+            self.set_var(key, value)
 
         self.set_var('srcdir', '.')
         self.set_var('MOZILLA_DIR', sandbox.moz_root)
