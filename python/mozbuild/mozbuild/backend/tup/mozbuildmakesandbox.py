@@ -17,6 +17,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.objs = []
         self.moz_root = moz_root
         self.moz_objdir = moz_objdir
+        self.variables = {}
 
         # Get the path relative to moz_root by finding the components of cwd
         # using the length of moz_root. Eg, if our cwd is
@@ -30,6 +31,13 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.relativesrcdir = os.path.join(*cwd_parts[-path_count:])
         self.outputdir = os.path.join(moz_root, moz_objdir, self.relativesrcdir)
 
+        self.set_var('relativesrcdir', self.relativesrcdir)
+        self.set_var('topsrcdir', self.moz_root)
+        self.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
+
+    def set_var(self, name, value):
+        self.variables[name] = value
+
     def get_string(self, name):
         value = self[name]
         if type(value) == list:
@@ -42,12 +50,8 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         return filename
 
     def __getitem__(self, name):
-        if name == 'relativesrcdir':
-            return self.relativesrcdir
-        if name == 'topsrcdir':
-            return self.moz_root
-        if name == 'DIST':
-            return os.path.join(self.moz_root, self.moz_objdir, 'dist')
+        if name in self.variables:
+            return self.variables[name]
 
         if self.makefile:
             value = self.makefile.get_var(name)
