@@ -78,6 +78,9 @@ def generate_rules(sandbox):
     jarmaker_flags.append(sandbox.get_string('MOZ_CHROME_FILE_FORMAT'))
     jarmaker_flags.append('--relativesrcdir=%s' % (sandbox.get_string('relativesrcdir')))
 
+    jarmaker_flags.append('-c')
+    jarmaker_flags.append('en-US')
+
     jarmaker_flags.extend(sandbox['XULPPFLAGS'])
     jarmaker_flags.extend(sandbox['DEFINES'])
     jarmaker_flags.extend(sandbox['ACDEFINES'])
