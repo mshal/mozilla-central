@@ -83,7 +83,8 @@ def generate_rules(sandbox):
 
     jarmaker_flags.extend(sandbox['XULPPFLAGS'])
     jarmaker_flags.extend(sandbox['DEFINES'])
-    jarmaker_flags.extend(sandbox['ACDEFINES'])
+    # ACDEFINES is defined weirdly by configenvironment.py
+    jarmaker_flags.extend(sandbox['ACDEFINES'][0].split(' '))
     jarmaker_flags.append('jar.mn')
     jarmaker_flags.extend(extra_manifest_files)
     tup_jar = TupJar(final_target, jarmaker_flags, sandbox.moz_root)
