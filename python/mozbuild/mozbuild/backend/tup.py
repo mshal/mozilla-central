@@ -98,3 +98,6 @@ if __name__ == '__main__':
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox)
+    if 'NO_DIST_INSTALL' not in sandbox:
+        from tup import distinstall
+        distinstall.generate_rules(sandbox)
