@@ -370,6 +370,24 @@ class Build(MachCommandBase):
 
         return status
 
+    @Command('build-tup', category='build',
+        description='Build the tree with tup.')
+    def build_tup(self):
+        try:
+            config_status = os.stat(os.path.join(self.topobjdir, 'config.status'))
+            config_status_mtime = config_status.st_mtime
+        except OSError:
+            config_status_mtime = 0
+            pass
+        configure_in = os.stat(os.path.join(self.topsrcdir, 'configure.in'))
+        if configure_in.st_mtime > config_status_mtime:
+            print('Need to run configure...')
+            self.configure()
+
+        import subprocess
+        status = subprocess.call(['tup', 'upd'])
+        return status
+
     @Command('configure', category='build',
         description='Configure the tree (run configure and config.status).')
     def configure(self):
