@@ -390,6 +390,13 @@ class Build(MachCommandBase):
             self.configure()
 
         import subprocess
+        platformini = os.path.join(self.topsrcdir, 'toolkit', 'xre', 'make-platformini.py')
+        buildid = os.path.join(self.topobjdir, 'config', 'buildid')
+        with open(buildid, 'w') as outfile:
+            status = subprocess.call(['python', '-B', platformini, '--print-buildid'], stdout=outfile)
+            if status != 0:
+                return status
+            print('New buildid generated')
         status = subprocess.call(['tup', 'upd'])
         return status
 
