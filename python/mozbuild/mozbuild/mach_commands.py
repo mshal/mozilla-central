@@ -372,7 +372,9 @@ class Build(MachCommandBase):
 
     @Command('build-tup', category='build',
         description='Build the tree with tup.')
-    def build_tup(self):
+    @CommandArgument('--verbose', action='store_true',
+        help='Verbose output for what commands the build is running.')
+    def build_tup(self, verbose=False):
         try:
             config_status = os.stat(os.path.join(self.topobjdir, 'config.status'))
             config_status_mtime = config_status.st_mtime
@@ -392,7 +394,11 @@ class Build(MachCommandBase):
             if status != 0:
                 return status
             print('New buildid generated')
-        status = subprocess.call(['tup', 'upd'])
+
+        tup_args = ['tup', 'upd']
+        if verbose:
+            tup_args.append('--verbose')
+        status = subprocess.call(tup_args)
         return status
 
     @Command('configure', category='build',
