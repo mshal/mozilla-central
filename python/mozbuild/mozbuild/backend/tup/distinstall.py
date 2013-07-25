@@ -6,14 +6,14 @@
 import os
 import sys
 
-def generate_pp_rule(filename, defines, extra_flags, output_path):
+def generate_pp_rule(filename, defines, extra_flags, output_path, input_group=""):
     flags = ' '.join(defines)
     if(extra_flags):
         flags += ' ' + ' '.join(extra_flags)
     output_group = ""
     if filename.endswith('.manifest') and 'webapprt' not in output_path:
         output_group = "| $(MOZ_ROOT)/<installed-manifests>"
-    print ": foreach %s | $(MOZ_ROOT)/<generated-headers> |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%%b %s" % (filename, flags, output_path, output_group)
+    print ": foreach %s | %s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%%b %s" % (filename, input_group, flags, output_path, output_group)
 
 def generate_install_rule(filename, output_path):
     output_group = ""
@@ -34,7 +34,7 @@ def generate_rules(sandbox):
     extra_pp_components = sandbox['EXTRA_PP_COMPONENTS']
     extra_pp_components_flags = sandbox['EXTRA_PP_COMPONENTS_FLAGS']
     for component in extra_pp_components:
-        generate_pp_rule(component, defines, extra_pp_components_flags, component_dir)
+        generate_pp_rule(component, defines, extra_pp_components_flags, component_dir, input_group="$(MOZ_ROOT)/<generated-headers>")
 
     pref_js_exports = sandbox['PREF_JS_EXPORTS']
     if sandbox['GRE_MODULE']:

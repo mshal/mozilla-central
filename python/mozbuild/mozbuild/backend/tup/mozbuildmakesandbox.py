@@ -76,3 +76,16 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             return [self.config.substs[name]]
 
         return []
+
+    def __contains__(self, name):
+        if super(MozbuildMakeSandbox, self).__contains__(name):
+            return True
+        if name in self.variables:
+            return True
+        if name in self.config.defines:
+            return True
+        if name in self.config.substs:
+            return True
+        if self.makefile and self.makefile.get_var(name) is not None:
+            return True
+        return False

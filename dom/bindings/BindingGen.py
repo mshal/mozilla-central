@@ -7,21 +7,23 @@ import cPickle
 from Configuration import Configuration
 from Codegen import CGBindingRoot, replaceFileIfChanged
 
-def generate_binding_files(config, outputprefix, srcprefix, webidlfile):
+def generate_binding_files(config, outputprefix, srcprefix, webidlfile,
+                           tup_support):
     """
     |config| Is the configuration object.
     |outputprefix| is a prefix to use for the header guards and filename.
     """
 
-    depsname = ".deps/" + outputprefix + ".pp"
     root = CGBindingRoot(config, outputprefix, webidlfile)
     replaceFileIfChanged(outputprefix + ".h", root.declare())
     replaceFileIfChanged(outputprefix + ".cpp", root.define())
 
-    with open(depsname, 'wb') as f:
-        # Sort so that our output is stable
-        f.write("\n".join(outputprefix + ": " + os.path.join(srcprefix, x) for
-                          x in sorted(root.deps())))
+    if not tup_support:
+        depsname = ".deps/" + outputprefix + ".pp"
+        with open(depsname, 'wb') as f:
+            # Sort so that our output is stable
+            f.write("\n".join(outputprefix + ": " + os.path.join(srcprefix, x) for
+                              x in sorted(root.deps())))
 
 def main():
     # Parse arguments.
@@ -30,6 +32,8 @@ def main():
     o = OptionParser(usage=usagestring)
     o.add_option("--verbose-errors", action='store_true', default=False,
                  help="When an error happens, display the Python traceback.")
+    o.add_option("--tup-support", action='store_true', default=False,
+                 help="Enable tup support")
     (options, args) = o.parse_args()
 
     configFile = os.path.normpath(args[0])
@@ -72,7 +76,8 @@ def main():
     for webIDLFile in toRegenerate:
         assert webIDLFile.endswith(".webidl")
         outputPrefix = webIDLFile[:-len(".webidl")] + "Binding"
-        generate_binding_files(config, outputPrefix, srcPrefix, webIDLFile);
+        generate_binding_files(config, outputPrefix, srcPrefix, webIDLFile,
+                               options.tup_support);
 
 if __name__ == '__main__':
     main()
