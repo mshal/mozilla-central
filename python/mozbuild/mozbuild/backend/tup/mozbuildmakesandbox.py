@@ -31,7 +31,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.relativesrcdir = os.path.join(*cwd_parts[-path_count:])
         self.outputdir = os.path.join(moz_root, moz_objdir, self.relativesrcdir)
 
-        self.set_var('abs_srcdir', '.')
+        self.set_var('abs_srcdir', os.path.join(moz_root, self.relativesrcdir))
         self.set_var('relativesrcdir', self.relativesrcdir)
         self.set_var('topsrcdir', self.moz_root)
         self.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
