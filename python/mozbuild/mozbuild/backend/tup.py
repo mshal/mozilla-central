@@ -86,6 +86,11 @@ if __name__ == '__main__':
         from tup import makefile_parser
         makefile_parser.parse(sandbox)
 
+    # Custom rules in Makefile.in need special treatment
+    if sandbox.relativesrcdir == 'toolkit/components/urlformatter':
+        from tup import urlformatter
+        urlformatter.generate_rules(sandbox)
+
     if 'XPIDL_SOURCES' in sandbox:
         from tup import xpidl
         xpidl.generate_rules(sandbox)
