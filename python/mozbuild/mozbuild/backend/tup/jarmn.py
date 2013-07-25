@@ -54,7 +54,7 @@ class TupJar(object):
         for jarfile in outputs:
             jartarget = jarfile.replace(self.final_target + '/', '')
             (dirname, filename) = os.path.split(jarfile)
-            print ": | $(MOZ_ROOT)/config/buildid |> ^ JarMaker.py jar.mn^ %s --tup-support --jarfile %s -j %s %s |> %s | %s/<%s>" % (jarmaker, jartarget, self.final_target, ' '.join(self.flags), ' '.join(outputs[jarfile]), dirname, filename)
+            print ": |> ^ JarMaker.py jar.mn^ %s --tup-support --jarfile %s -j %s %s |> %s | %s/<%s>" % (jarmaker, jartarget, self.final_target, ' '.join(self.flags), ' '.join(outputs[jarfile]), dirname, filename)
 
 def generate_rules(sandbox):
     # TODO
