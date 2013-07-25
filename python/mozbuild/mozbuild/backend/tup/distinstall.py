@@ -31,11 +31,6 @@ def generate_rules(sandbox):
     if not js_module_dir:
         js_module_dir = os.path.join(final_target, 'modules')
 
-    # Hack for toolkit/components/urlformatted - we can't put this rule in the
-    # Tupfile because we need MOZ_GOOGLE_API_KEY from configure.
-    #
-    if sandbox.relativesrcdir == 'toolkit/components/urlformatter':
-        print ': |> echo "#define MOZ_GOOGLE_API_KEY %s" > %%o |> google_api_key | $(MOZ_ROOT)/<generated-headers>' % (sandbox['MOZ_GOOGLE_API_KEY'])
     extra_pp_components = sandbox['EXTRA_PP_COMPONENTS']
     extra_pp_components_flags = sandbox['EXTRA_PP_COMPONENTS_FLAGS']
     for component in extra_pp_components:
