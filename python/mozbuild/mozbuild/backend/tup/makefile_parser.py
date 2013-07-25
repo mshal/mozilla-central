@@ -88,7 +88,7 @@ class TupMakefile(object):
 
                 # These variables are specific to make's implementation, and aren't
                 # needed in general
-                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir']:
+                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir', 'abs_srcdir']:
                     continue
                 s.execute(self.makefile, self.context)
             elif isinstance(s, pymake.parserdata.Include):
