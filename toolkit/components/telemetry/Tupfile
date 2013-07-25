@@ -10,4 +10,6 @@ histograms_file = Histograms.json
 
 : |> $(PYTHON) gen-histogram-data.py $(histograms_file) > %o |> TelemetryHistogramData.inc | $(MOZ_ROOT)/<generated-headers>
 
+export SHELL
+
 include $(MOZ_ROOT)/build/tup/compile.tup
