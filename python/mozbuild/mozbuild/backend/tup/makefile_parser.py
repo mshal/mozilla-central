@@ -9,7 +9,7 @@ import copy
 import pymake.parser
 
 def parse(sandbox):
-    tupmk = TupMakefile(sandbox)
+    tupmk = TupMakefile(sandbox, allow_includes=True)
     tupmk.process_makefile('Makefile.in')
 
 class TupMakefile(object):
