@@ -11,28 +11,29 @@ from mozbuild.pythonutil import iter_modules_in_path
 from buildconfig import topsrcdir
 
 
-def generate_binding_files(config, outputprefix, srcprefix, webidlfile):
+def generate_binding_files(config, outputprefix, srcprefix, webidlfile,
+                           tup_support):
     """
     |config| Is the configuration object.
     |outputprefix| is a prefix to use for the header guards and filename.
     """
 
-    depsname = ".deps/" + outputprefix + ".pp"
     root = CGBindingRoot(config, outputprefix, webidlfile)
     replaceFileIfChanged(outputprefix + ".h", root.declare())
     replaceFileIfChanged(outputprefix + ".cpp", root.define())
 
-    mk = Makefile()
-    # NOTE: it's VERY important that we output dependencies for the FooBinding
-    # file here, not for the header or generated cpp file.  These dependencies
-    # are used later to properly determine changedDeps and prevent rebuilding
-    # too much.  See the comment explaining $(binding_dependency_trackers) in
-    # Makefile.in.
-    rule = mk.create_rule([outputprefix])
-    rule.add_dependencies(os.path.join(srcprefix, x) for x in root.deps())
-    rule.add_dependencies(iter_modules_in_path(topsrcdir))
-    with open(depsname, 'w') as f:
-        mk.dump(f)
+    if not tup_support:
+        mk = Makefile()
+        # NOTE: it's VERY important that we output dependencies for the
+        # FooBinding file here, not for the header or generated cpp file.  These
+        # dependencies are used later to properly determine changedDeps and
+        # prevent rebuilding too much.  See the comment explaining
+        # $(binding_dependency_trackers) in Makefile.in.
+        rule = mk.create_rule([outputprefix])
+        rule.add_dependencies(os.path.join(srcprefix, x) for x in root.deps())
+        rule.add_dependencies(iter_modules_in_path(topsrcdir))
+        with open(depsname, 'w') as f:
+            mk.dump(f)
 
 def main():
     # Parse arguments.
@@ -41,6 +42,8 @@ def main():
     o = OptionParser(usage=usagestring)
     o.add_option("--verbose-errors", action='store_true', default=False,
                  help="When an error happens, display the Python traceback.")
+    o.add_option("--tup-support", action='store_true', default=False,
+                 help="Enable tup support")
     (options, args) = o.parse_args()
 
     configFile = os.path.normpath(args[0])
@@ -83,7 +86,8 @@ def main():
     for webIDLFile in toRegenerate:
         assert webIDLFile.endswith(".webidl")
         outputPrefix = webIDLFile[:-len(".webidl")] + "Binding"
-        generate_binding_files(config, outputPrefix, srcPrefix, webIDLFile);
+        generate_binding_files(config, outputPrefix, srcPrefix, webIDLFile,
+                               options.tup_support);
 
 if __name__ == '__main__':
     main()

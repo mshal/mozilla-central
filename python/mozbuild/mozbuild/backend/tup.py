@@ -91,15 +91,19 @@ if __name__ == '__main__':
         from tup import urlformatter
         urlformatter.generate_rules(sandbox)
 
+    if 'all_webidl_files' in sandbox:
+        from tup import dombindings
+        dombindings.generate_rules(sandbox)
     if 'XPIDL_SOURCES' in sandbox:
         from tup import xpidl
         xpidl.generate_rules(sandbox)
     if 'EXPORTS' in sandbox:
         from tup import exports
         exports.generate_rules(sandbox)
-    if 'ASFILES' in sandbox:
-        from tup import asm
-        asm.generate_rules(sandbox)
+        # TODO: libvpx
+#    if 'ASFILES' in sandbox:
+#        from tup import asm
+#        asm.generate_rules(sandbox)
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox)
