@@ -60,7 +60,7 @@ class TupCpp(object):
             value = self.sandbox[flag_group]
             for flag in value:
                 # Skip the make-specific dependency flags.
-                if not flag in ['-MD', '-MF', '-MP', '$(MDDEPDIR)/$(@F).pp'] and not flag in self.filter_out:
+                if not flag in ['-MD', '-MF', '-MP', '.deps/.pp'] and not flag in self.filter_out:
                     if '@tupjob' in flag:
                         print >> sys.stderr, "Error: @tupjob in flag:", flag
                         sys.exit(1)
