@@ -153,7 +153,7 @@ class TupCpp(object):
                 fullpath = self.sandbox.vpath_resolve(filename)
 
                 # Create a tup :-rule for each cpp file to compile it
-                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s%%B.%s" % (fullpath, extra_deps_string, print_string, self.sandbox.get_string(cc_var), compile_flag, all_flags_string, obj_prefix_string, obj_suffix)
+                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s/%s%%B.%s" % (fullpath, extra_deps_string, print_string, self.sandbox.get_string(cc_var), compile_flag, all_flags_string, self.sandbox.outputdir, obj_prefix_string, obj_suffix)
                 basename, ext = os.path.splitext(os.path.basename(fullpath))
 
                 # Put all objects into self.objs, except for host srcs since
