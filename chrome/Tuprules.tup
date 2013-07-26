@@ -1,0 +1,8 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# TODO: This directory is oddly enabled by way of xpcom, which adds ../chrome
+# to its DIRS. This breaks tup's "up-the-tree" DIRS detection. Perhaps
+# chrome/ can be added to toolkit.mozbuild?
+TUP_CPP_FLAGS = --always-enabled
