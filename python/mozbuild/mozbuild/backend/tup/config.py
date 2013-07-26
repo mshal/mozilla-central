@@ -28,3 +28,19 @@ def generate_rules(sandbox):
 
         for header in outputs:
             print ": |> ^ System wrapper: %s^ (echo '#pragma GCC system_header'; echo '#pragma GCC visibility push(default)'; echo '#include_next <%s>'; echo '#pragma GCC visibility pop') > '%%o' |> $(DIST)/system_wrappers/%s | $(MOZ_ROOT)/<installed-headers>" % (header, header, header)
+
+    if sandbox['WRAP_STL_INCLUDES']:
+        f = open('stl-headers')
+        lines = [line.strip() for line in f.readlines()]
+        f.close()
+
+        # Get a list of the headers from stl-headers. Prune out all the comments
+        # and blank lines
+        headers = []
+        for line in lines:
+            if not line.startswith('#') and len(line) > 0:
+                headers.append('$(DIST)/stl_wrappers/%s' % (line))
+
+        stl_compiler = sandbox.get_string('stl_compiler')
+        outputs = ' '.join(headers)
+        print ": |> $(PYTHON) make-stl-wrappers.py $(DIST)/stl_wrappers %s %s-stl-wrapper.template.h stl-headers |> %s | $(MOZ_ROOT)/<installed-headers>" % (stl_compiler, stl_compiler, outputs)
