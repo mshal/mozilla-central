@@ -191,7 +191,7 @@ class TupMakefile(object):
         else:
             realval = value
         self.makefile.variables.set(varname,
-                                    pymake.data.Variables.FLAVOR_SIMPLE,
+                                    pymake.data.Variables.FLAVOR_RECURSIVE,
                                     source,
                                     realval)
 
