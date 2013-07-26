@@ -8,9 +8,10 @@ import os
 import copy
 import pymake.parser
 
-def parse(sandbox):
+def parse(sandbox, makefile):
     tupmk = TupMakefile(sandbox, allow_includes=True)
-    tupmk.process_makefile('Makefile.in')
+    if makefile:
+        tupmk.process_makefile(makefile)
 
 class TupMakefile(object):
     def __init__(self, sandbox,
@@ -52,6 +53,9 @@ class TupMakefile(object):
 
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.always_enabled = always_enabled
+
+        config_mk = os.path.join(sandbox.moz_root, 'config', 'config.mk')
+        self.process_makefile(config_mk)
 
         if security:
             build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
