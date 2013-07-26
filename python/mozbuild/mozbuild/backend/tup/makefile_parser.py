@@ -12,11 +12,13 @@ def parse(sandbox, makefile):
     tupmk = TupMakefile(sandbox, allow_includes=True)
     if makefile:
         tupmk.process_makefile(makefile)
+    else:
+        tupmk.process_config_mk()
 
 class TupMakefile(object):
     def __init__(self, sandbox,
                  allow_includes=False, always_enabled=False,
-                 js_src=False, nsprpub=False, security=False):
+                 js_src=False, security=False):
         self.makefile = pymake.data.Makefile()
         self.makefile.variables = pymake.data.Variables()
 
@@ -39,6 +41,11 @@ class TupMakefile(object):
 
         self.set_var('relativesrcdir', sandbox.relativesrcdir)
 
+        if sandbox.relativesrcdir.startswith('nsprpub'):
+            nsprpub = True
+        else:
+            nsprpub = False
+
         if js_src:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'js', 'src')
         elif nsprpub:
@@ -54,8 +61,12 @@ class TupMakefile(object):
         self.context = pymake.parserdata._EvalContext(weak=False)
         self.always_enabled = always_enabled
 
-        config_mk = os.path.join(sandbox.moz_root, 'config', 'config.mk')
-        self.process_makefile(config_mk)
+        # The config.mk, baseconfig.mk, and autoconf.mk do weird things with
+        # OBJ_SUFFIX and _OBJ_SUFFIX. The autoconf.mk file has the value we
+        # want, so put that in _OBJ_SUFFIX as well (since that value gets put
+        # back into the original OBJ_SUFFIX in config.mk).
+        obj_suffix = self.get_var('OBJ_SUFFIX')
+        self.set_var('_OBJ_SUFFIX', obj_suffix[0])
 
         if security:
             build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
@@ -86,6 +97,15 @@ class TupMakefile(object):
             self.set_var('NSS_ENABLE_ZLIB', '',
                          source=pymake.data.Variables.SOURCE_COMMANDLINE)
 
+        if nsprpub:
+            autoconf_mk = os.path.join(sandbox.moz_root, sandbox.moz_objdir,
+                                       'nsprpub', 'config', 'autoconf.mk')
+            self.process_makefile(autoconf_mk)
+
+    def process_config_mk(self):
+        config_mk = os.path.join(self.sandbox.moz_root, 'config', 'config.mk')
+        self.process_makefile(config_mk)
+
     def process_statements(self, dirname, statements):
         for s in statements:
             if isinstance(s, pymake.parserdata.SetVariable):
@@ -101,13 +121,14 @@ class TupMakefile(object):
                 if self.allow_includes:
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
-                        # Ignore rules.mk
+                        # Ignore rules.mk, but rules.mk picks up config.mk
+                        self.process_config_mk()
                         continue
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk
                         continue
                     elif '/config.mk' in include_filename:
-                        # Ignore config.mk
+                        self.process_config_mk()
                         continue
                     elif '$(MKDEPENDENCIES)' in include_filename:
                         # Make dependencies aren't needed for tup, and this
