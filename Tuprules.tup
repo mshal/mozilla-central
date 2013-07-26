@@ -5,7 +5,12 @@
 .gitignore
 
 MOZ_ROOT = $(TUP_CWD)
-DIST = $(MOZ_ROOT)/@(MOZ_OBJDIR)/dist
+
+# Some of these variables are passed through to tup by way of config.status.
+# It may be better to resolve these in mozbuild instead.
+DEPTH = $(MOZ_ROOT)/@(MOZ_OBJDIR)
+DIST = $(DEPTH)/dist
+LIBXUL_DIST = $(DIST)
 topsrcdir = $(MOZ_ROOT)
 
 PYTHON = python -B
