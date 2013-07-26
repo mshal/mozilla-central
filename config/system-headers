@@ -720,7 +720,6 @@ PP_Resources.h
 PP_Types.h
 Printing.h
 Print/PMPrintingDialogExtensions.h
-private/qucomextra_p.h
 Processes.h
 process.h
 Process.h
