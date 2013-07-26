@@ -93,6 +93,9 @@ if __name__ == '__main__':
     if sandbox.relativesrcdir == 'toolkit/components/urlformatter':
         from tup import urlformatter
         urlformatter.generate_rules(sandbox)
+    if sandbox.relativesrcdir.startswith('nsprpub'):
+        from tup import nspr
+        nspr.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
