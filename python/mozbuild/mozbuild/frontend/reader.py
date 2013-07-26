@@ -259,7 +259,7 @@ class MozbuildSandbox(Sandbox):
                 # Also check the top-level moz.build file for TIERS
                 if parent == root:
                     for tier, values in sandbox['TIERS'].items():
-                        if child in values['regular']:
+                        if child in values['regular'] or child in values['static']:
                             return True
 
             if parent == root:
