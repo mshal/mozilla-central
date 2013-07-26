@@ -103,6 +103,9 @@ if __name__ == '__main__':
     if 'EXPORTS' in sandbox:
         from tup import exports
         exports.generate_rules(sandbox)
+    if 'EXPORTS_NAMESPACES' in sandbox:
+        from tup import oldexports
+        oldexports.generate_rules(sandbox)
         # TODO: libvpx
 #    if 'ASFILES' in sandbox:
 #        from tup import asm
