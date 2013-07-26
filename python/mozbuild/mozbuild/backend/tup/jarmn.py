@@ -71,12 +71,7 @@ def generate_rules(sandbox):
         else:
             final_target = os.path.join(dist, 'bin')
     jarmaker_flags = []
-    # MAKE_JARS_FLAGS normally comes from config/config.mk
-    jarmaker_flags.append('-t')
-    jarmaker_flags.append(sandbox.get_string('topsrcdir'))
-    jarmaker_flags.append('-f')
-    jarmaker_flags.append(sandbox.get_string('MOZ_CHROME_FILE_FORMAT'))
-    jarmaker_flags.append('--relativesrcdir=%s' % (sandbox.get_string('relativesrcdir')))
+    jarmaker_flags.extend(sandbox['MAKE_JARS_FLAGS'])
 
     jarmaker_flags.append('-c')
     jarmaker_flags.append(sandbox.get_string('LOCALE_SRCDIR'))
