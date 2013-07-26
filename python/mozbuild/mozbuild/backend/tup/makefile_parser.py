@@ -130,6 +130,10 @@ class TupMakefile(object):
                         # This file doesn't seem to exist, and is only included
                         # with -include
                         continue
+                    elif 'exported_headers.mk' in include_filename and self.sandbox.relativesrcdir.startswith('js/src'):
+                        # mfbt already exports these headers - don't try to
+                        # export them again.
+                        continue
                     else:
                         files = s.exp.resolvesplit(self.makefile, self.makefile.variables)
                         if '$(topsrcdir)' in include_filename or '$(MOZILLA_DIR)' in include_filename:
