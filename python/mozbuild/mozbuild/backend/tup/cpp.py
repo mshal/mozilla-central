@@ -226,7 +226,7 @@ class TupCpp(object):
                                                 'LD [host]', 'HOST_CXX',
                                                 self.host_link_flags)
 
-def generate_rules(sandbox):
-    cpp = TupCpp(sandbox, target_srcs_flag=True)
+def generate_rules(sandbox, extra_includes):
+    cpp = TupCpp(sandbox, target_srcs_flag=True, extra_includes=extra_includes)
 
     cpp.generate_cpp_rules()

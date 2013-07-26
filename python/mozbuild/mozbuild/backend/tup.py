@@ -115,9 +115,9 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and sandbox.relativesrcdir == 'xpcom/ds':
+    if 'CPP_SOURCES' in sandbox and sandbox.relativesrcdir.startswith('xpcom'):
         from tup import cpp
-        cpp.generate_rules(sandbox)
+        cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx
 #    if 'ASFILES' in sandbox:
 #        from tup import asm
