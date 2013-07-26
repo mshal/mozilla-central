@@ -6,6 +6,7 @@
 
 MOZ_ROOT = $(TUP_CWD)
 DIST = $(MOZ_ROOT)/@(MOZ_OBJDIR)/dist
+topsrcdir = $(MOZ_ROOT)
 
 PYTHON = python -B
 PYTHON_PATH = $(PYTHON) $(MOZ_ROOT)/config/pythonpath.py
