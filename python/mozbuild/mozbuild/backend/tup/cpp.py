@@ -206,7 +206,7 @@ class TupCpp(object):
         test_includes = []
         if cpp_unit_tests:
             cppsrcs.extend(cpp_unit_tests)
-            test_includes = ["-I" + os.path.join(moz_root, "dist/include/testing")]
+            test_includes = ["-I" + os.path.join(self.sandbox.moz_root, "dist/include/testing")]
 
         if self.target_srcs_flag:
             self.generate_compile_rules(cppsrcs, 'C++', 'CXX',
