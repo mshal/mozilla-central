@@ -7,8 +7,12 @@ import os
 import sys
 
 def generate_rules(sandbox):
+    if 'include_subdir' in sandbox:
+        include_subdir = sandbox.get_string('include_subdir') + '/'
+    else:
+        include_subdir = ""
     for header in sandbox['HEADERS']:
-        print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nspr/%%b | $(MOZ_ROOT)/<installed-headers>" % (header)
+        print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nspr/%s%%b | $(MOZ_ROOT)/<installed-headers>" % (header, include_subdir)
 
     for config in sandbox['CONFIGS']:
         print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nspr/md/%%b | $(MOZ_ROOT)/<installed-headers>" % (config)
