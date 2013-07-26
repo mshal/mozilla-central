@@ -27,6 +27,9 @@ if __name__ == '__main__':
     p.add_option('--extra-manifest-files', action='append',
                  dest='extra_manifest_files', default=[],
                  help='Extra jar.mn files to process in addition to ./jar.mn')
+    p.add_option('--always-enabled', action='store_true',
+                 dest='always_enabled', default=False,
+                 help='Always consider this directory to be enabled, even if it is not in a tiers dir or a subdirectory of one.')
     p.add_option('-I', dest='tup_extra_includes', default=[], type=str,
                  action='append',
                  help='Extra include directories to pass to the compiler that are not in the Makefile')
@@ -71,7 +74,7 @@ if __name__ == '__main__':
     sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root,
                                                       moz_objdir)
 
-    if mozbuild:
+    if mozbuild and not options.always_enabled:
         direnabled = sandbox.mozbuild_enabled(os.getcwd(), env.topsrcdir)
     else:
         direnabled = True
