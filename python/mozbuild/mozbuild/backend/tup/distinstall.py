@@ -19,6 +19,8 @@ def generate_install_rule(filename, output_path):
     output_group = ""
     if filename.endswith('.manifest') and 'webapprt' not in output_path:
         output_group = "| $(MOZ_ROOT)/<installed-manifests>"
+    elif filename.endswith('.h'):
+        output_group = "| $(MOZ_ROOT)/<installed-headers>"
     print ": foreach %s |> !cp |> %s/%%b %s" % (filename, output_path, output_group)
 
 def generate_rules(sandbox):
@@ -73,3 +75,12 @@ def generate_rules(sandbox):
         generate_install_rule(export, os.path.join(final_target,
                                                    'modules',
                                                    'accessibility'))
+
+    install_targets = sandbox['INSTALL_TARGETS']
+    for target in install_targets:
+        # TODO: Currently only some targets are supported
+        if target in ('EXPORTS_GENERATED'):
+            files = sandbox['%s_FILES' % target]
+            dest = sandbox.get_string('%s_DEST' % target)
+            for f in files:
+                generate_install_rule(f, dest)
