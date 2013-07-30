@@ -131,7 +131,7 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx') or sandbox.relativesrcdir.startswith('hal') or sandbox.relativesrcdir.startswith('image') or sandbox.relativesrcdir.startswith('intl')):
+    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx') or sandbox.relativesrcdir.startswith('hal') or sandbox.relativesrcdir.startswith('image') or sandbox.relativesrcdir.startswith('intl') or sandbox.relativesrcdir.startswith('ipc')):
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx
