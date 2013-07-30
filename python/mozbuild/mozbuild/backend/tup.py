@@ -112,6 +112,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'dom/encoding':
         from tup import domencoding
         domencoding.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'gfx/thebes':
+        from tup import gfx_thebes
+        gfx_thebes.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -125,7 +128,7 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('accessible') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding')):
+    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx')):
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx
