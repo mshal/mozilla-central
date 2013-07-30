@@ -49,15 +49,21 @@ class TupCpp(object):
     def get_all_flags(self, flags, filename):
         all_flags = []
 
-# TODO: Target specific vars
-#        targets = self.tupmk.subdir_makefile._targets
-#        if filename in targets:
-#            variables = targets[filename].variables
-#        else:
-#            variables = self.tupmk.subdir_makefile.variables
+        target_variables = None
+        if self.sandbox.makefile:
+            targets = self.sandbox.makefile.makefile._targets
+            if filename in targets:
+                target_variables = targets[filename].variables
 
         for flag_group in flags:
-            value = self.sandbox[flag_group]
+            # Try target-specific variables from the Makefile first, and if
+            # that doesn't work then just pull from the sandbox.
+            value = None
+            if target_variables:
+                value = self.sandbox.makefile.get_var(flag_group, target_variables)
+            if not value:
+                value = self.sandbox[flag_group]
+
             for flag in value:
                 # Skip the make-specific dependency flags.
                 if not flag in ['-MD', '-MF', '-MP', '.deps/.pp'] and not flag in self.filter_out:
