@@ -125,7 +125,7 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('accessible') or sandbox.relativesrcdir.startswith('dom')):
+    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('accessible') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content')):
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx
