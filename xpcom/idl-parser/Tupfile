@@ -5,4 +5,4 @@
 include_rules
 
 # Generate the xpidl LALR tables. These are used during the .idl -> .h conversion.
-: |> ^ python header.py --regen -> [%o]^ $(PYTHON_PATH) $(PLY_INCLUDE) header.py --cachedir=. --regen |> xpidlyacc.py xpidllex.py xpidl_debug | $(MOZ_ROOT)/<installed-idls>
+: |> ^ python header.py --regen -> [%o]^ $(PYTHON_PATH) $(PLY_INCLUDE) header.py --cachedir=. --regen |> xpidlyacc.py xpidllex.py | $(MOZ_ROOT)/<installed-idls>
