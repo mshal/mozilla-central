@@ -36,6 +36,7 @@ class TupMakefile(object):
 
         self.allow_includes = allow_includes
         self.sandbox = sandbox
+        self.processed_config_mk = False
 
         sandbox.makefile = self
 
@@ -103,6 +104,9 @@ class TupMakefile(object):
             self.process_makefile(autoconf_mk)
 
     def process_config_mk(self):
+        if self.processed_config_mk:
+            return
+        self.processed_config_mk = True
         config_mk = os.path.join(self.sandbox.moz_root, 'config', 'config.mk')
         self.process_makefile(config_mk)
 

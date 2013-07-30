@@ -7,7 +7,7 @@ import os
 
 def generate_exports(exports, namespace):
     for export in exports:
-        print ": | $(MOZ_ROOT)/<generated-headers> |> ^ INSTALL %s^ cp %s %%o |> $(DIST)/include/%s/%s | $(MOZ_ROOT)/<installed-headers>" % (export, export, namespace, export)
+        print ": | $(MOZ_ROOT)/<generated-headers> |> ^ INSTALL %s^ cp %s %%o |> $(DIST)/include/%s/%s | $(MOZ_ROOT)/<installed-headers>" % (export, export, namespace, os.path.basename(export))
 
 def generate_rules(sandbox):
     namespaces = sandbox['EXPORTS_NAMESPACES']
