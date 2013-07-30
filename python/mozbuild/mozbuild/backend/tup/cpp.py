@@ -196,7 +196,7 @@ class TupCpp(object):
         if srcs:
             for filename in srcs:
                 all_flags = self.get_all_flags(flags, filename)
-                print ": %s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (filename + ".o", print_string, self.sandbox.get_string(ld_var), " ".join(all_flags), filename)
+                print ": %s/%s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (self.sandbox.outputdir, filename + ".o", print_string, self.sandbox.get_string(ld_var), " ".join(all_flags), filename)
 
     def generate_cpp_rules(self, cppsrcs=[], csrcs=[], flags=""):
         # Some Tupfiles (eg: ipc/ipdl) pass in cppsrcs manually.

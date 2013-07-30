@@ -118,6 +118,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'intl/locale/src':
         from tup import intl_locale_src
         intl_locale_src.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'js/src':
+        from tup import js_src
+        js_src.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -131,7 +134,7 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx') or sandbox.relativesrcdir.startswith('hal') or sandbox.relativesrcdir.startswith('image') or sandbox.relativesrcdir.startswith('intl') or sandbox.relativesrcdir.startswith('ipc')):
+    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx') or sandbox.relativesrcdir.startswith('hal') or sandbox.relativesrcdir.startswith('image') or sandbox.relativesrcdir.startswith('intl') or sandbox.relativesrcdir.startswith('ipc') or sandbox.relativesrcdir.startswith('js')):
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx

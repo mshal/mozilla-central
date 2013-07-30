@@ -18,7 +18,7 @@ def parse(sandbox, makefile):
 class TupMakefile(object):
     def __init__(self, sandbox,
                  allow_includes=False, always_enabled=False,
-                 js_src=False, security=False):
+                 security=False):
         self.makefile = pymake.data.Makefile()
         self.makefile.variables = pymake.data.Variables()
 
@@ -47,6 +47,11 @@ class TupMakefile(object):
         else:
             nsprpub = False
 
+        if sandbox.relativesrcdir.startswith('js/src'):
+            js_src = True
+        else:
+            js_src = False
+
         if js_src:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'js', 'src')
         elif nsprpub:
@@ -68,6 +73,13 @@ class TupMakefile(object):
         # back into the original OBJ_SUFFIX in config.mk).
         obj_suffix = self.get_var('OBJ_SUFFIX')
         self.set_var('_OBJ_SUFFIX', obj_suffix[0])
+
+        # js/src has it's own configure with different variables that aren't
+        # present in config.status
+        if js_src:
+            self.set_var('topsrcdir', os.path.join(sandbox.moz_root, 'js', 'src'))
+            autoconf_mk = os.path.join(depth, 'config', 'autoconf.mk')
+            self.process_makefile(autoconf_mk)
 
         if security:
             build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
@@ -122,7 +134,7 @@ class TupMakefile(object):
             elif isinstance(s, pymake.parserdata.Include):
                 # Certain includes are generally ignored, such as those
                 # specifically used by the make backend.
-                if self.allow_includes:
+                if self.allow_includes and s.required:
                     include_filename = s.exp.to_source()
                     if '/rules.mk' in include_filename:
                         # Ignore rules.mk, but rules.mk picks up config.mk
@@ -147,21 +159,13 @@ class TupMakefile(object):
                         # We already include this file automatically, so skip
                         # any lines that try to include it again.
                         continue
-                    elif 'app-config.mk' in include_filename:
-                        # This file doesn't seem to exist, and is only included
-                        # with -include
-                        continue
-                    elif 'MY_CONFIG' in include_filename:
-                        # This file doesn't seem to exist, and is only included
-                        # with -include
-                        continue
                     elif 'exported_headers.mk' in include_filename and self.sandbox.relativesrcdir.startswith('js/src'):
                         # mfbt already exports these headers - don't try to
                         # export them again.
                         continue
                     else:
                         files = s.exp.resolvesplit(self.makefile, self.makefile.variables)
-                        if '$(topsrcdir)' in include_filename or '$(MOZILLA_DIR)' in include_filename:
+                        if '$(topsrcdir)' in include_filename or '$(MOZILLA_DIR)' in include_filename or '$(DEPTH)' in include_filename:
                             prefix_dir = '.'
                         else:
                             prefix_dir = dirname
