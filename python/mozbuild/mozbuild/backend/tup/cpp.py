@@ -124,6 +124,7 @@ class TupCpp(object):
         deps = list(self.extra_deps)
         if dist_include_dependency:
             deps.append("$(MOZ_ROOT)/<installed-headers>")
+            deps.append("$(MOZ_ROOT)/<generated-headers>")
 
         if deps:
             extra_deps_string = " | " + (' '.join(deps))
