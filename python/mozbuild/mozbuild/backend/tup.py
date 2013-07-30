@@ -53,6 +53,10 @@ if __name__ == '__main__':
         mozbuild = True
     if os.path.exists('Makefile.in'):
         make = True
+        makefile_name = 'Makefile.in'
+    elif os.path.exists('Makefile'):
+        make = True
+        makefile_name = 'Makefile'
 
     if not mozbuild and not make:
         sys.exit(0)
@@ -87,7 +91,7 @@ if __name__ == '__main__':
     if mozbuild:
         sandbox.exec_file(mozbuild_file, filesystem_absolute=True)
     if make:
-        makefile_parser.parse(sandbox, 'Makefile.in')
+        makefile_parser.parse(sandbox, makefile_name)
     else:
         # We at least need config.mk
         makefile_parser.parse(sandbox, None)
@@ -115,7 +119,7 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and sandbox.relativesrcdir.startswith('xpcom'):
+    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom')):
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
         # TODO: libvpx
