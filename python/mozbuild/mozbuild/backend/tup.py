@@ -106,6 +106,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'config':
         from tup import config
         config.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'js/xpconnect/src':
+        from tup import js_xpconnect_src
+        js_xpconnect_src.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
