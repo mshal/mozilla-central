@@ -11,7 +11,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
     """Support class to handle both moz.build and Makefile.in variables
     at the same time.
     """
-    def __init__(self, config, path, moz_root, moz_objdir):
+    def __init__(self, config, path, moz_root, moz_objdir, extra_includes):
         MozbuildSandbox.__init__(self, config, path)
         self.makefile = None
         self.objs = []
@@ -19,6 +19,8 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.moz_objdir = moz_objdir
         self.variables = {}
         self.extra_deps = []
+        self.extra_includes = extra_includes
+        self.tupcpp = None
 
         # Get the path relative to moz_root by finding the components of cwd
         # using the length of moz_root. Eg, if our cwd is
@@ -56,6 +58,12 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         if self.makefile:
             return self.makefile.vpath_resolve('.', self['VPATH'], filename)
         return filename
+
+    def get_tupcpp(self):
+        if not self.tupcpp:
+            from cpp import TupCpp
+            self.tupcpp = TupCpp(self)
+        return self.tupcpp
 
     def __getitem__(self, name):
         if name in self.variables:

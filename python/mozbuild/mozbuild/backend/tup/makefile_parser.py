@@ -63,6 +63,11 @@ class TupMakefile(object):
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir)
         self.set_var('DEPTH', depth)
 
+        if nsprpub:
+            self.topsrcdir = os.path.join(sandbox.moz_root, 'nsprpub')
+        else:
+            self.topsrcdir = sandbox.moz_root
+
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk
         self.set_var('INCLUDED_RCS_MK', '1')
@@ -85,7 +90,10 @@ class TupMakefile(object):
             self.process_makefile(autoconf_mk)
 
         if security:
-            self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, 'dist'))
+            self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist'))
+            self.set_var('SOURCE_XP_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist'))
+            self.set_var('SOURCE_XPHEADERS_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist', 'include', 'nss'))
+            self.set_var('NSPR_INCLUDE_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist', 'include', 'nspr'))
 
             # The security/ Makefiles are a little weird - first make recurses
             # into build/Makefile, then executes sub-makes with a bunch of
@@ -121,8 +129,8 @@ class TupMakefile(object):
             self.process_makefile(autoconf_mk)
 
     def process_config_mk(self):
-        if not self.get_var('INCLUDED_CONFIG_MK'):
-            config_mk = os.path.join(self.sandbox.moz_root, 'config', 'config.mk')
+        if not self.get_var('INCLUDED_CONFIG_MK') and not self.get_var('NSPR_CONFIG_MK'):
+            config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
             self.process_makefile(config_mk)
 
     def process_statements(self, dirname, statements):
@@ -131,22 +139,27 @@ class TupMakefile(object):
 
                 # These variables are specific to make's implementation, and aren't
                 # needed in general
-                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir', 'abs_srcdir', 'DIST']:
+                if s.vnameexp.to_source() in ('DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir', 'abs_srcdir', 'DIST'):
                     continue
+
+                # These are passed in to the nss build, and we override them
+                if s.vnameexp.to_source() in ('SOURCE_XPHEADERS_DIR', 'NSPR_INCLUDE_DIR'):
+                    continue
+
                 s.execute(self.makefile, self.context)
             elif isinstance(s, pymake.parserdata.Include):
                 # Certain includes are generally ignored, such as those
                 # specifically used by the make backend.
                 if self.allow_includes and s.required:
                     include_filename = s.exp.to_source()
-                    if '/rules.mk' in include_filename:
+                    if 'config/rules.mk' in include_filename:
                         # Ignore rules.mk, but rules.mk picks up config.mk
                         self.process_config_mk()
                         continue
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk
                         continue
-                    elif '/config.mk' in include_filename:
+                    elif 'config/config.mk' in include_filename:
                         self.process_config_mk()
                         continue
                     elif '$(MKDEPENDENCIES)' in include_filename:

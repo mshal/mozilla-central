@@ -1,10 +1,12 @@
+#! /usr/bin/env python
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-include_rules
+import os
 
-# Add include dir for cairo-featurse.h, which is generated from configure.
-TUP_CPP_FLAGS += -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/gfx/cairo/cairo/src
+def generate_rules(sandbox):
+    tupcpp = sandbox.get_tupcpp()
 
-include $(MOZ_ROOT)/build/tup/compile.tup
+    csrcs = sandbox['CSRCS']
+    tupcpp.generate_compile_rules(csrcs, 'CC', 'CC', tupcpp.c_flags)
