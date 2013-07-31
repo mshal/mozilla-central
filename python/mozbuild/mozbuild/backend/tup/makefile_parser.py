@@ -17,8 +17,7 @@ def parse(sandbox, makefile):
 
 class TupMakefile(object):
     def __init__(self, sandbox,
-                 allow_includes=False, always_enabled=False,
-                 security=False):
+                 allow_includes=False, always_enabled=False):
         self.makefile = pymake.data.Makefile()
         self.makefile.variables = pymake.data.Variables()
 
@@ -36,7 +35,6 @@ class TupMakefile(object):
 
         self.allow_includes = allow_includes
         self.sandbox = sandbox
-        self.processed_config_mk = False
 
         sandbox.makefile = self
 
@@ -51,6 +49,11 @@ class TupMakefile(object):
             js_src = True
         else:
             js_src = False
+
+        if sandbox.relativesrcdir.startswith('security'):
+            security = True
+        else:
+            security = False
 
         if js_src:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'js', 'src')
@@ -82,18 +85,20 @@ class TupMakefile(object):
             self.process_makefile(autoconf_mk)
 
         if security:
-            build_makefile = os.path.join(sandbox.moz_root, 'security', 'build',
-                                          'Makefile.in')
-            self.process_makefile(build_makefile)
-
-        if security:
             self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, 'dist'))
 
             # The security/ Makefiles are a little weird - first make recurses
             # into build/Makefile, then executes sub-makes with a bunch of
             # variables defined at the command-line (DEFAULT_GMAKE_FLAGS). Here
             # we pull out those defines and add them to our base variable set.
-            for gmake_flag in self.get_var('DEFAULT_GMAKE_FLAGS'):
+            backup_makefile = copy.deepcopy(self.makefile)
+            build_path = os.path.join(sandbox.moz_root, 'security', 'build',
+                                      'Makefile.in')
+            self.process_makefile(build_path)
+            default_gmake_flags = self.get_var('DEFAULT_GMAKE_FLAGS')
+            self.makefile = backup_makefile
+
+            for gmake_flag in default_gmake_flags:
                 parts = gmake_flag.split('=', 1)
                 if(len(parts) == 2):
                     # It is a bit difficult to pull out all the flags correctly
@@ -116,11 +121,9 @@ class TupMakefile(object):
             self.process_makefile(autoconf_mk)
 
     def process_config_mk(self):
-        if self.processed_config_mk:
-            return
-        self.processed_config_mk = True
-        config_mk = os.path.join(self.sandbox.moz_root, 'config', 'config.mk')
-        self.process_makefile(config_mk)
+        if not self.get_var('INCLUDED_CONFIG_MK'):
+            config_mk = os.path.join(self.sandbox.moz_root, 'config', 'config.mk')
+            self.process_makefile(config_mk)
 
     def process_statements(self, dirname, statements):
         for s in statements:
@@ -128,7 +131,7 @@ class TupMakefile(object):
 
                 # These variables are specific to make's implementation, and aren't
                 # needed in general
-                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir', 'abs_srcdir']:
+                if s.vnameexp.to_source() in ['DEPTH', 'topsrcdir', 'srcdir', 'relativesrcdir', 'abs_srcdir', 'DIST']:
                     continue
                 s.execute(self.makefile, self.context)
             elif isinstance(s, pymake.parserdata.Include):
