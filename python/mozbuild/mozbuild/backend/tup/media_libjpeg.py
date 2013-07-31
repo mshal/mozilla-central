@@ -1,10 +1,7 @@
+#! /usr/bin/env python
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-include_rules
-
-# Add include dir for cairo-featurse.h, which is generated from configure.
-TUP_CPP_FLAGS += -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/gfx/cairo/cairo/src
-
-include $(MOZ_ROOT)/build/tup/compile.tup
+def generate_rules(sandbox):
+    print ": |> $(PYTHON) genTables.py |> jpeg_nbits_table.h | $(MOZ_ROOT)/<generated-headers>"

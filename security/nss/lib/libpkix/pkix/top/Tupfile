@@ -4,7 +4,4 @@
 
 include_rules
 
-# Add include dir for cairo-featurse.h, which is generated from configure.
-TUP_CPP_FLAGS += -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/gfx/cairo/cairo/src
-
 include $(MOZ_ROOT)/build/tup/compile.tup

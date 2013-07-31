@@ -76,7 +76,8 @@ if __name__ == '__main__':
 
     mozbuild_file = os.path.join(os.getcwd(), 'moz.build')
     sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root,
-                                                      moz_objdir)
+                                                      moz_objdir,
+                                                      options.tup_extra_includes)
 
     if mozbuild and not options.always_enabled:
         direnabled = sandbox.mozbuild_enabled(os.getcwd(), env.topsrcdir)
@@ -127,6 +128,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'media/libvpx':
         from tup import media_libvpx
         media_libvpx.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'media/libjpeg':
+        from tup import media_libjpeg
+        media_libjpeg.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -141,11 +145,17 @@ if __name__ == '__main__':
         from tup import oldexports
         oldexports.generate_rules(sandbox)
     if 'CPP_SOURCES' in sandbox:
-        from tup import cpp
-        cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
+        from tup import cppsrcs
+        cppsrcs.generate_rules(sandbox)
+    if 'CSRCS' in sandbox:
+        from tup import csrcs
+        csrcs.generate_rules(sandbox)
     if 'ASFILES' in sandbox:
         from tup import asm
         asm.generate_rules(sandbox)
+    if 'CPP_UNIT_TESTS' in sandbox:
+        from tup import cppunittests
+        cppunittests.generate_rules(sandbox)
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox)
