@@ -8,23 +8,24 @@ import sys
 
 class TupCpp(object):
     def __init__(self, sandbox, host_srcs_flag=False, target_srcs_flag=False,
-                 extra_includes="", js_src=False, nsprpub=False,
-                 security=False, filter_out=[],
-                 dist_include_dep=True):
+                 js_src=False, filter_out=[], dist_include_dep=True):
         self.sandbox = sandbox
         self.host_srcs_flag = host_srcs_flag
         self.target_srcs_flag = target_srcs_flag
-        self.extra_includes = extra_includes
         self.js_src = js_src
         self.extra_flags = ""
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
         self.objs = []
-        self.security = security
+
+        if sandbox.relativesrcdir.startswith('security/nss') or sandbox.relativesrcdir.startswith('nsprpub'):
+            use_cflags = True
+        else:
+            use_cflags = False
 
         self.cpp_flags = ['COMPILE_CXXFLAGS']
 
-        if nsprpub or security:
+        if use_cflags:
             self.c_flags = ['CFLAGS']
         else:
             self.c_flags = ['COMPILE_CFLAGS']
@@ -148,7 +149,7 @@ class TupCpp(object):
                 object_file = "%s.%s" % (base, obj_suffix)
                 all_flags = self.get_all_flags(flags, object_file)
 
-                for inc in self.extra_includes:
+                for inc in self.sandbox.extra_includes:
                     all_flags.append('-I' + inc)
                 all_flags.extend(test_includes)
 
@@ -176,26 +177,10 @@ class TupCpp(object):
                 print ": %s/%s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (self.sandbox.outputdir, filename + ".o", print_string, self.sandbox.get_string(ld_var), " ".join(all_flags), filename)
 
     def generate_cpp_rules(self, cppsrcs=[], csrcs=[], flags=""):
-        # Some Tupfiles (eg: ipc/ipdl) pass in cppsrcs manually.
-        if not cppsrcs:
-            cppsrcs = self.sandbox['CPP_SOURCES']
-        if not csrcs:
-            csrcs = self.sandbox['CSRCS']
-        cpp_unit_tests = self.sandbox['CPP_UNIT_TESTS']
         host_cppsrcs = self.sandbox['HOST_CPPSRCS']
         host_csrcs = self.sandbox['HOST_CSRCS']
 
         self.extra_flags = flags
-
-        test_includes = []
-        if cpp_unit_tests:
-            cppsrcs.extend(cpp_unit_tests)
-            test_includes = ["-I" + os.path.join(self.sandbox.moz_root, "dist/include/testing")]
-
-        if self.target_srcs_flag:
-            self.generate_compile_rules(cppsrcs, 'C++', 'CXX',
-                                        self.cpp_flags, test_includes)
-            self.generate_compile_rules(csrcs, 'CC', 'CC', self.c_flags)
 
         if self.host_srcs_flag:
             self.generate_compile_rules(host_cppsrcs, 'C++ [host]', 'HOST_CXX',
@@ -208,8 +193,3 @@ class TupCpp(object):
                 self.generate_simple_link_rules(host_simple_programs,
                                                 'LD [host]', 'HOST_CXX',
                                                 self.host_link_flags)
-
-def generate_rules(sandbox, extra_includes):
-    cpp = TupCpp(sandbox, target_srcs_flag=True, extra_includes=extra_includes)
-
-    cpp.generate_cpp_rules()
