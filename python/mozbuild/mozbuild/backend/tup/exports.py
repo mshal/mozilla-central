@@ -24,8 +24,8 @@ def generate_rules(sandbox):
     if type(exports) == list:
         # This is specific to security/nss
         for export in exports:
-            print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nss/%%b | $(MOZ_ROOT)/<installed-headers>" % (export)
+            print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nss/%%b | $(MOZ_ROOT)/<installed-headers>" % (sandbox.vpath_resolve(export))
         for export in sandbox['PRIVATE_EXPORTS']:
-            print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/private/nss/%%b | $(MOZ_ROOT)/<installed-headers>" % (export)
+            print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/private/nss/%%b | $(MOZ_ROOT)/<installed-headers>" % (sandbox.vpath_resolve(export))
     else:
         generate_exports(exports, sandbox.outputdir)
