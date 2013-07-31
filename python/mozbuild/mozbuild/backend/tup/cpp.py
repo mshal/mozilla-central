@@ -9,14 +9,13 @@ import sys
 class TupCpp(object):
     def __init__(self, sandbox, host_srcs_flag=False, target_srcs_flag=False,
                  extra_includes="", js_src=False, nsprpub=False,
-                 security=False, extra_deps=[], filter_out=[],
+                 security=False, filter_out=[],
                  dist_include_dep=True):
         self.sandbox = sandbox
         self.host_srcs_flag = host_srcs_flag
         self.target_srcs_flag = target_srcs_flag
         self.extra_includes = extra_includes
         self.js_src = js_src
-        self.extra_deps = extra_deps
         self.extra_flags = ""
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
@@ -127,7 +126,7 @@ class TupCpp(object):
             obj_prefix_string = ""
             dist_include_dependency = self.dist_include_dep
 
-        deps = list(self.extra_deps)
+        deps = list(self.sandbox.extra_deps)
         if dist_include_dependency:
             deps.append("$(MOZ_ROOT)/<installed-headers>")
             deps.append("$(MOZ_ROOT)/<generated-headers>")
@@ -181,8 +180,8 @@ class TupCpp(object):
         else:
             asoutoption = '-o '
 
-        if self.extra_deps:
-            extra_deps_string = " | " + (' '.join(self.extra_deps))
+        if self.sandbox.extra_deps:
+            extra_deps_string = " | " + (' '.join(self.sandbox.extra_deps))
         else:
             extra_deps_string = ""
 
