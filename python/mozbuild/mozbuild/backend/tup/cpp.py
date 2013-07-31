@@ -169,28 +169,6 @@ class TupCpp(object):
                     if not libcppsrcs or filename in libcppsrcs:
                         self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
 
-    def generate_asm_rules(self):
-        srcs = self.sandbox['ASFILES']
-        asm = self.sandbox.get_string('AS')
-        asflags = self.sandbox.get_string('ASFLAGS')
-        as_dash_c_flag = self.sandbox.get_string('AS_DASH_C_FLAG')
-        obj_suffix = self.sandbox.get_string('OBJ_SUFFIX')
-        if asm.startswith('ml'):
-            asoutoption = '-Fo'
-        else:
-            asoutoption = '-o '
-
-        if self.sandbox.extra_deps:
-            extra_deps_string = " | " + (' '.join(self.sandbox.extra_deps))
-        else:
-            extra_deps_string = ""
-
-        for filename in srcs:
-            fullpath = self.sandbox.vpath_resolve(filename)
-            print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %%B.%s" % (fullpath, extra_deps_string, asm, asoutoption, asflags, as_dash_c_flag, obj_suffix)
-            basename, ext = os.path.splitext(os.path.basename(fullpath))
-            self.objs.append("%s.%s" % (basename, obj_suffix))
-
     def generate_simple_link_rules(self, srcs, print_string, ld_var, flags):
         if srcs:
             for filename in srcs:
@@ -218,7 +196,6 @@ class TupCpp(object):
             self.generate_compile_rules(cppsrcs, 'C++', 'CXX',
                                         self.cpp_flags, test_includes)
             self.generate_compile_rules(csrcs, 'CC', 'CC', self.c_flags)
-            self.generate_asm_rules()
 
         if self.host_srcs_flag:
             self.generate_compile_rules(host_cppsrcs, 'C++ [host]', 'HOST_CXX',
