@@ -18,6 +18,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.moz_root = moz_root
         self.moz_objdir = moz_objdir
         self.variables = {}
+        self.extra_deps = []
 
         # Get the path relative to moz_root by finding the components of cwd
         # using the length of moz_root. Eg, if our cwd is

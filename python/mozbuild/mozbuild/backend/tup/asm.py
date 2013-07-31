@@ -17,11 +17,10 @@ def generate_rules(sandbox):
     else:
         asoutoption = '-o '
 
-#    if self.extra_deps:
-#        extra_deps_string = " | " + (' '.join(self.extra_deps))
-#    else:
-#        extra_deps_string = ""
-    extra_deps_string = ""
+    if sandbox.extra_deps:
+        extra_deps_string = " | " + (' '.join(sandbox.extra_deps))
+    else:
+        extra_deps_string = ""
 
     for filename in asfiles:
         fullpath = sandbox.vpath_resolve(filename)

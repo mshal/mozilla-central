@@ -124,6 +124,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'netwerk/dns':
         from tup import netwerk_dns
         netwerk_dns.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'media/libvpx':
+        from tup import media_libvpx
+        media_libvpx.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -137,13 +140,12 @@ if __name__ == '__main__':
     if 'EXPORTS_NAMESPACES' in sandbox:
         from tup import oldexports
         oldexports.generate_rules(sandbox)
-    if 'CPP_SOURCES' in sandbox and (sandbox.relativesrcdir.startswith('xpcom') or sandbox.relativesrcdir.startswith('a') or sandbox.relativesrcdir.startswith('dom') or sandbox.relativesrcdir.startswith('content') or sandbox.relativesrcdir.startswith('editor') or sandbox.relativesrcdir.startswith('embedding') or sandbox.relativesrcdir.startswith('extensions') or sandbox.relativesrcdir.startswith('gfx') or sandbox.relativesrcdir.startswith('hal') or sandbox.relativesrcdir.startswith('image') or sandbox.relativesrcdir.startswith('intl') or sandbox.relativesrcdir.startswith('ipc') or sandbox.relativesrcdir.startswith('js') or sandbox.relativesrcdir.startswith('layout') or sandbox.relativesrcdir.startswith('m') or sandbox.relativesrcdir.startswith('n') or sandbox.relativesrcdir.startswith('o') or sandbox.relativesrcdir.startswith('p') or sandbox.relativesrcdir.startswith('r') or sandbox.relativesrcdir.startswith('s') or sandbox.relativesrcdir.startswith('t') or sandbox.relativesrcdir.startswith('u') or sandbox.relativesrcdir.startswith('v') or sandbox.relativesrcdir.startswith('w')):
+    if 'CPP_SOURCES' in sandbox:
         from tup import cpp
         cpp.generate_rules(sandbox, extra_includes=options.tup_extra_includes)
-        # TODO: libvpx
-#    if 'ASFILES' in sandbox:
-#        from tup import asm
-#        asm.generate_rules(sandbox)
+    if 'ASFILES' in sandbox:
+        from tup import asm
+        asm.generate_rules(sandbox)
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox)
