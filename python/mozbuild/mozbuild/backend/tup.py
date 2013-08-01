@@ -159,6 +159,9 @@ if __name__ == '__main__':
     if 'CSRCS' in sandbox:
         from tup import csrcs
         csrcs.generate_rules(sandbox)
+    if 'HOST_CSRCS' in sandbox:
+        from tup import host_csrcs
+        host_csrcs.generate_rules(sandbox)
     if 'ASFILES' in sandbox:
         from tup import asm
         asm.generate_rules(sandbox)
