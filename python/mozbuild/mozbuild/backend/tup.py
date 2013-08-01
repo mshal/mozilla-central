@@ -171,3 +171,9 @@ if __name__ == '__main__':
     if 'NO_DIST_INSTALL' not in sandbox:
         from tup import distinstall
         distinstall.generate_rules(sandbox)
+
+    # Needs to come after since freebl is parsed twice - once with
+    # FREEBL_CHILD_BUILD set and once without
+    if sandbox.relativesrcdir == 'security/nss/lib/freebl':
+        from tup import freebl
+        freebl.generate_rules(sandbox)
