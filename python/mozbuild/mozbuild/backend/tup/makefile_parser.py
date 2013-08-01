@@ -81,12 +81,6 @@ class TupMakefile(object):
         obj_suffix = self.get_var('OBJ_SUFFIX')
         self.set_var('_OBJ_SUFFIX', obj_suffix[0])
 
-        # js/src has it's own configure with different variables that aren't
-        # present in config.status
-        if js_src:
-            autoconf_mk = os.path.join(depth, 'config', 'autoconf.mk')
-            self.process_makefile(autoconf_mk)
-
         if security:
             self.set_var('SOURCE_MD_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist'))
             self.set_var('SOURCE_XP_DIR', os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'dist'))
