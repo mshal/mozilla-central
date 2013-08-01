@@ -171,6 +171,9 @@ if __name__ == '__main__':
     if 'CPP_UNIT_TESTS' in sandbox:
         from tup import cppunittests
         cppunittests.generate_rules(sandbox)
+    if 'GTEST_CPP_SOURCES' in sandbox:
+        from tup import gtest_cpp_sources
+        gtest_cpp_sources.generate_rules(sandbox)
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox)
