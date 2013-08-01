@@ -18,12 +18,6 @@ if __name__ == '__main__':
     p.add_option('--target-srcs', action='store_true', dest='target_srcs',
                  default=False,
                  help='Compile only the non-HOST (target) sources.')
-    p.add_option('--js-src', action='store_true', dest='js_src', default=False,
-                 help='Enable special treatment of js/src/*')
-    p.add_option('--nsprpub', action='store_true', dest='nsprpub', default=False,
-                 help='Enable special treatment of nsprpub/*')
-    p.add_option('--security', action='store_true', dest='security', default=False,
-                 help='Enable special treatment of security/*')
     p.add_option('--extra-manifest-files', action='append',
                  dest='extra_manifest_files', default=[],
                  help='Extra jar.mn files to process in addition to ./jar.mn')
@@ -66,7 +60,29 @@ if __name__ == '__main__':
     from mozbuild.backend.configenvironment import ConfigEnvironment
     from tup import mozbuildmakesandbox
 
-    config_status = os.path.join(moz_root, moz_objdir, 'config.status')
+    # Get the path relative to moz_root by finding the components of cwd using
+    # the length of moz_root. Eg, if our cwd is HOME/m-c/xpcom/base, then
+    # moz_root is "../..", so we count one '/' in moz_root, and add one to it so
+    # path_count is 2. We pull off the last 2 parts of cwd to get "xpcom/base",
+    # and prefixed with moz_root becomes "../../xpcom/base".
+    cwd = os.getcwd()
+    cwd_parts = cwd.split('/')
+    path_count = moz_root.count('/') + 1
+    relativesrcdir = os.path.join(*cwd_parts[-path_count:])
+
+    if relativesrcdir.startswith('js/src'):
+        # We need the main config.status in order to load the correct tiers,
+        # then we need js/src/config.status to get the separate js/src
+        # variables.
+        config_status = os.path.join(moz_root, moz_objdir, 'js', 'src', 'config.status')
+
+        # We can't properly parse moz.build files if we use js' config.status,
+        # but we don't have the right substs (like JS_SHELL_NAME) if we don't
+        # use js' config.status.  I have no idea how this works correctly with
+        # make, but it's a pain for us.
+        options.always_enabled = True
+    else:
+        config_status = os.path.join(moz_root, moz_objdir, 'config.status')
     env = ConfigEnvironment.from_config_status(config_status)
 
     root_path = os.path.normpath(os.path.join(os.getcwd(), moz_root))
@@ -77,7 +93,8 @@ if __name__ == '__main__':
     mozbuild_file = os.path.join(os.getcwd(), 'moz.build')
     sandbox = mozbuildmakesandbox.MozbuildMakeSandbox(env, mozbuild_file, moz_root,
                                                       moz_objdir,
-                                                      options.tup_extra_includes)
+                                                      options.tup_extra_includes,
+                                                      relativesrcdir)
 
     if mozbuild and not options.always_enabled:
         direnabled = sandbox.mozbuild_enabled(os.getcwd(), env.topsrcdir)
