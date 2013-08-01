@@ -7,6 +7,7 @@ import os
 
 def generate_rules(sandbox):
     exports = sandbox['PRIVATE_EXPORTS']
+    module = sandbox.get_string('MODULE')
     # This is specific to security/nss
     for export in exports:
-        print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/private/nss/%%b | $(MOZ_ROOT)/<installed-headers>" % (sandbox.vpath_resolve(export))
+        print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/private/%s/%%b | $(MOZ_ROOT)/<installed-headers>" % (sandbox.vpath_resolve(export), module)
