@@ -20,22 +20,38 @@ def generate_rules(sandbox):
     if sandbox.relativesrcdir == 'nsprpub/pr/include/md':
         print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/nspr/prcpucfg.h | $(MOZ_ROOT)/<installed-headers>" % (sandbox.get_string('MDCPUCFG_H'))
 
+    bld_file = None
     if sandbox.relativesrcdir in ('nsprpub/lib/ds', 'nsprpub/lib/libc/src'):
+        bld_file = '_pl_bld.h'
+    if sandbox.relativesrcdir == 'nsprpub/pr/src':
+        bld_file = '_pr_bld.h'
+
+    if bld_file:
         config_now = "%s/nsprpub/config/now" % (sandbox.moz_root)
 
         suffix = sandbox.get_string('SUF')
         prod = "lib%s%s.%s" % (sandbox.get_string('LIBRARY_NAME'),
                                sandbox.get_string('LIBRARY_VERSION'),
                                sandbox.get_string('DLL_SUFFIX'))
-        gen_pl_bld = """shdate=`date "+%%Y-%%m-%%d %%T"`; """
+        gen_bld = """shdate=`date "+%%Y-%%m-%%d %%T"`; """
         # TODO: Use config_now
-        gen_pl_bld += """shnow=`%s`; """ % ('echo 12345')
-#        gen_pl_bld += """shnow=`%s`; """ % (config_now)
-        gen_pl_bld += """(echo "#define _BUILD_STRING \\"$shdate\\""; """
-        gen_pl_bld += """if test ! -z "$shnow"; then echo "#define _BUILD_TIME ${shnow}%s"; fi; """ % (suffix)
-        gen_pl_bld += """echo "#define _PRODUCTION \\"%s\\"") > %%o""" % (prod)
+        gen_bld += """shnow=`%s`; """ % ('echo 12345')
+#        gen_bld += """shnow=`%s`; """ % (config_now)
+        gen_bld += """(echo "#define _BUILD_STRING \\"$shdate\\""; """
+        gen_bld += """if test ! -z "$shnow"; then echo "#define _BUILD_TIME ${shnow}%s"; fi; """ % (suffix)
+        gen_bld += """echo "#define _PRODUCTION \\"%s\\"") > %%o""" % (prod)
 
         # TODO: Use config_now
-        print ": %s |> %s |> _pl_bld.h" % ("", gen_pl_bld)
-        #print ": %s |> %s |> _pl_bld.h" % (config_now, gen_pl_bld)
-        sandbox.extra_deps.append('_pl_bld.h')
+        print ": %s |> %s |> %s" % ("", gen_bld, bld_file)
+        #print ": %s |> %s |> %s" % (config_now, gen_bld, bld_file)
+        sandbox.extra_deps.append(bld_file)
+
+    if sandbox.relativesrcdir == 'nsprpub/pr/src':
+        # This directory is very bizarre - it includes md/unix/objs.mk, but
+        # that defines CSRCS that aren't in the local directory. Somehow
+        # it only expects to compile prvrsion.c in this directory, but link
+        # all of the OBJS.
+        sandbox.set_var('CSRCS', 'prvrsion.c')
+
+        # ASFILES are already compiled in the required subdirectory.
+        sandbox.set_var('ASFILES', [])
