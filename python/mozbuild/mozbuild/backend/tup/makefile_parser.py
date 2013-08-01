@@ -57,16 +57,15 @@ class TupMakefile(object):
 
         if js_src:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'js', 'src')
+            self.topsrcdir = os.path.join(sandbox.moz_root, 'js', 'src')
         elif nsprpub:
             depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir, 'nsprpub')
-        else:
-            depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir)
-        self.set_var('DEPTH', depth)
-
-        if nsprpub:
             self.topsrcdir = os.path.join(sandbox.moz_root, 'nsprpub')
         else:
+            depth = os.path.join(sandbox.moz_root, sandbox.moz_objdir)
             self.topsrcdir = sandbox.moz_root
+        self.set_var('DEPTH', depth)
+        self.set_var('topsrcdir', self.topsrcdir)
 
         # This determines whether or not to include makeutils.mk in
         # package-name.mk, and we don't need makeutils.mk
@@ -85,7 +84,6 @@ class TupMakefile(object):
         # js/src has it's own configure with different variables that aren't
         # present in config.status
         if js_src:
-            self.set_var('topsrcdir', os.path.join(sandbox.moz_root, 'js', 'src'))
             autoconf_mk = os.path.join(depth, 'config', 'autoconf.mk')
             self.process_makefile(autoconf_mk)
 

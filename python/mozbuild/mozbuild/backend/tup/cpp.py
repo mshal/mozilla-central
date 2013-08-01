@@ -178,15 +178,12 @@ class TupCpp(object):
 
     def generate_cpp_rules(self, cppsrcs=[], csrcs=[], flags=""):
         host_cppsrcs = self.sandbox['HOST_CPPSRCS']
-        host_csrcs = self.sandbox['HOST_CSRCS']
 
         self.extra_flags = flags
 
         if self.host_srcs_flag:
             self.generate_compile_rules(host_cppsrcs, 'C++ [host]', 'HOST_CXX',
                                         self.host_cpp_flags, host_prefix=True)
-            self.generate_compile_rules(host_csrcs, 'CC [host]', 'HOST_CC',
-                                        self.host_c_flags, host_prefix=True)
 
             host_simple_programs = self.sandbox['HOST_SIMPLE_PROGRAMS']
             if host_simple_programs:
