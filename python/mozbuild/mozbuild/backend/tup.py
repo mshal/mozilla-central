@@ -119,9 +119,6 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'intl/locale/src':
         from tup import intl_locale_src
         intl_locale_src.generate_rules(sandbox)
-    elif sandbox.relativesrcdir == 'js/src':
-        from tup import js_src
-        js_src.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'netwerk/dns':
         from tup import netwerk_dns
         netwerk_dns.generate_rules(sandbox)
@@ -159,9 +156,15 @@ if __name__ == '__main__':
     if 'CSRCS' in sandbox:
         from tup import csrcs
         csrcs.generate_rules(sandbox)
+    if 'HOST_CPPSRCS' in sandbox:
+        from tup import host_cppsrcs
+        host_cppsrcs.generate_rules(sandbox)
     if 'HOST_CSRCS' in sandbox:
         from tup import host_csrcs
         host_csrcs.generate_rules(sandbox)
+    if 'HOST_SIMPLE_PROGRAMS' in sandbox:
+        from tup import host_simple_programs
+        host_simple_programs.generate_rules(sandbox)
     if 'ASFILES' in sandbox:
         from tup import asm
         asm.generate_rules(sandbox)
@@ -180,3 +183,6 @@ if __name__ == '__main__':
     if sandbox.relativesrcdir == 'security/nss/lib/freebl':
         from tup import freebl
         freebl.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'js/src':
+        from tup import js_src
+        js_src.generate_rules(sandbox)
