@@ -1,0 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+srcs += $(MOZ_ROOT)/rdf/util/src/*.cpp
+srcs += $(MOZ_ROOT)/intl/unicharutil/util/*.cpp
+# nsUnicodePropertyData.cpp is included, so put the files in the
+# <installed-headers> group.
+: foreach $(srcs) |> !ln |> %b | $(MOZ_ROOT)/<installed-headers>
+
+include $(MOZ_ROOT)/build/tup/compile.tup
