@@ -7,16 +7,17 @@ import os
 import sys
 
 class TupCpp(object):
-    def __init__(self, sandbox, host_srcs_flag=False, target_srcs_flag=False,
-                 js_src=False, filter_out=[], dist_include_dep=True):
+    def __init__(self, sandbox, filter_out=[], dist_include_dep=True):
         self.sandbox = sandbox
-        self.host_srcs_flag = host_srcs_flag
-        self.target_srcs_flag = target_srcs_flag
-        self.js_src = js_src
         self.extra_flags = ""
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
         self.objs = []
+
+        if sandbox.relativesrcdir.startswith('js/src'):
+            self.js_src = True
+        else:
+            self.js_src = False
 
         if sandbox.relativesrcdir.startswith('security/nss') or sandbox.relativesrcdir.startswith('nsprpub'):
             use_cflags = True
@@ -175,18 +176,3 @@ class TupCpp(object):
             for filename in srcs:
                 all_flags = self.get_all_flags(flags, filename)
                 print ": %s/%s |> ^ %s %%o^ %s -o %%o %%f %s |> %s " % (self.sandbox.outputdir, filename + ".o", print_string, self.sandbox.get_string(ld_var), " ".join(all_flags), filename)
-
-    def generate_cpp_rules(self, cppsrcs=[], csrcs=[], flags=""):
-        host_cppsrcs = self.sandbox['HOST_CPPSRCS']
-
-        self.extra_flags = flags
-
-        if self.host_srcs_flag:
-            self.generate_compile_rules(host_cppsrcs, 'C++ [host]', 'HOST_CXX',
-                                        self.host_cpp_flags, host_prefix=True)
-
-            host_simple_programs = self.sandbox['HOST_SIMPLE_PROGRAMS']
-            if host_simple_programs:
-                self.generate_simple_link_rules(host_simple_programs,
-                                                'LD [host]', 'HOST_CXX',
-                                                self.host_link_flags)
