@@ -65,6 +65,12 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             self.tupcpp = TupCpp(self)
         return self.tupcpp
 
+    def resolve(self, name):
+        if name.startswith('$(') and name.endswith(')'):
+            return self[name[2:-1]]
+        else:
+            return [name]
+
     def __getitem__(self, name):
         if name in self.variables:
             return self.variables[name]
@@ -75,7 +81,17 @@ class MozbuildMakeSandbox(MozbuildSandbox):
                 return value
 
         try:
-            return super(MozbuildMakeSandbox, self).__getitem__(name)
+            value = super(MozbuildMakeSandbox, self).__getitem__(name)
+
+            if type(value) != list:
+                return value
+
+            # Some values in moz.build still rely on definitions from
+            # Makefile.in. Until that is finished, we need to resolve them here.
+            rcvalue = []
+            for v in value:
+                rcvalue.extend(self.resolve(v))
+            return rcvalue
         except KeyError:
             pass
 
