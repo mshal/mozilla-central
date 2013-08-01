@@ -235,6 +235,10 @@ class TupMakefile(object):
         # We just want to use the current directory in such cases.
         vpath = [path.replace('@srcdir@', '.') for path in vpath]
 
+        # Some weird Makefiles (like gfx/tests/gtest) add DEPTH to VPATH,
+        # which means the objdir is in there. We need to pull that out.
+        vpath = [path.replace(self.sandbox.moz_objdir, '.') for path in vpath]
+
         # When parsing manifest.mn, for example, VPATH may not be set.
         if '.' not in vpath:
             vpath.append('.')
