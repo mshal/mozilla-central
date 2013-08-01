@@ -159,7 +159,7 @@ class TupMakefile(object):
                     elif '/baseconfig.mk' in include_filename:
                         # Ignore baseconfig.mk
                         continue
-                    elif 'config/config.mk' in include_filename:
+                    elif include_filename == '$(topsrcdir)/config/config.mk':
                         self.process_config_mk()
                         continue
                     elif '$(MKDEPENDENCIES)' in include_filename:
