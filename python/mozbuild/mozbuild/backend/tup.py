@@ -41,6 +41,12 @@ if __name__ == '__main__':
     moz_root = args[0]
     moz_objdir = args[1]
 
+    gypfiles = [
+        'peerconnection.gyp',
+        'nrappkit.gyp',
+        'nicer.gyp',
+    ]
+
     mozbuild = False
     make = False
     gyp = False
@@ -52,10 +58,12 @@ if __name__ == '__main__':
     elif os.path.exists('Makefile'):
         make = True
         makefile_name = 'Makefile'
-    elif os.path.exists('peerconnection.gyp'):
-        # media/webrtc/trunk
-        gyp = True
-        gypfile = 'peerconnection.gyp'
+
+    for f in gypfiles:
+        if os.path.exists(f):
+            gyp = True
+            gypfile = f
+            break
 
     if not mozbuild and not make and not gyp:
         sys.exit(0)
@@ -111,6 +119,11 @@ if __name__ == '__main__':
 
     sys.path.append(os.path.join(os.getcwd(), moz_root, 'build', 'pymake'))
     from tup import makefile_parser
+    if gyp:
+        from tup import tupgyp
+        tupgyp.generate_rules(sandbox, gypfile)
+        sys.exit(0)
+
     if mozbuild:
         sandbox.exec_file(mozbuild_file, filesystem_absolute=True)
     if make:
@@ -162,9 +175,6 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'js/src/ctypes/libffi':
         from tup import libffi
         libffi.generate_rules(sandbox)
-    elif sandbox.relativesrcdir == 'media/webrtc/trunk':
-        from tup import tupgyp
-        tupgyp.generate_rules(sandbox, 'peerconnection.gyp')
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
