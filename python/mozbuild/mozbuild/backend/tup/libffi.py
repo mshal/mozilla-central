@@ -7,7 +7,6 @@ import os
 
 def generate_rules(sandbox):
     from tup import makefile_parser
-    import sys
 
     # We need the configure processed Makefile, since that has the real
     # definition of SOURCES for our platform.
@@ -17,7 +16,6 @@ def generate_rules(sandbox):
     # This srcdir goes through js/src/ctypes/libffi, and we use it so we can grep
     # out full paths which mess with tup's dependency detection.
     srcdir = sandbox.get_string('abs_top_srcdir')
-    print >> sys.stderr, "srcdir: ", srcdir
 
     all_flags = []
     for flag in sandbox['COMPILE']:
