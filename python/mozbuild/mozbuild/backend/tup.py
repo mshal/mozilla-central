@@ -134,46 +134,46 @@ if __name__ == '__main__':
 
     # Custom rules in Makefile.in need special treatment
     if sandbox.relativesrcdir == 'toolkit/components/urlformatter':
-        from tup import urlformatter
+        from tup.custom import urlformatter
         urlformatter.generate_rules(sandbox)
     elif sandbox.relativesrcdir.startswith('nsprpub'):
-        from tup import nspr
+        from tup.custom import nspr
         nspr.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'config':
-        from tup import config
+        from tup.custom import config
         config.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'js/xpconnect/src':
-        from tup import js_xpconnect_src
+        from tup.custom import js_xpconnect_src
         js_xpconnect_src.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'dom/encoding':
-        from tup import domencoding
-        domencoding.generate_rules(sandbox)
+        from tup.custom import dom_encoding
+        dom_encoding.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'gfx/thebes':
-        from tup import gfx_thebes
+        from tup.custom import gfx_thebes
         gfx_thebes.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'intl/locale/src':
-        from tup import intl_locale_src
+        from tup.custom import intl_locale_src
         intl_locale_src.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'netwerk/dns':
-        from tup import netwerk_dns
+        from tup.custom import netwerk_dns
         netwerk_dns.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'media/libvpx':
-        from tup import media_libvpx
+        from tup.custom import media_libvpx
         media_libvpx.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'media/libjpeg':
-        from tup import media_libjpeg
+        from tup.custom import media_libjpeg
         media_libjpeg.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'build':
-        from tup import build
+        from tup.custom import build
         build.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'security/nss/lib/ckfw/builtins':
-        from tup import ckfw_builtins
+        from tup.custom import ckfw_builtins
         ckfw_builtins.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'intl/locale/src/unix':
-        from tup import intl_locale_src_unix
+        from tup.custom import intl_locale_src_unix
         intl_locale_src_unix.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'js/src/ctypes/libffi':
-        from tup import libffi
+        from tup.custom import libffi
         libffi.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
