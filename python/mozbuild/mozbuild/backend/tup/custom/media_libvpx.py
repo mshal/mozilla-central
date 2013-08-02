@@ -5,7 +5,7 @@
 
 def generate_rules(sandbox):
     if sandbox['MOZ_VP8_ENCODER']:
-        from cpp import TupCpp
+        from tup.cpp import TupCpp
         tupcpp = TupCpp(sandbox)
         tupcpp.generate_compile_rules(['asm_enc_offsets.c'], 'CC -S', 'CC', tupcpp.c_flags, compile_flag='-S', obj_suffix='s')
         offset_pattern = sandbox.get_string('OFFSET_PATTERN')
