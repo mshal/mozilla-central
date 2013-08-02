@@ -44,3 +44,8 @@ def generate_rules(sandbox):
         stl_compiler = sandbox.get_string('stl_compiler')
         outputs = ' '.join(headers)
         print ": |> $(PYTHON) make-stl-wrappers.py $(DIST)/stl_wrappers %s %s-stl-wrapper.template.h stl-headers |> %s | $(MOZ_ROOT)/<installed-headers>" % (stl_compiler, stl_compiler, outputs)
+
+    # Some files (at least media/webrtc/signaling/) include this manually, so
+    # they need to find it in dist/include. Unsure if that is really necessary,
+    # since it is also -include'd directly on the command-line.
+    print ": $(MOZ_ROOT)/@(MOZ_OBJDIR)/mozilla-config.h |> ^ INSTALL %f^ cp %f %o |> $(DIST)/include/%b | $(MOZ_ROOT)/<installed-headers>"
