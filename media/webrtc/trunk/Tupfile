@@ -4,4 +4,6 @@
 
 include_rules
 
+TUP_CPP_FLAGS += --gyp-file peerconnection.gyp
+
 include $(MOZ_ROOT)/build/tup/compile.tup
