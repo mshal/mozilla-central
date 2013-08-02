@@ -192,6 +192,9 @@ if __name__ == '__main__':
     if 'CPP_SOURCES' in sandbox:
         from tup import cppsrcs
         cppsrcs.generate_rules(sandbox)
+    if 'CPPSRCS' in sandbox:
+        from tup import oldcppsrcs
+        oldcppsrcs.generate_rules(sandbox)
     if 'CSRCS' in sandbox:
         from tup import csrcs
         csrcs.generate_rules(sandbox)
