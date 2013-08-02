@@ -43,6 +43,7 @@ if __name__ == '__main__':
 
     mozbuild = False
     make = False
+    gyp = False
     if os.path.exists('moz.build'):
         mozbuild = True
     if os.path.exists('Makefile.in'):
@@ -51,8 +52,12 @@ if __name__ == '__main__':
     elif os.path.exists('Makefile'):
         make = True
         makefile_name = 'Makefile'
+    elif os.path.exists('peerconnection.gyp'):
+        # media/webrtc/trunk
+        gyp = True
+        gypfile = 'peerconnection.gyp'
 
-    if not mozbuild and not make:
+    if not mozbuild and not make and not gyp:
         sys.exit(0)
 
     sys.path.append(os.path.join(os.getcwd(), moz_root, 'python', 'mozbuild'))
@@ -157,6 +162,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'js/src/ctypes/libffi':
         from tup import libffi
         libffi.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'media/webrtc/trunk':
+        from tup import tupgyp
+        tupgyp.generate_rules(sandbox, 'peerconnection.gyp')
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
