@@ -4,6 +4,7 @@
 
 include_rules
 
-TUP_CPP_FLAGS += --gyp-file nrappkit.gyp
+TUP_CPP_FLAGS += --gyp-file signaling.gyp
+TUP_CPP_FLAGS += -Dbuild_for_test=0
 
 include $(MOZ_ROOT)/build/tup/compile.tup

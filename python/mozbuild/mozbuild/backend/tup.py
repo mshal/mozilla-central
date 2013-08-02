@@ -18,6 +18,9 @@ if __name__ == '__main__':
     p.add_option('--target-srcs', action='store_true', dest='target_srcs',
                  default=False,
                  help='Compile only the non-HOST (target) sources.')
+    p.add_option('--gyp-file', action='store', dest='gypfile',
+                 default=None,
+                 help='Gyp file to process, it any.')
     p.add_option('--extra-manifest-files', action='append',
                  dest='extra_manifest_files', default=[],
                  help='Extra jar.mn files to process in addition to ./jar.mn')
@@ -27,6 +30,9 @@ if __name__ == '__main__':
     p.add_option('-I', dest='tup_extra_includes', default=[], type=str,
                  action='append',
                  help='Extra include directories to pass to the compiler that are not in the Makefile')
+    p.add_option('-D', dest='gyp_extra_defines', default=[], type=str,
+                 action='append',
+                 help='Extra defines to pass to the gyp processor.')
     p.add_option('-m', dest='makefile', default='Makefile.in',
                  help='Optional: Name of the Makefile (defaults to Makefile.in)')
 
@@ -41,12 +47,6 @@ if __name__ == '__main__':
     moz_root = args[0]
     moz_objdir = args[1]
 
-    gypfiles = [
-        'peerconnection.gyp',
-        'nrappkit.gyp',
-        'nicer.gyp',
-    ]
-
     mozbuild = False
     make = False
     gyp = False
@@ -59,11 +59,8 @@ if __name__ == '__main__':
         make = True
         makefile_name = 'Makefile'
 
-    for f in gypfiles:
-        if os.path.exists(f):
-            gyp = True
-            gypfile = f
-            break
+    if options.gypfile:
+        gyp = True
 
     if not mozbuild and not make and not gyp:
         sys.exit(0)
@@ -119,9 +116,10 @@ if __name__ == '__main__':
 
     sys.path.append(os.path.join(os.getcwd(), moz_root, 'build', 'pymake'))
     from tup import makefile_parser
+
     if gyp:
         from tup import tupgyp
-        tupgyp.generate_rules(sandbox, gypfile)
+        tupgyp.generate_rules(sandbox, options.gypfile, options.gyp_extra_defines)
         sys.exit(0)
 
     if mozbuild:

@@ -4,4 +4,6 @@
 
 include_rules
 
+TUP_CPP_FLAGS += --gyp-file nicer.gyp
+
 include $(MOZ_ROOT)/build/tup/compile.tup

@@ -6,7 +6,7 @@
 import os
 import sys
 
-def generate_rules(sandbox, gyp_file):
+def generate_rules(sandbox, gyp_file, gyp_extra_defines):
     sys.path.insert(0, os.path.join(sandbox.moz_root, 'media', 'webrtc', 'trunk', 'tools', 'gyp', 'pylib'))
     import gyp
 
@@ -25,9 +25,9 @@ def generate_rules(sandbox, gyp_file):
     else:
         gyp_args.append('have_clock_monotonic=0')
 
-#    for define in options.gyp_extra_defines:
-#        gyp_args.append('-D')
-#        gyp_args.append(define)
+    for define in gyp_extra_defines:
+        gyp_args.append('-D')
+        gyp_args.append(define)
 
     gyp_args.append('--include')
     gyp_args.append(os.path.join(sandbox.moz_root, 'media', 'webrtc', 'webrtc_config.gypi'))
