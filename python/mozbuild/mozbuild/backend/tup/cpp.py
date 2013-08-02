@@ -7,9 +7,10 @@ import os
 import sys
 
 class TupCpp(object):
-    def __init__(self, sandbox, filter_out=[], dist_include_dep=True):
+    def __init__(self, sandbox, filter_out=[], dist_include_dep=True,
+                 extra_flags=""):
         self.sandbox = sandbox
-        self.extra_flags = ""
+        self.extra_flags = extra_flags
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
         self.objs = []
