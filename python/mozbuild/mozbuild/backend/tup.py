@@ -151,6 +151,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'security/nss/lib/ckfw/builtins':
         from tup import ckfw_builtins
         ckfw_builtins.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'intl/locale/src/unix':
+        from tup import intl_locale_src_unix
+        intl_locale_src_unix.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
