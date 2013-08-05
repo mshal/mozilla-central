@@ -143,7 +143,12 @@ print "%f |>",
 print ' '.join(outputs),
 print ' | $(MOZ_ROOT)/<installed-headers>'
 
-# TODO: Compile .cpp files
-#tupcpp = tup_cpp.TupCpp(tupmk, moz_objdir, target_srcs_flag=True)
-#tupcpp.generate_cpp_rules(cppsrcs)
+sys.path.append(os.path.join(os.getcwd(), moz_root, 'build', 'pymake'))
+from mozbuildmakesandbox import MozbuildMakeSandbox
+import makefile_parser
+sandbox = MozbuildMakeSandbox(env, mozbuild_file, moz_root, moz_objdir, [], 'ipc/ipdl')
+
+makefile_parser.parse(sandbox, 'Makefile.in')
+tupcpp = sandbox.get_tupcpp()
+tupcpp.generate_compile_rules(cppsrcs, 'C++', 'CXX', tupcpp.cpp_flags)
 #tupcpp.generate_desc_file()
