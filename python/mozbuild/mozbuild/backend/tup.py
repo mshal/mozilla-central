@@ -226,8 +226,8 @@ if __name__ == '__main__':
     # Needs to come after since freebl is parsed twice - once with
     # FREEBL_CHILD_BUILD set and once without
     if sandbox.relativesrcdir == 'security/nss/lib/freebl':
-        from tup import freebl
+        from tup.custom import freebl
         freebl.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'js/src':
-        from tup import js_src
+        from tup.custom import js_src
         js_src.generate_rules(sandbox)
