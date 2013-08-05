@@ -70,12 +70,14 @@ class GypSandbox(object):
         # relativesrcdir isn't actually needed for us, but cpp.py expects
         # it to be defined.
         self.relativesrcdir = '.'
+        self.objs = []
         self.extra_deps = []
         self.extra_includes = []
         self.variables = dict()
         self.moz_root = moz_root
         self.moz_objdir = moz_objdir
         self.outputdir = outputdir
+        self.objsgroup = ""
         from tup import makefile_parser
         makefile_parser.parse(self, None)
 

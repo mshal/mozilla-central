@@ -223,6 +223,15 @@ if __name__ == '__main__':
         from tup import distinstall
         distinstall.generate_rules(sandbox)
 
+    objs = sandbox['OBJS']
+    if not objs:
+        objs = sandbox.objs
+
+    if objs and sandbox.relativesrcdir.startswith('nsprpub'):
+        objs = ['%s/%s' % (sandbox.outputdir, o) for o in objs]
+        from tup import linker
+        linker.generate_rules(sandbox, objs)
+
     # Needs to come after since freebl is parsed twice - once with
     # FREEBL_CHILD_BUILD set and once without
     if sandbox.relativesrcdir == 'security/nss/lib/freebl':

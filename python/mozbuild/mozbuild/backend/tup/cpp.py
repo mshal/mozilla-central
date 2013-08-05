@@ -13,7 +13,6 @@ class TupCpp(object):
         self.extra_flags = extra_flags
         self.filter_out = filter_out
         self.dist_include_dep = dist_include_dep
-        self.objs = []
 
         if sandbox.relativesrcdir.startswith('js/src'):
             self.js_src = True
@@ -162,15 +161,15 @@ class TupCpp(object):
                 fullpath = self.sandbox.vpath_resolve(filename)
 
                 # Create a tup :-rule for each cpp file to compile it
-                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s/%s%%B.%s" % (fullpath, extra_deps_string, print_string, self.sandbox.get_string(cc_var), compile_flag, all_flags_string, self.sandbox.outputdir, obj_prefix_string, obj_suffix)
+                print ": %s %s |> ^ %s %%f^ %s -o %%o %s %%f %s |> %s/%s%%B.%s %s" % (fullpath, extra_deps_string, print_string, self.sandbox.get_string(cc_var), compile_flag, all_flags_string, self.sandbox.outputdir, obj_prefix_string, obj_suffix, self.sandbox.objsgroup)
                 basename, ext = os.path.splitext(os.path.basename(fullpath))
 
-                # Put all objects into self.objs, except for host srcs since
+                # Put all objects into sandbox.objs, except for host srcs since
                 # they don't end up in libraries.
                 if not host_prefix:
                     # libcppsrcs is specific to widget/xremoteclient/
                     if not libcppsrcs or filename in libcppsrcs:
-                        self.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
+                        self.sandbox.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
 
     def generate_simple_link_rules(self, srcs, print_string, ld_var, flags):
         if srcs:
