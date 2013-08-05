@@ -20,6 +20,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         self.variables = {}
         self.extra_deps = []
         self.extra_includes = extra_includes
+        self.objsgroup = ""
         self.tupcpp = None
 
         self.relativesrcdir = relativesrcdir
