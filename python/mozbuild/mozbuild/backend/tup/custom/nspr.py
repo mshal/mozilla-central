@@ -7,6 +7,8 @@ import os
 import sys
 
 def generate_rules(sandbox):
+    sandbox.objsgroup = "$(MOZ_ROOT)/nsprpub/<objs>"
+
     if 'include_subdir' in sandbox:
         include_subdir = sandbox.get_string('include_subdir') + '/'
     else:
@@ -27,23 +29,19 @@ def generate_rules(sandbox):
         bld_file = '_pr_bld.h'
 
     if bld_file:
-        config_now = "%s/nsprpub/config/now" % (sandbox.moz_root)
+        config_now = "%s/%s/nsprpub/config/now" % (sandbox.moz_root, sandbox.moz_objdir)
 
         suffix = sandbox.get_string('SUF')
         prod = "lib%s%s.%s" % (sandbox.get_string('LIBRARY_NAME'),
                                sandbox.get_string('LIBRARY_VERSION'),
                                sandbox.get_string('DLL_SUFFIX'))
         gen_bld = """shdate=`date "+%%Y-%%m-%%d %%T"`; """
-        # TODO: Use config_now
-        gen_bld += """shnow=`%s`; """ % ('echo 12345')
-#        gen_bld += """shnow=`%s`; """ % (config_now)
+        gen_bld += """shnow=`%s`; """ % (config_now)
         gen_bld += """(echo "#define _BUILD_STRING \\"$shdate\\""; """
         gen_bld += """if test ! -z "$shnow"; then echo "#define _BUILD_TIME ${shnow}%s"; fi; """ % (suffix)
         gen_bld += """echo "#define _PRODUCTION \\"%s\\"") > %%o""" % (prod)
 
-        # TODO: Use config_now
-        print ": %s |> %s |> %s" % ("", gen_bld, bld_file)
-        #print ": %s |> %s |> %s" % (config_now, gen_bld, bld_file)
+        print ": $(MOZ_ROOT)/nsprpub/<progs> |> %s |> %s" % (gen_bld, bld_file)
         sandbox.extra_deps.append(bld_file)
 
     if sandbox.relativesrcdir == 'nsprpub/pr/src':
