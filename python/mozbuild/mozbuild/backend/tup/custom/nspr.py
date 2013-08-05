@@ -7,8 +7,6 @@ import os
 import sys
 
 def generate_rules(sandbox):
-    sandbox.objsgroup = "$(MOZ_ROOT)/nsprpub/<objs>"
-
     if 'include_subdir' in sandbox:
         include_subdir = sandbox.get_string('include_subdir') + '/'
     else:

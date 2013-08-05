@@ -20,6 +20,9 @@ class TupMakefile(object):
                  allow_includes=False, always_enabled=False):
         self.makefile = pymake.data.Makefile()
         self.makefile.variables = pymake.data.Variables()
+        self.sandbox = sandbox
+
+        sandbox.makefile = self
 
         # Import config.status into the Makefile, as if we had parsed
         # autoconf.mk
@@ -30,18 +33,22 @@ class TupMakefile(object):
         for key, value in sandbox.variables.iteritems():
             self.set_var(key, value)
 
+        # Set some variables that are defined in moz.build but are used in
+        # the Makefile or config.mk
+        for var in ['LIBRARY_NAME']:
+            if var in sandbox:
+                self.set_var(var, sandbox[var])
+
         self.set_var('srcdir', '.')
         self.set_var('MOZILLA_DIR', sandbox.moz_root)
 
         self.allow_includes = allow_includes
-        self.sandbox = sandbox
-
-        sandbox.makefile = self
 
         self.set_var('relativesrcdir', sandbox.relativesrcdir)
 
         if sandbox.relativesrcdir.startswith('nsprpub'):
             nsprpub = True
+            sandbox.objsgroup = '$(MOZ_ROOT)/nsprpub/<objs>'
         else:
             nsprpub = False
 
@@ -52,6 +59,7 @@ class TupMakefile(object):
 
         if sandbox.relativesrcdir.startswith('security'):
             security = True
+            sandbox.objsgroup = '$(MOZ_ROOT)/security/<objs>'
         else:
             security = False
 
