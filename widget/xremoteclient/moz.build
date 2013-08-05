@@ -9,7 +9,7 @@ MODULE = 'xremoteclient'
 PROGRAM = 'mozilla-xremote-client'
 
 CPP_SOURCES += [
-    '$(filter-out $(LIBCPPSRCS),$(PROGCPPSRCS)) $(LIBCPPSRCS)',
+    '$(PROGCPPSRCS)',
 ]
 
 LIBRARY_NAME = 'xremote_client_s'
