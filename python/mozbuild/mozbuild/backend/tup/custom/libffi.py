@@ -33,9 +33,11 @@ def generate_rules(sandbox):
     all_flags.append('-DPIC')
 
     all_flags_string = ' '.join(all_flags)
-    srcs = sandbox.get_string('SOURCES')
+    srcs = sandbox['SOURCES']
 
-    # Compile each file
-    print ": foreach %s |> ^ CC %%f^ %s -c %%f -o %%o |> %%B.o" % (srcs, all_flags_string)
+    # Compile each file. There are duplicates, so remove them by using set()
+    for src in set(srcs):
+        dirname = os.path.dirname(src)
+        print ": %s |> ^ CC %%f^ %s -c %%f -o %%o |> %s/%s/%%B.o {objs}" % (src, all_flags_string, sandbox.outputdir, dirname)
     # Link them into libffi.a
-    print ": *.o |> ^ AR %o^ ar crs %o %f |> libffi.a"
+    print ": {objs} |> ^ AR %%o^ ar crs %%o %%f |> %s/libffi.a" % (sandbox.outputdir)
