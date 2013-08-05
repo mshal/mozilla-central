@@ -138,6 +138,11 @@ class TupMakefile(object):
                 if s.vnameexp.to_source() in ('SOURCE_XPHEADERS_DIR', 'NSPR_INCLUDE_DIR'):
                     continue
 
+                # This breaks because we can't wildcard libs before there are
+                # any (security/nss/cmd/shlibsign)
+                if s.vnameexp.to_source() in ('CHECKLIBS'):
+                    continue
+
                 s.execute(self.makefile, self.context)
             elif isinstance(s, pymake.parserdata.Include):
                 # Certain includes are generally ignored, such as those
