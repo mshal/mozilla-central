@@ -171,6 +171,11 @@ class TupMakefile(object):
                         # mfbt already exports these headers - don't try to
                         # export them again.
                         continue
+                    elif include_filename == 'ipdlsrcs.mk':
+                        # ipdlsrcs.mk is generated for the make backend - we
+                        # don't use it ourselves, but we need other data
+                        # in the Makefile.in for ipdl generation
+                        continue
                     else:
                         files = s.exp.resolvesplit(self.makefile, self.makefile.variables)
                         if '$(topsrcdir)' in include_filename or '$(MOZILLA_DIR)' in include_filename or '$(DEPTH)' in include_filename:
