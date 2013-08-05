@@ -25,7 +25,7 @@ def resolve_libraries(sandbox, libs):
             flags.append(lib)
     return flags, deps
 
-def generate_desc_file(sandbox, objs):
+def generate_desc_file(sandbox, objs, static_library_name=None):
     lib_prefix = sandbox.get_string('LIB_PREFIX')
     lib_suffix = sandbox.get_string('LIB_SUFFIX')
     program = sandbox.get_string('PROGRAM')
@@ -34,7 +34,8 @@ def generate_desc_file(sandbox, objs):
         program_exec = "$(PYTHON_PATH)"
         program_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
         program_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
-        program_exec += " --relative-path $(MOZ_ROOT)"
+        # TODO
+#        program_exec += " --relative-path $(MOZ_ROOT)"
         program_exec += " --target %o"
         program_exec += " --"
         program_exec += ' ' + sandbox.get_string('CCC')
@@ -109,58 +110,58 @@ def generate_desc_file(sandbox, objs):
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
     else:
         if not static_library_name:
-            static_library_name = self.tupmk.get_var_string('STATIC_LIBRARY_NAME')
+            static_library_name = sandbox.get_string('STATIC_LIBRARY_NAME')
 
         if static_library_name:
-            output = '%s%s.%s' % (self.tupmk.get_var_string('LIB_PREFIX'),
+            output = '%s%s.%s' % (sandbox.get_string('LIB_PREFIX'),
                                   static_library_name,
-                                  self.tupmk.get_var_string('LIB_SUFFIX'))
-            output_desc = '%s.%s' % (output,
-                                     self.tupmk.get_var_string('LIBS_DESC_SUFFIX'))
-            inputs = ' '.join(self.get_objs('OBJS'))
+                                  sandbox.get_string('LIB_SUFFIX'))
+            output_desc = '%s/%s.%s' % (sandbox.outputdir, output,
+                                        sandbox.get_string('LIBS_DESC_SUFFIX'))
+            inputs = ' '.join(objs)
             cmd_inputs = inputs
 
             # Tup's gyp support creates files in the directory where the gyp
             # file is processed, rather than in some subdirectory like with
             # make. Therefore, we have to trim the library path to be the root
             # of the gyp directory.
-            gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
-                        "media/webrtc/trunk/src/modules",
-                        "media/webrtc/trunk/src/common_audio",
-                        "media/webrtc/trunk/src/system_wrappers/source",
-                        "media/webrtc/trunk/src/common_video",
-                        "media/webrtc/trunk/src/video_engine",
-                        "media/webrtc/trunk/src/voice_engine",
-                        "media/webrtc/trunk/third_party/libyuv",
-                        "media/mtransport/third_party/nICEr",
-                        "media/mtransport/third_party/nrappkit",
-                        ]
+#            gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
+#                        "media/webrtc/trunk/src/modules",
+#                        "media/webrtc/trunk/src/common_audio",
+#                        "media/webrtc/trunk/src/system_wrappers/source",
+#                        "media/webrtc/trunk/src/common_video",
+#                        "media/webrtc/trunk/src/video_engine",
+#                        "media/webrtc/trunk/src/voice_engine",
+#                        "media/webrtc/trunk/third_party/libyuv",
+#                        "media/mtransport/third_party/nICEr",
+#                        "media/mtransport/third_party/nrappkit",
+#                        ]
 
-            for lib in self.tupmk.get_var('SHARED_LIBRARY_LIBS'):
-                # Our libraries are not in the autoconf objdir, so remove
-                # that from the path.
-                if self.moz_objdir in lib:
-                    lib = lib.replace(self.moz_objdir + os.path.sep, '')
+#            for lib in sandbox['SHARED_LIBRARY_LIBS']:
+#                # Our libraries are not in the autoconf objdir, so remove
+#                # that from the path.
+#                if sandbox.moz_objdir in lib:
+#                    lib = lib.replace(sandbox.moz_objdir + os.path.sep, '')
+#
+#                # For gyp modules, the library is in the root gyp directory.
+#                for gyp_dir in gyp_dirs:
+#                    index = lib.find(gyp_dir)
+#                    if index != -1:
+#                        lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
+#                        break
+#
+#                # Some .a files have dist/lib, or strange paths - point them to
+#                # their actual locations.
+#                lib, dep = self.resolve_library(lib)
+#
+#                if dep:
+#                    inputs += ' %s' % (dep)
+#                cmd_inputs += ' %s' % (lib)
 
-                # For gyp modules, the library is in the root gyp directory.
-                for gyp_dir in gyp_dirs:
-                    index = lib.find(gyp_dir)
-                    if index != -1:
-                        lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
-                        break
+            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output_desc)
 
-                # Some .a files have dist/lib, or strange paths - point them to
-                # their actual locations.
-                lib, dep = self.resolve_library(lib)
-
-                if dep:
-                    inputs += ' %s' % (dep)
-                cmd_inputs += ' %s' % (lib)
-
-            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output_desc)
-
-            if self.tupmk.get_var('SDK_LIBRARY') or self.tupmk.get_var('DIST_INSTALL') or self.tupmk.get_var('NO_EXPAND_LIBS'):
-                print ": %s |> ^ expandlibs_exec.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_exec.py --relative-path $(MOZ_ROOT) --target %%o --extract -- %s %s %%o %s |> %s" % (inputs, self.tupmk.get_var_string('AR'), self.tupmk.get_var_string('AR_FLAGS'), cmd_inputs, output)
+            if sandbox['SDK_LIBRARY'] or sandbox['DIST_INSTALL'] or sandbox['NO_EXPAND_LIBS']:
+                print ": %s |> ^ expandlibs_exec.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_exec.py --relative-path $(MOZ_ROOT) --target %%o --extract -- %s %s %%o %s |> %s" % (inputs, sandbox.get_string('AR'), sandbox.get_string('AR_FLAGS'), cmd_inputs, output)
 
 def generate_security_library(sandbox):
     objs = sandbox['SIMPLE_OBJS']

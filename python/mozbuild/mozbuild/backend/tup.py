@@ -227,7 +227,7 @@ if __name__ == '__main__':
     if not objs:
         objs = sandbox.objs
 
-    if objs and (sandbox.relativesrcdir.startswith('nsprpub') or sandbox.relativesrcdir.startswith('security') or sandbox.relativesrcdir.startswith('db/sqlite3/src')):
+    if objs and (sandbox.relativesrcdir.startswith('nsprpub') or sandbox.relativesrcdir.startswith('security') or sandbox.relativesrcdir.startswith('db/sqlite3/src') or sandbox.relativesrcdir.startswith('a')):
         objs = ['%s/%s' % (sandbox.outputdir, o) for o in objs]
         from tup import linker
         linker.generate_rules(sandbox, objs)
