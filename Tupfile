@@ -4,8 +4,24 @@
 
 include_rules
 
-: <installed-xpts> |> ^ Generate %o^ for i in %<installed-xpts>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> @(MOZ_OBJDIR)/dist/bin/interfaces.manifest
+: <installed-xpts> |> ^ Generate %o^ for i in %<installed-xpts>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/components\///' > %o |> $(DIST)/bin/components/interfaces.manifest
 
-: <installed-xpts-browser> |> ^ Generate %o^ for i in %<installed-xpts-browser>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> @(MOZ_OBJDIR)/dist/bin/browser/interfaces.manifest
+: <installed-xpts-browser> |> ^ Generate %o^ for i in %<installed-xpts-browser>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/browser\/components\///' > %o |> $(DIST)/bin/browser/components/interfaces.manifest
 
-: <installed-xpts-xpi-worker> |> ^ Generate %o^ for i in %<installed-xpts-xpi-worker>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/xpi-stage\/worker\///' > %o |> @(MOZ_OBJDIR)/dist/xpi-stage/worker/interfaces.manifest
+: <chrome-en-US> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-en-US>.res > %o |> $(DIST)/bin/chrome/en-US.manifest
+: <chrome-toolkit> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-toolkit>.res > %o |> $(DIST)/bin/chrome/toolkit.manifest
+: <chrome-pippki> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-pippki>.res > %o |> $(DIST)/bin/chrome/pippki.manifest
+: <chrome-recording> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-recording>.res > %o |> $(DIST)/bin/chrome/recording.manifest
+: <chrome-reftest> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-reftest>.res > %o |> $(DIST)/bin/chrome/reftest.manifest
+: <chrome-xslt-qa> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-xslt-qa>.res > %o |> $(DIST)/bin/chrome/xslt-qa.manifest
+
+: <components> |> ^ Generate %o^ for i in %<components>; do echo "binary-component $i"; done > %o |> $(DIST)/bin/components/components.manifest
+
+: <chrome-browser-browser> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-browser-browser>.res > %o |> $(DIST)/bin/browser/chrome/browser.manifest
+
+: <chrome-webapprt-webapprt> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-webapprt-webapprt>.res > %o |> $(DIST)/bin/webapprt/chrome/webapprt.manifest
+: <chrome-webapprt-en-US> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-webapprt-en-US>.res > %o |> $(DIST)/bin/webapprt/chrome/en-US.manifest
+
+: $(DIST)/bin/chrome/*.manifest $(DIST)/bin/components/*.manifest | <installed-manifests> |> ^ Generate %o^ for i in %f %<installed-manifests>; do echo "manifest $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> $(DIST)/bin/chrome.manifest
+
+: $(DIST)/bin/browser/chrome/*.manifest $(DIST)/bin/browser/components/*.manifest | <installed-manifests-browser> |> ^ Generate %o^ for i in %f %<installed-manifests-browser>; do echo "manifest $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/browser\///' > %o |> $(DIST)/bin/browser/chrome.manifest
