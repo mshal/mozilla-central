@@ -68,6 +68,10 @@ class ExpandArgsMore(ExpandArgs):
         newlist = []
         for arg in args:
             if os.path.splitext(arg)[1] == conf.LIB_SUFFIX:
+                if arg == self.target:
+                    newlist += [arg]
+                    continue
+
                 if os.path.exists(arg + conf.LIBS_DESC_SUFFIX):
                     newlist += self._extract(self._expand_desc(arg))
                     continue
@@ -296,6 +300,9 @@ def main():
         help="display executed command and temporary files content")
     parser.add_option("--symbol-order", dest="symbol_order", metavar="FILE",
         help="use the given list of symbols to order symbols in the resulting binary when using with a linker")
+    parser.add_option("--relative-path", dest="relative_path",
+        default="", type=str,
+        help="use paths relative to the repository root instead of full paths")
 
     (options, args) = parser.parse_args()
 
@@ -308,7 +315,7 @@ def main():
             deps.pop(0)
         # Remove command
         deps.pop(0)
-    with ExpandArgsMore(args) as args:
+    with ExpandArgsMore(args, options.target, options.relative_path) as args:
         if options.extract:
             args.extract()
         if options.symbol_order:

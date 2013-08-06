@@ -40,4 +40,4 @@ def generate_rules(sandbox):
         dirname = os.path.dirname(src)
         print ": %s |> ^ CC %%f^ %s -c %%f -o %%o |> %s/%s/%%B.o {objs}" % (src, all_flags_string, sandbox.outputdir, dirname)
     # Link them into libffi.a
-    print ": {objs} |> ^ AR %%o^ ar crs %%o %%f |> %s/libffi.a" % (sandbox.outputdir)
+    print ": {objs} |> ^ AR %%o^ ar crs %%o %%f |> %s/libffi.a | $(MOZ_ROOT)/<-lffi>" % (sandbox.outputdir)
