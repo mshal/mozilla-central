@@ -57,9 +57,9 @@ class TupMakefile(object):
         else:
             js_src = False
 
-        if sandbox.relativesrcdir.startswith('security'):
+        if sandbox.relativesrcdir.startswith('security/nss'):
             security = True
-            sandbox.objsgroup = '$(MOZ_ROOT)/security/<objs>'
+            sandbox.objsgroup = '$(MOZ_ROOT)/security/nss/<objs>'
         else:
             security = False
 
@@ -148,7 +148,7 @@ class TupMakefile(object):
 
                 # This breaks because we can't wildcard libs before there are
                 # any (security/nss/cmd/shlibsign)
-                if s.vnameexp.to_source() in ('CHECKLIBS'):
+                if s.vnameexp.to_source() == 'CHECKLIBS':
                     continue
 
                 s.execute(self.makefile, self.context)

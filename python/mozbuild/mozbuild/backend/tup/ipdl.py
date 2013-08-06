@@ -151,4 +151,6 @@ sandbox = MozbuildMakeSandbox(env, mozbuild_file, moz_root, moz_objdir, [], 'ipc
 makefile_parser.parse(sandbox, 'Makefile.in')
 tupcpp = sandbox.get_tupcpp()
 tupcpp.generate_compile_rules(cppsrcs, 'C++', 'CXX', tupcpp.cpp_flags)
-#tupcpp.generate_desc_file()
+import linker
+objs = ['%s/%s' % (sandbox.outputdir, o) for o in sandbox.objs]
+linker.generate_desc_file(sandbox, objs)

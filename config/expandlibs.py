@@ -93,10 +93,12 @@ class LibDescriptor(dict):
         return '\n'.join('%s = %s' % (k, ' '.join(self[k])) for k in self.KEYS if len(self[k]))
 
 class ExpandArgs(list):
-    def __init__(self, args):
+    def __init__(self, args, target, relative_path=""):
         '''Creates a clone of the |args| list and performs file expansion on
         each item it contains'''
         super(ExpandArgs, self).__init__()
+        self.target = target
+        self.relative_path = relative_path
         for arg in args:
             self += self._expand(arg)
 
@@ -111,7 +113,7 @@ class ExpandArgs(list):
             dll = root.replace(conf.LIB_PREFIX, conf.DLL_PREFIX, 1) + conf.DLL_SUFFIX
         if os.path.exists(dll):
             return [relativize(dll)]
-        if os.path.exists(arg):
+        if os.path.exists(arg) or arg == self.target:
             return [relativize(arg)]
         return self._expand_desc(arg)
 
@@ -120,9 +122,9 @@ class ExpandArgs(list):
         if os.path.exists(arg + conf.LIBS_DESC_SUFFIX):
             with open(arg + conf.LIBS_DESC_SUFFIX, 'r') as f:
                 desc = LibDescriptor(f.readlines())
-            objs = [relativize(o) for o in desc['OBJS']]
+            objs = [relativize(os.path.join(self.relative_path, o)) for o in desc['OBJS']]
             for lib in desc['LIBS']:
-                objs += self._expand(lib)
+                objs += self._expand(os.path.join(self.relative_path, lib))
             return objs
         return [arg]
 
