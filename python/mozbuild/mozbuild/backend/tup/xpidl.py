@@ -31,4 +31,10 @@ def generate_rules(sandbox):
         print ": {xpts} |> ^ xpt.py link %%o^ $(PYTHON) $(MOZ_ROOT)/xpcom/typelib/xpt/tools/xpt.py link %%o %%f |> %s/%s.xpt {module_xpt}" % (sandbox.outputdir, xpidl_module)
 
         # Export the module xpt
-        print ": {module_xpt} |> !cp |> $(DIST)/bin/components/%b | $(MOZ_ROOT)/<installed-xpts>"
+        final_target = sandbox.get_string('FINAL_TARGET')
+        dist_subdir = sandbox.get_string('DIST_SUBDIR')
+        if dist_subdir:
+            output_group = '$(MOZ_ROOT)/<installed-xpts-%s>' % dist_subdir
+        else:
+            output_group = '$(MOZ_ROOT)/<installed-xpts>'
+        print ": {module_xpt} |> !cp |> %s/components/%%b | %s" % (final_target, output_group)

@@ -133,6 +133,16 @@ class TupMakefile(object):
             config_mk = os.path.join(self.topsrcdir, 'config', 'config.mk')
             self.process_makefile(config_mk)
 
+            defs_dir = self.sandbox.moz_root
+            while True:
+                defs_mk = os.path.join(defs_dir, 'defs.mk')
+                if os.path.exists(defs_mk):
+                    self.process_makefile(defs_mk)
+
+                if not defs_dir:
+                    break
+                defs_dir = os.path.dirname(defs_dir)
+
     def process_statements(self, dirname, statements):
         for s in statements:
             if isinstance(s, pymake.parserdata.SetVariable):
