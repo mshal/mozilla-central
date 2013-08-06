@@ -136,6 +136,14 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
         output_group = '$(MOZ_ROOT)/<-l%s>' % (sandbox.get_string('SHARED_LIBRARY_NAME'))
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b | %s" % (output, output_group)
+
+        if not sandbox['NO_DIST_INSTALL'] and sandbox['IS_COMPONENT']:
+            dist_subdir = sandbox.get_string('DIST_SUBDIR')
+            if dist_subdir:
+                component_group = '$(MOZ_ROOT)/<components-%s>' % dist_subdir
+            else:
+                component_group = '$(MOZ_ROOT)/<components>'
+            print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> %s/components/%%b | %s" % (output, sandbox.get_string('FINAL_TARGET'), component_group)
     else:
         if not static_library_name:
             static_library_name = sandbox.get_string('STATIC_LIBRARY_NAME')
