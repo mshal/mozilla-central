@@ -1,0 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+: <installed-xpts> |> ^ Generate %o^ for i in %<installed-xpts>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> @(MOZ_OBJDIR)/dist/bin/interfaces.manifest
+
+: <installed-xpts-browser> |> ^ Generate %o^ for i in %<installed-xpts-browser>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> @(MOZ_OBJDIR)/dist/bin/browser/interfaces.manifest
+
+: <installed-xpts-xpi-worker> |> ^ Generate %o^ for i in %<installed-xpts-xpi-worker>; do echo "interfaces $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/xpi-stage\/worker\///' > %o |> @(MOZ_OBJDIR)/dist/xpi-stage/worker/interfaces.manifest
