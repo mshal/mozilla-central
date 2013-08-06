@@ -14,7 +14,20 @@ def generate_rules(sandbox):
         pp = Preprocessor.Preprocessor()
         pp.out = preprocessed_data
 
-        args = []
+        args = sandbox['DEFINES']
+        args.extend(sandbox['ACDEFINES'])
+        for i in [
+            'MOZ_TREE_CAIRO',
+            'MOZ_TREE_PIXMAN',
+            'MOZ_NATIVE_HUNSPELL',
+            'MOZ_NATIVE_BZ2',
+            'MOZ_NATIVE_ZLIB',
+            'MOZ_NATIVE_PNG',
+            'MOZ_NATIVE_JPEG',
+            'MOZ_NATIVE_LIBEVENT',
+            'MOZ_NATIVE_LIBVPX',
+        ]:
+            args.append('-D%s=%s' % (i, sandbox.get_string(i)))
         args.append('system-headers')
 
         pp.handleCommandLine(args, False)

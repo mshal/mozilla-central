@@ -173,6 +173,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'js/src/ctypes/libffi':
         from tup.custom import libffi
         libffi.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'toolkit/library':
+        from tup.custom import toolkit_library
+        toolkit_library.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -227,10 +230,9 @@ if __name__ == '__main__':
     if not objs:
         objs = sandbox.objs
 
-    if objs and (sandbox.relativesrcdir.startswith('nsprpub') or sandbox.relativesrcdir.startswith('security') or sandbox.relativesrcdir.startswith('db/sqlite3/src') or sandbox.relativesrcdir.startswith('a')):
-        objs = ['%s/%s' % (sandbox.outputdir, o) for o in objs]
-        from tup import linker
-        linker.generate_rules(sandbox, objs)
+    objs = ['%s/%s' % (sandbox.outputdir, o) for o in objs]
+    from tup import linker
+    linker.generate_rules(sandbox, objs)
 
     # Needs to come after since freebl is parsed twice - once with
     # FREEBL_CHILD_BUILD set and once without

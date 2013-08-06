@@ -4,13 +4,30 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
+import sys
 
 def resolve_libraries(sandbox, libs):
     flags = []
     deps = []
     for lib in libs:
+        if lib.startswith('ctypes/libffi/.libs'):
+            lib = lib.replace('ctypes/libffi/.libs', 'ctypes/libffi')
+
         if lib.startswith('-l'):
             deps.append('$(MOZ_ROOT)/<%s>' % lib)
+            if lib == '-lxul':
+                # TODO: Why doesn't this get picked up automatically from
+                # group dependencies?
+                deps.append('$(MOZ_ROOT)/<-lmozsqlite3>')
+        if lib.endswith('.a'):
+            if sandbox.moz_objdir not in lib:
+                lib = '%s/%s' % (sandbox.outputdir, lib)
+            libname = os.path.basename(lib)
+            lib_prefix = sandbox.get_string('LIB_PREFIX')
+            lib_suffix = sandbox.get_string('LIB_SUFFIX')
+            if libname.startswith(lib_prefix) and libname.endswith(lib_suffix):
+                libname = libname[len(lib_prefix):-len(lib_suffix)-1]
+                deps.append('$(MOZ_ROOT)/<-l%s>' % (libname))
 
         if lib.startswith('-L/'):
             # TODO: Convert flags that use a full path for -L/foo to
@@ -30,34 +47,41 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
     lib_suffix = sandbox.get_string('LIB_SUFFIX')
     program = sandbox.get_string('PROGRAM')
 
-    if program:
+    if program and objs:
+        output = "%s/%s" % (sandbox.outputdir, program)
         program_exec = "$(PYTHON_PATH)"
         program_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
+        program_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages"
         program_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
-        # TODO
-#        program_exec += " --relative-path $(MOZ_ROOT)"
+        program_exec += " --relative-path $(MOZ_ROOT)"
         program_exec += " --target %o"
         program_exec += " --"
         program_exec += ' ' + sandbox.get_string('CCC')
-        program_exec += ' -o %s' % program
+        program_exec += ' -o %s' % output
         program_exec += ' ' + sandbox.get_string('CXXFLAGS')
-        inputs = sandbox.get_string('PROGOBJS')
+        progobjs = sandbox['PROGOBJS']
+        if progobjs:
+            progobjs = ['%s/%s' % (sandbox.outputdir, o) for o in progobjs]
+        else:
+            progobjs = objs
+        inputs = ' '.join(progobjs)
         program_exec += ' ' + inputs
 
         flags1 = ['RESFILE', 'WIN32_EXE_LDFLAGS', 'LDFLAGS', 'WRAP_LDFLAGS', 'LIBS_DIR']
-        program_exec += ' ' + ' '.join(self.get_all_flags(flags1, program))
+        program_exec += ' ' + ' '.join(sandbox.get_tupcpp().get_all_flags(flags1, program))
 
-        libs = tupmk.get_var('LIBS')
-        libs.extend(tupmk.get_var('MOZ_GLUE_PROGRAM_LDFLAGS'))
-        libs.extend(tupmk.get_var('OS_LIBS'))
-        libs.extend(tupmk.get_var('EXTRA_LIBS'))
+        libs = sandbox['LIBS']
+        libs.extend(sandbox['MOZ_GLUE_PROGRAM_LDFLAGS'])
+        libs.extend(sandbox['OS_LIBS'])
+        libs.extend(sandbox['EXTRA_LIBS'])
         actual_libs, lib_deps = resolve_libraries(sandbox, libs)
         inputs += ' ' + ' '.join(lib_deps)
         program_exec += ' ' + ' '.join(actual_libs)
 
         flags2 = ['BIN_FLAGS', 'EXE_DEF_FILE']
-        program_exec += ' ' + ' '.join(self.get_all_flags(flags2, program))
-        print ": %s | $(MOZ_ROOT)/dist/bin/<installed-libs> |> ^ LINK %%o^ %s |> %s" % (inputs, program_exec, program)
+        program_exec += ' ' + ' '.join(sandbox.get_tupcpp().get_all_flags(flags2, program))
+        print ": %s |> ^ LINK %%o^ %s |> %s" % (inputs, program_exec, output)
+        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b" % (output)
 
     if sandbox['FORCE_SHARED_LIB']:
         library_name = '%s%s%s' % (sandbox.get_string('DLL_PREFIX'),
@@ -77,93 +101,87 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
                                                                lib_suffix)
             sandbox.makefile.set_var('EXTRA_DSO_LIBS', extra_dso_libs)
 
-        extra_dso_ldopts = sandbox['EXTRA_DSO_LDOPTS']
-
-        actual_libs, lib_deps = resolve_libraries(sandbox, extra_dso_ldopts)
-
-        libs, deps = resolve_libraries(sandbox, sandbox['SHARED_LIBRARY_LIBS'])
-        actual_libs.extend(libs)
-        lib_deps.extend(deps)
-
-        lib_deps_string = ' '.join(lib_deps)
-
         expandlibs_exec = "$(PYTHON_PATH)"
         expandlibs_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config"
         expandlibs_exec += " -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages"
         expandlibs_exec += " $(MOZ_ROOT)/config/expandlibs_exec.py"
-        # TODO
-#        expandlibs_exec += " --relative-path $(MOZ_ROOT)"
+        expandlibs_exec += " --relative-path $(MOZ_ROOT)"
         expandlibs_exec += " --target %o"
         expandlibs_exec += " " + sandbox.get_string('EXPAND_MKSHLIB_ARGS')
         expandlibs_exec += " --"
         expandlibs_exec += " " + sandbox.get_string('MKSHLIB')
         expandlibs_exec += " %f"
         expandlibs_exec += " " + sandbox.get_string('LDFLAGS')
-        if sandbox['IS_COMPONENT']:
-            expandlibs_exec += ' ' + sandbox.get_string('MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS')
-            expandlibs_exec += ' -Wl,-Bsymbolic'
-        expandlibs_exec += " " + ' '.join(actual_libs)
-        expandlibs_exec += " " + sandbox.get_string('OS_LIBS')
+
+        # Some files we need (like symverscript) are in the generated-headers
+        # group
+        lib_deps = ['$(MOZ_ROOT)/<generated-headers>']
+        lib_flags = []
+
+        for i in ['WRAP_LDFLAGS', 'SHARED_LIBRARY_LIBS', 'EXTRA_DSO_LDOPTS', 'MOZ_GLUE_LDFLAGS', 'OS_LIBS', 'EXTRA_LIBS', 'DEF_FILE', 'SHLIB_LDENDFILE']:
+            libs, deps = resolve_libraries(sandbox, sandbox[i])
+            lib_flags.extend(libs)
+            lib_deps.extend(deps)
+
+            # This logic is in rules.mk, but should probably be in config.mk
+            if i == 'EXTRA_DSO_LDOPTS' and sandbox['IS_COMPONENT']:
+                lib_flags.append(sandbox.get_string('MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS'))
+                # TODO: Linux only, others have different flags
+                lib_flags.append('-Wl,-Bsymbolic')
+
+        expandlibs_exec += " " + ' '.join(lib_flags)
+        lib_deps_string = ' '.join(lib_deps)
 
         print ": %s | %s |> ^ SHLIB %%o^ %s |> %s" % (inputs, lib_deps_string, expandlibs_exec, output)
         output_group = '$(MOZ_ROOT)/<-l%s>' % (sandbox.get_string('SHARED_LIBRARY_NAME'))
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
+        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b | %s" % (output, output_group)
     else:
         if not static_library_name:
             static_library_name = sandbox.get_string('STATIC_LIBRARY_NAME')
 
         if static_library_name:
-            output = '%s%s.%s' % (sandbox.get_string('LIB_PREFIX'),
-                                  static_library_name,
-                                  sandbox.get_string('LIB_SUFFIX'))
-            output_desc = '%s/%s.%s' % (sandbox.outputdir, output,
-                                        sandbox.get_string('LIBS_DESC_SUFFIX'))
+            output = '%s/%s%s.%s' % (sandbox.outputdir,
+                                     sandbox.get_string('LIB_PREFIX'),
+                                     static_library_name,
+                                     sandbox.get_string('LIB_SUFFIX'))
+            output_desc = '%s.%s' % (output,
+                                     sandbox.get_string('LIBS_DESC_SUFFIX'))
             inputs = ' '.join(objs)
             cmd_inputs = inputs
 
-            # Tup's gyp support creates files in the directory where the gyp
-            # file is processed, rather than in some subdirectory like with
-            # make. Therefore, we have to trim the library path to be the root
-            # of the gyp directory.
-#            gyp_dirs = ["media/webrtc/trunk/src/modules/video_coding/codecs/vp8",
-#                        "media/webrtc/trunk/src/modules",
-#                        "media/webrtc/trunk/src/common_audio",
-#                        "media/webrtc/trunk/src/system_wrappers/source",
-#                        "media/webrtc/trunk/src/common_video",
-#                        "media/webrtc/trunk/src/video_engine",
-#                        "media/webrtc/trunk/src/voice_engine",
-#                        "media/webrtc/trunk/third_party/libyuv",
-#                        "media/mtransport/third_party/nICEr",
-#                        "media/mtransport/third_party/nrappkit",
-#                        ]
+            libs, deps = resolve_libraries(sandbox, sandbox['SHARED_LIBRARY_LIBS'])
+            inputs += ' ' + ' '.join(deps)
+            cmd_inputs += ' ' + ' '.join(libs)
 
-#            for lib in sandbox['SHARED_LIBRARY_LIBS']:
-#                # Our libraries are not in the autoconf objdir, so remove
-#                # that from the path.
-#                if sandbox.moz_objdir in lib:
-#                    lib = lib.replace(sandbox.moz_objdir + os.path.sep, '')
-#
-#                # For gyp modules, the library is in the root gyp directory.
-#                for gyp_dir in gyp_dirs:
-#                    index = lib.find(gyp_dir)
-#                    if index != -1:
-#                        lib = os.path.join(lib[0:index + len(gyp_dir)], os.path.basename(lib))
-#                        break
-#
-#                # Some .a files have dist/lib, or strange paths - point them to
-#                # their actual locations.
-#                lib, dep = self.resolve_library(lib)
-#
-#                if dep:
-#                    inputs += ' %s' % (dep)
-#                cmd_inputs += ' %s' % (lib)
+            output_group = '$(MOZ_ROOT)/<-l%s>' % static_library_name
+            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s | %s" % (inputs, cmd_inputs, output_desc, output_group)
 
-            print ": %s |> ^ expandlibs_gen.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages $(MOZ_ROOT)/config/expandlibs_gen.py -o %%o %s --relative-path $(MOZ_ROOT) |> %s" % (inputs, cmd_inputs, output_desc)
+            export_library = sandbox.get_string('EXPORT_LIBRARY')
+            desc_dir = None
+            if export_library:
+                if export_library == '1':
+                    if sandbox['IS_COMPONENT']:
+                        desc_dir = '$(MOZ_ROOT)/@(MOZ_OBJDIR)/staticlib/components'
+                    else:
+                        desc_dir = '$(MOZ_ROOT)/@(MOZ_OBJDIR)/staticlib'
+                else:
+                    if sandbox.moz_objdir in export_library:
+                        # At least layout/media uses $(DIST)/lib as its
+                        # EXPORT_LIBRARY
+                        desc_dir = export_library
+                    else:
+                        # Most directories that use this have a relative path
+                        # like ".."
+                        desc_dir = '%s/%s' % (sandbox.outputdir, export_library)
+            if desc_dir:
+                print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> %s/%%b | %s" % (output_desc, desc_dir, output_group)
 
             if sandbox['SDK_LIBRARY'] or sandbox['DIST_INSTALL'] or sandbox['NO_EXPAND_LIBS']:
-                print ": %s |> ^ expandlibs_exec.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config $(MOZ_ROOT)/config/expandlibs_exec.py --relative-path $(MOZ_ROOT) --target %%o --extract -- %s %s %%o %s |> %s" % (inputs, sandbox.get_string('AR'), sandbox.get_string('AR_FLAGS'), cmd_inputs, output)
+                print ": %s |> ^ expandlibs_exec.py %%o^ $(PYTHON_PATH) -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/config -I$(MOZ_ROOT)/@(MOZ_OBJDIR)/_virtualenv/lib/python2.7/site-packages $(MOZ_ROOT)/config/expandlibs_exec.py --relative-path $(MOZ_ROOT) --target %%o --extract -- %s %s %%o %s |> %s | %s" % (inputs, sandbox.get_string('AR'), sandbox.get_string('AR_FLAGS'), cmd_inputs, output, output_group)
+                print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
 
-def generate_security_library(sandbox):
+def generate_nss_library(sandbox):
     objs = sandbox['SIMPLE_OBJS']
     # We get OBJ_SUFFIX from config.status, which is just 'o', whereas
     # nss expects it to be '.o', so we fix that here.
@@ -178,9 +196,10 @@ def generate_security_library(sandbox):
     library = sandbox.get_string('LIBRARY')
     if library and library in targets:
         output = '%s/%s' % (sandbox.outputdir, library.replace(objdir, ''))
+        output_group = '$(MOZ_ROOT)/<-l%s>' % sandbox.get_string('LIBRARY_NAME')
         ar = sandbox.get_string('AR')
-        print ": %s |> ^ AR[nss] %%o^ %s %%o %%f |> %s" % (inputs, ar, output)
-        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | $(MOZ_ROOT)/<installed-archives>" % (output)
+        print ": %s |> ^ AR[nss] %%o^ %s %%o %%f |> %s | %s" % (inputs, ar, output, output_group)
+        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
 
     # See if we should build a shared library
     shared_library = sandbox.get_string('SHARED_LIBRARY')
@@ -210,7 +229,7 @@ def generate_security_library(sandbox):
                 extra_inputs += ' ' + lib
             extra_flags += ' ' + ' '.join(resolved_values)
 
-        extra_inputs += " $(MOZ_ROOT)/<installed-archives>"
+        extra_inputs += ' $(MOZ_ROOT)/security/nss/<objs>'
 
         extra_files = ""
         for i in sandbox['SHARED_LIBRARY_DIRS']:
@@ -220,6 +239,7 @@ def generate_security_library(sandbox):
         print ": %s | %s |> ^ SHLIB %%o^ %s -o %%o %%f %s %s |> %s" % (inputs, extra_inputs, mkshlib, extra_files, extra_flags, output)
         output_group = '$(MOZ_ROOT)/<-l%s%s>' % (sandbox.get_string('LIBRARY_NAME'), sandbox.get_string('LIBRARY_VERSION'))
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
+        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b | %s" % (output, output_group)
 
 def generate_nsprpub_library(sandbox, objs):
     library_name = sandbox.get_string('LIBRARY_NAME')
@@ -280,7 +300,7 @@ def generate_rules(sandbox, objs):
             generate_nsprpub_progs(sandbox, objs)
         else:
             generate_nsprpub_library(sandbox, objs)
-    elif sandbox.relativesrcdir.startswith('security'):
-        generate_security_library(sandbox)
+    elif sandbox.relativesrcdir.startswith('security/nss'):
+        generate_nss_library(sandbox)
     else:
         generate_desc_file(sandbox, objs)
