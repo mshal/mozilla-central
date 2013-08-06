@@ -556,8 +556,9 @@ def main():
   if not args:
     infile = sys.stdin
   else:
-    infile,  = args
-  jm.makeJar(infile, options.j)
+    infile = args
+  for f in infile:
+    jm.makeJar(f, options.j)
 
 if __name__ == "__main__":
   main()
