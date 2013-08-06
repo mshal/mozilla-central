@@ -21,6 +21,10 @@ def generate_install_rule(filename, output_path):
         output_group = "| $(MOZ_ROOT)/<installed-manifests>"
     elif filename.endswith('.h'):
         output_group = "| $(MOZ_ROOT)/<installed-headers>"
+    elif filename.endswith('.png'):
+        # This is to help browser/app/Makefile.in copy pngs from
+        # $(DIST)/branding to $(FINAL_TARGET)/chrome/icons/default
+        output_group = "| $(MOZ_ROOT)/<installed-icons>"
     print ": foreach %s |> !cp |> %s/%%b %s" % (filename, output_path, output_group)
 
 def generate_rules(sandbox):
@@ -79,7 +83,7 @@ def generate_rules(sandbox):
     install_targets = sandbox['INSTALL_TARGETS']
     for target in install_targets:
         # TODO: Currently only some targets are supported
-        if target in ('EXPORTS_GENERATED'):
+        if target in ('EXPORTS_GENERATED', 'BRANDING'):
             files = sandbox['%s_FILES' % target]
             dest = sandbox.get_string('%s_DEST' % target)
             for f in files:

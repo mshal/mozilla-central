@@ -176,6 +176,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'toolkit/library':
         from tup.custom import toolkit_library
         toolkit_library.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'browser/app':
+        from tup.custom import browser_app
+        browser_app.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
