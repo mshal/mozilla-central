@@ -15,7 +15,7 @@ def generate_rules(sandbox):
         defines = sandbox['DEFINES']
         defines.extend(sandbox['ACDEFINES'])
         input_path = '../webidl/%s' % pp
-        distinstall.generate_pp_rule(input_path, defines, [], '.')
+        distinstall.generate_pp_rule(sandbox, input_path, defines, [], '.')
 
     webidl = sandbox['webidl_files']
     for idl in webidl:

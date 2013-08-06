@@ -31,7 +31,7 @@ class TupJar(object):
                 self.flags.append(nextflag)
                 nextflag = ""
 
-    def generate_chrome_rules(self, extra_manifest_files):
+    def generate_chrome_rules(self, extra_manifest_files, group_prefix):
         jm = JarMaker.JarMaker()
         p = jm.getCommandLineParser()
         (options, args) = p.parse_args(args=self.flags)
@@ -54,22 +54,23 @@ class TupJar(object):
         for jarfile in outputs:
             jartarget = jarfile.replace(self.final_target + '/', '')
             (dirname, filename) = os.path.split(jarfile)
-            print ": |> ^ JarMaker.py jar.mn^ %s --tup-support --jarfile %s -j %s %s |> %s | %s/<%s>" % (jarmaker, jartarget, self.final_target, ' '.join(self.flags), ' '.join(outputs[jarfile]), dirname, filename)
+            group_name = '$(MOZ_ROOT)/<chrome%s-%s>' % (group_prefix, jartarget)
+            print ": |> ^ JarMaker.py jar.mn^ %s --tup-support --jarfile %s -j %s %s |> %s | %s" % (jarmaker, jartarget, self.final_target, ' '.join(self.flags), ' '.join(outputs[jarfile]), group_name)
 
-def generate_rules(sandbox):
-    # TODO
-    extra_manifest_files = []
-
+def generate_rules(sandbox, extra_manifest_files):
     xpi_name = sandbox.get_string('XPI_NAME')
     dist = sandbox.get_string('DIST')
     dist_subdir = sandbox.get_string('DIST_SUBDIR')
     if xpi_name:
         final_target = os.path.join(dist, 'xpi-stage', xpi_name)
+        group_prefix = "-xpi-%s" % xpi_name
     else:
         if dist_subdir:
             final_target = os.path.join(dist, 'bin', dist_subdir)
+            group_prefix = "-%s" % dist_subdir
         else:
             final_target = os.path.join(dist, 'bin')
+            group_prefix = ""
     final_target += '/chrome'
     jarmaker_flags = []
     jarmaker_flags.extend(sandbox['MAKE_JARS_FLAGS'])
@@ -83,4 +84,4 @@ def generate_rules(sandbox):
     jarmaker_flags.append('jar.mn')
     jarmaker_flags.extend(extra_manifest_files)
     tup_jar = TupJar(final_target, jarmaker_flags, sandbox.moz_root)
-    tup_jar.generate_chrome_rules(extra_manifest_files)
+    tup_jar.generate_chrome_rules(extra_manifest_files, group_prefix)
