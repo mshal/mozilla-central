@@ -70,6 +70,7 @@ def generate_rules(sandbox):
             final_target = os.path.join(dist, 'bin', dist_subdir)
         else:
             final_target = os.path.join(dist, 'bin')
+    final_target += '/chrome'
     jarmaker_flags = []
     jarmaker_flags.extend(sandbox['MAKE_JARS_FLAGS'])
 
