@@ -179,6 +179,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'browser/app':
         from tup.custom import browser_app
         browser_app.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'modules/libpref/src':
+        from tup.custom import modules_libpref_src
+        modules_libpref_src.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
@@ -224,7 +227,7 @@ if __name__ == '__main__':
         gtest_cpp_sources.generate_rules(sandbox)
     if os.path.exists('jar.mn'):
         from tup import jarmn
-        jarmn.generate_rules(sandbox)
+        jarmn.generate_rules(sandbox, options.extra_manifest_files)
     if 'NO_DIST_INSTALL' not in sandbox:
         from tup import distinstall
         distinstall.generate_rules(sandbox)
