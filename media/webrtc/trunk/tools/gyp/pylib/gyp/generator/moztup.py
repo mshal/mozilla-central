@@ -80,6 +80,7 @@ class GypSandbox(object):
         self.objsgroup = ""
         from tup import makefile_parser
         makefile_parser.parse(self, None)
+        self.makefile.set_var('DIST', os.path.join(moz_root, moz_objdir, 'dist'))
 
     def vpath_resolve(self, filename):
         return filename
@@ -136,10 +137,12 @@ class TupfileGenerator(object):
         build_file, target, toolset = gyp.common.ParseQualifiedTarget(
             qualified_target)
         dir_target = os.path.dirname(build_file)
+        rel_path = os.path.join(dir_target,
+                                os.path.splitext(os.path.basename(build_file))[0] + '_' + target)
 
-        self.WriteTargetRules(qualified_target, spec, dir_target)
+        self.WriteTargetRules(qualified_target, spec, dir_target, rel_path)
 
-    def WriteTargetRules(self, qualified_target, spec, dirname):
+    def WriteTargetRules(self, qualified_target, spec, dirname, outdir):
         configs = spec['configurations']
         data = {}
         #TODO: handle actions/rules/copies
@@ -235,13 +238,13 @@ class TupfileGenerator(object):
         else:
             # Maybe nothing?
             return False
-        self.WriteTupRules(data, dirname)
+        self.WriteTupRules(data, dirname, outdir)
         return True
 
     def GetFlag(self, data, flag):
         return list(data[flag]) if flag in data else []
 
-    def WriteTupRules(self, data, dirname):
+    def WriteTupRules(self, data, dirname, outdir):
         if self.sandbox['MOZ_DEBUG']:
             suffix = "Debug"
         else:
@@ -283,14 +286,18 @@ class TupfileGenerator(object):
         from tup import cpp
         tupcpp = cpp.TupCpp(self.sandbox, extra_flags=cxxflag_string)
         oldoutputdir = self.sandbox.outputdir
-        self.sandbox.outputdir += '/%s' % (dirname)
+        self.sandbox.outputdir += '/%s' % (outdir)
         if cppsrcs:
             tupcpp.generate_compile_rules(cppsrcs, 'C++', 'CXX', tupcpp.cpp_flags)
         if csrcs:
             tupcpp.generate_compile_rules(csrcs, 'CC', 'CC', tupcpp.c_flags)
 
-#        if 'FORCE_STATIC_LIB' in data:
-#            self.cpp.generate_desc_file(static_library_name=data['LIBRARY_NAME'])
+        if 'FORCE_STATIC_LIB' in data:
+            from tup import linker
+            objs = ['%s/%s' % (self.sandbox.outputdir, o) for o in self.sandbox.objs]
+            linker.generate_desc_file(self.sandbox, objs,
+                                      static_library_name=data['LIBRARY_NAME'])
+        self.sandbox.objs = []
         self.sandbox.outputdir = oldoutputdir
 
 def GenerateOutput(target_list, target_dicts, data, params):
