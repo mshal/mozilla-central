@@ -33,7 +33,10 @@ def generate_rules(sandbox):
         # Export the module xpt
         final_target = sandbox.get_string('FINAL_TARGET')
         dist_subdir = sandbox.get_string('DIST_SUBDIR')
-        if dist_subdir:
+        xpi_name = sandbox.get_string('XPI_NAME')
+        if xpi_name:
+            output_group = '$(MOZ_ROOT)/<installed-xpts-xpi-%s>' % xpi_name
+        elif dist_subdir:
             output_group = '$(MOZ_ROOT)/<installed-xpts-%s>' % dist_subdir
         else:
             output_group = '$(MOZ_ROOT)/<installed-xpts>'
