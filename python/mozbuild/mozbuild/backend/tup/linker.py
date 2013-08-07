@@ -29,17 +29,7 @@ def resolve_libraries(sandbox, libs):
                 libname = libname[len(lib_prefix):-len(lib_suffix)-1]
                 deps.append('$(MOZ_ROOT)/<-l%s>' % (libname))
 
-        if lib.startswith('-L/'):
-            # TODO: Convert flags that use a full path for -L/foo to
-            # be relative so that it doesn't circumvent tup's dependency
-            # detection, until we can run everything in a chroot environment.
-            index = lib.find(sandbox.moz_objdir)
-            if index == -1:
-                flags.append(lib)
-            else:
-                flags.append('-L%s/%s' % (sandbox.moz_root, lib[index:]))
-        else:
-            flags.append(lib)
+        flags.append(lib)
     return flags, deps
 
 def generate_desc_file(sandbox, objs, static_library_name=None):
@@ -67,19 +57,24 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
         inputs = ' '.join(progobjs)
         program_exec += ' ' + inputs
 
-        flags1 = ['RESFILE', 'WIN32_EXE_LDFLAGS', 'LDFLAGS', 'WRAP_LDFLAGS', 'LIBS_DIR']
-        program_exec += ' ' + ' '.join(sandbox.get_tupcpp().get_all_flags(flags1, program))
-
-        libs = sandbox['LIBS']
-        libs.extend(sandbox['MOZ_GLUE_PROGRAM_LDFLAGS'])
-        libs.extend(sandbox['OS_LIBS'])
-        libs.extend(sandbox['EXTRA_LIBS'])
-        actual_libs, lib_deps = resolve_libraries(sandbox, libs)
+        flag_group = [
+            'RESFILE',
+            'WIN32_EXE_LDFLAGS',
+            'LDFLAGS',
+            'WRAP_LDFLAGS',
+            'LIBS_DIR',
+            'LIBS',
+            'MOZ_GLUE_PROGRAM_LDFLAGS',
+            'OS_LIBS',
+            'EXTRA_LIBS',
+            'BIN_FLAGS',
+            'EXE_DEF_FILE',
+        ]
+        flags = sandbox.get_tupcpp().get_all_flags(flag_group, program)
+        actual_libs, lib_deps = resolve_libraries(sandbox, flags)
         inputs += ' ' + ' '.join(lib_deps)
         program_exec += ' ' + ' '.join(actual_libs)
 
-        flags2 = ['BIN_FLAGS', 'EXE_DEF_FILE']
-        program_exec += ' ' + ' '.join(sandbox.get_tupcpp().get_all_flags(flags2, program))
         print ": %s |> ^ LINK %%o^ %s |> %s" % (inputs, program_exec, output)
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b" % (output)
 
@@ -111,23 +106,32 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
         expandlibs_exec += " --"
         expandlibs_exec += " " + sandbox.get_string('MKSHLIB')
         expandlibs_exec += " %f"
-        expandlibs_exec += " " + sandbox.get_string('LDFLAGS')
 
         # Some files we need (like symverscript) are in the generated-headers
         # group
         lib_deps = ['$(MOZ_ROOT)/<generated-headers>']
         lib_flags = []
 
-        for i in ['WRAP_LDFLAGS', 'SHARED_LIBRARY_LIBS', 'EXTRA_DSO_LDOPTS', 'MOZ_GLUE_LDFLAGS', 'OS_LIBS', 'EXTRA_LIBS', 'DEF_FILE', 'SHLIB_LDENDFILE']:
-            libs, deps = resolve_libraries(sandbox, sandbox[i])
-            lib_flags.extend(libs)
-            lib_deps.extend(deps)
+        ld_flag_groups = [
+            'LDFLAGS',
+            'WRAP_LDFLAGS',
+            'SHARED_LIBRARY_LIBS',
+            'EXTRA_DSO_LDOPTS',
+            'MOZ_GLUE_LDFLAGS',
+            'OS_LIBS',
+            'EXTRA_LIBS',
+            'DEF_FILE',
+            'SHLIB_LDENDFILE'
+        ]
+        ld_flags = sandbox.get_tupcpp().get_all_flags(ld_flag_groups, library_name)
 
-            # This logic is in rules.mk, but should probably be in config.mk
-            if i == 'EXTRA_DSO_LDOPTS' and sandbox['IS_COMPONENT']:
-                lib_flags.append(sandbox.get_string('MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS'))
-                # TODO: Linux only, others have different flags
-                lib_flags.append('-Wl,-Bsymbolic')
+        lib_flags, lib_deps = resolve_libraries(sandbox, ld_flags)
+
+        # This logic is in rules.mk, but should probably be in config.mk
+        if sandbox['IS_COMPONENT']:
+            lib_flags.append(sandbox.get_string('MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS'))
+            # TODO: Linux only, others have different flags
+            lib_flags.append('-Wl,-Bsymbolic')
 
         expandlibs_exec += " " + ' '.join(lib_flags)
         lib_deps_string = ' '.join(lib_deps)
@@ -272,11 +276,15 @@ def generate_nsprpub_library(sandbox, objs):
     mkshlib = sandbox.get_string('MKSHLIB')
     if mkshlib:
         mkshlib += ' ' + inputs
-        mkshlib += ' ' + sandbox.get_string('RES')
-        mkshlib += ' ' + sandbox.get_string('LDFLAGS')
-        mkshlib += ' ' + sandbox.get_string('WRAP_LDFLAGS')
+        flag_group = [
+            'RES',
+            'LDFLAGS',
+            'WRAP_LDFLAGS',
+            'EXTRA_LIBS',
+        ]
+        flags = sandbox.get_tupcpp().get_all_flags(flag_group, shlib)
+        lib_flags, deps = resolve_libraries(sandbox, flags)
 
-        lib_flags, deps = resolve_libraries(sandbox, sandbox['EXTRA_LIBS'])
         deps.append('$(MOZ_ROOT)/nsprpub/<objs>')
         mkshlib += ' ' + ' '.join(lib_flags)
         groups = ' '.join(deps)

@@ -81,7 +81,7 @@ class TupCpp(object):
                         # generate them from tup so they are relative to the
                         # srcdir.
                         all_flags.append('-I' + os.path.join(self.sandbox.moz_root, 'ipc/ipdl/_ipdlheaders'))
-                    elif flag.startswith('-I/') or flag.startswith('-Wl,-rpath-link,/'):
+                    elif flag.startswith('-I/') or flag.startswith('-Wl,-rpath-link,/') or flag.startswith('-L/') or flag.startswith('/'):
 
                         # Search for the objdir in a -I/full/path flag to see if
                         # we need to strip out the build directory. Passing in a
@@ -99,8 +99,12 @@ class TupCpp(object):
                             # -I$(MOZ_ROOT)/objdir/foo
                             if flag.startswith('-I'):
                                 prefix = '-I'
-                            else:
+                            elif flag.startswith('-L'):
+                                prefix = '-L'
+                            elif flag.startswith('-Wl,-rpath-link,'):
                                 prefix = '-Wl,-rpath-link,'
+                            else:
+                                prefix = ''
                             all_flags.append('%s$(MOZ_ROOT)%s' % (prefix, flag[index-1:]))
                     else:
                         all_flags.append(flag)
