@@ -1,0 +1,53 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include_rules
+
+# This sucks - no good to way to copy a whole directory tree in tup.
+preload source/lib
+preload source/lib/method
+preload source/lib/method/test
+preload source/lib/sdk
+preload source/lib/sdk/test
+preload source/lib/sdk/tab
+preload source/lib/sdk/keyboard
+preload source/lib/sdk/net
+preload source/lib/sdk/event
+preload source/lib/sdk/l10n
+preload source/lib/sdk/util
+preload source/lib/sdk/private-browsing
+preload source/lib/sdk/private-browsing/window
+preload source/lib/sdk/preferences
+preload source/lib/sdk/console
+preload source/lib/sdk/tabs
+preload source/lib/sdk/platform
+preload source/lib/sdk/worker
+preload source/lib/sdk/core
+preload source/lib/sdk/browser
+preload source/lib/sdk/fs
+preload source/lib/sdk/frame
+preload source/lib/sdk/page-mod
+preload source/lib/sdk/system
+preload source/lib/sdk/loader
+preload source/lib/sdk/addon
+preload source/lib/sdk/stylesheet
+preload source/lib/sdk/places
+preload source/lib/sdk/places/host
+preload source/lib/sdk/passwords
+preload source/lib/sdk/lang
+preload source/lib/sdk/panel
+preload source/lib/sdk/window
+preload source/lib/sdk/content
+preload source/lib/sdk/io
+preload source/lib/sdk/deprecated
+preload source/lib/sdk/deprecated/events
+preload source/lib/sdk/deprecated/traits
+preload source/lib/sdk/url
+preload source/lib/sdk/view
+preload source/lib/sdk/dom
+preload source/lib/sdk/dom/events
+preload source/lib/sdk/windows
+preload source/lib/toolkit
+
+include $(MOZ_ROOT)/build/tup/compile.tup
