@@ -47,7 +47,8 @@ def generate_rules(sandbox):
     component_dir = os.path.join(final_target, 'components')
     js_module_dir = sandbox.get_string('JS_MODULES_PATH')
     if not js_module_dir:
-        js_module_dir = os.path.join(final_target, 'modules')
+        js_module_dir = 'modules'
+    js_module_dir = os.path.join(final_target, js_module_dir)
 
     extra_pp_components = sandbox['EXTRA_PP_COMPONENTS']
     extra_pp_components_flags = sandbox['EXTRA_PP_COMPONENTS_FLAGS']
@@ -95,11 +96,25 @@ def generate_rules(sandbox):
     install_targets = sandbox['INSTALL_TARGETS']
     for target in install_targets:
         # TODO: Currently only some targets are supported
-        if target in ('EXPORTS_GENERATED', 'BRANDING'):
+        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE'):
             files = sandbox['%s_FILES' % target]
             dest = sandbox.get_string('%s_DEST' % target)
             for f in files:
                 generate_install_rule(sandbox, f, dest)
+
+    pp_targets = sandbox['PP_TARGETS']
+    for target in pp_targets:
+        # TODO: Currently only some targets are supported
+        if target in ('SEARCHPLUGINS', 'PP_JS_MODULES', 'SYNC_PP', 'MAIN_JS_MODULE', 'MODULES'):
+            files = sandbox[target]
+            dest = sandbox.get_string('%s_PATH' % target)
+            for f in files:
+                prefix = ""
+                if target == 'SEARCHPLUGINS':
+                    # SEARCHPLUGINS uses vpath to locate the xml. Ugh.
+                    prefix = 'en-US/searchplugins/'
+                flags = sandbox['%s_FLAGS' % target]
+                generate_pp_rule(sandbox, prefix + f, defines, flags, dest)
 
     # Files manually exported to dist/bin/res
     for target in sandbox['EXPORT_RESOURCE']:

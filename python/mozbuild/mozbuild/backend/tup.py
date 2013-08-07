@@ -179,9 +179,21 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir == 'browser/app':
         from tup.custom import browser_app
         browser_app.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'browser/locales':
+        from tup.custom import browser_locales
+        browser_locales.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'browser/components/tabview':
+        from tup.custom import browser_components_tabview
+        browser_components_tabview.generate_rules(sandbox)
     elif sandbox.relativesrcdir == 'modules/libpref/src':
         from tup.custom import modules_libpref_src
         modules_libpref_src.generate_rules(sandbox)
+    elif sandbox.relativesrcdir == 'addon-sdk':
+        from tup.custom import addonsdk
+        addonsdk.generate_rules(sandbox)
+    elif sandbox.relativesrcdir.startswith('browser/devtools') or sandbox.relativesrcdir.startswith('toolkit/devtools'):
+        from tup.custom import browser_devtools
+        browser_devtools.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings

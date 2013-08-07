@@ -220,8 +220,7 @@ def generate_nss_library(sandbox):
         output = '%s/%s' % (sandbox.outputdir, shared_library.replace(objdir, ''))
 
         # First process the map file into something the linker can use
-        mapfile = sandbox.get_string('MAPFILE')
-        mapfile = mapfile.replace(objdir, '')
+        mapfile = sandbox.get_string('MAPFILE_SOURCE')
         output_mapfile = mapfile + '.processed'
         sandbox.makefile.set_var('<', mapfile)
         sandbox.makefile.set_var('@', output_mapfile)
@@ -292,6 +291,7 @@ def generate_nsprpub_library(sandbox, objs):
         print ": %s |> ^ SHLIB[nsprpub] %%o^ %s |> %s" % (groups, mkshlib, shlib)
         output_group = '$(MOZ_ROOT)/<-l%s%s>' % (library_name, library_version)
         print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (shlib, output_group)
+        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b | %s" % (shlib, output_group)
 
 def generate_nsprpub_progs(sandbox, objs):
     cc = sandbox.get_string('CC')
