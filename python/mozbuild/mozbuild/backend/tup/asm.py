@@ -8,7 +8,6 @@ import os
 def generate_rules(sandbox):
     asfiles = sandbox['ASFILES']
     asm_compiler = sandbox.get_string('AS')
-    asflags = sandbox.get_string('ASFLAGS')
     as_dash_c_flag = sandbox.get_string('AS_DASH_C_FLAG')
     obj_suffix = sandbox.get_string('OBJ_SUFFIX')
     vpath = sandbox['VPATH']
@@ -23,7 +22,9 @@ def generate_rules(sandbox):
         extra_deps_string = ""
 
     for filename in asfiles:
+        asflags = sandbox.get_tupcpp().get_all_flags(['ASFLAGS'], filename)
+        asflags_string = ' '.join(asflags)
         fullpath = sandbox.vpath_resolve(filename)
-        print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %s/%%B.%s %s" % (fullpath, extra_deps_string, asm_compiler, asoutoption, asflags, as_dash_c_flag, sandbox.outputdir, obj_suffix, sandbox.objsgroup)
+        print ": %s %s |> ^ ASM %%f^ %s %s%%o %s %s %%f |> %s/%%B.%s %s" % (fullpath, extra_deps_string, asm_compiler, asoutoption, asflags_string, as_dash_c_flag, sandbox.outputdir, obj_suffix, sandbox.objsgroup)
         basename, ext = os.path.splitext(os.path.basename(fullpath))
         sandbox.objs.append("%s.%s" % (basename, obj_suffix))
