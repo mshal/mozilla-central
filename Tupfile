@@ -15,9 +15,11 @@ include_rules
 : <chrome-reftest> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-reftest>.res > %o |> $(DIST)/bin/chrome/reftest.manifest
 : <chrome-xslt-qa> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-xslt-qa>.res > %o |> $(DIST)/bin/chrome/xslt-qa.manifest
 
-: <components> |> ^ Generate %o^ for i in %<components>; do echo "binary-component $i"; done > %o |> $(DIST)/bin/components/components.manifest
+: <components> |> ^ Generate %o^ for i in %<components>; do echo "binary-component $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/components\///' > %o |> $(DIST)/bin/components/components.manifest
+: <components-browser> |> ^ Generate %o^ for i in %<components-browser>; do echo "binary-component $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/browser\/components\///' > %o |> $(DIST)/bin/browser/components/components.manifest
 
 : <chrome-browser-browser> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-browser-browser>.res > %o |> $(DIST)/bin/browser/chrome/browser.manifest
+: <chrome-browser-en-US> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-browser-en-US>.res > %o |> $(DIST)/bin/browser/chrome/en-US.manifest
 
 : <chrome-webapprt-webapprt> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-webapprt-webapprt>.res > %o |> $(DIST)/bin/webapprt/chrome/webapprt.manifest
 : <chrome-webapprt-en-US> |> ^ Generate %o^ $(PYTHON) $(MOZ_ROOT)/build/tup/generate_manifest.py %<chrome-webapprt-en-US>.res > %o |> $(DIST)/bin/webapprt/chrome/en-US.manifest
@@ -25,3 +27,5 @@ include_rules
 : $(DIST)/bin/chrome/*.manifest $(DIST)/bin/components/*.manifest | <installed-manifests> |> ^ Generate %o^ for i in %f %<installed-manifests>; do echo "manifest $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\///' > %o |> $(DIST)/bin/chrome.manifest
 
 : $(DIST)/bin/browser/chrome/*.manifest $(DIST)/bin/browser/components/*.manifest | <installed-manifests-browser> |> ^ Generate %o^ for i in %f %<installed-manifests-browser>; do echo "manifest $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/browser\///' > %o |> $(DIST)/bin/browser/chrome.manifest
+
+: $(DIST)/bin/webapprt/chrome/*.manifest | <installed-manifests-webapprt> |> ^ Generate %o^ for i in %f %<installed-manifests-webapprt>; do echo "manifest $i"; done | sed 's/@(MOZ_OBJDIR)\/dist\/bin\/webapprt\///' > %o |> $(DIST)/bin/webapprt/chrome.manifest
