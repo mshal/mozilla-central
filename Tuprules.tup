@@ -4,6 +4,10 @@
 
 .gitignore
 
+ifndef MOZ_OBJDIR
+error "Please create a tup.config file with CONFIG_MOZ_OBJDIR=obj-your-objdir-here"
+endif
+
 MOZ_ROOT = $(TUP_CWD)
 DIST = $(MOZ_ROOT)/@(MOZ_OBJDIR)/dist
 
