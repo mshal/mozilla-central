@@ -400,6 +400,21 @@ class Build(MachCommandBase):
                 return status
             print('New buildid generated')
 
+        try:
+            tupdir = os.stat('.tup')
+        except OSError:
+            status = subprocess.call(['tup', 'init'])
+            if status != 0:
+                return status
+
+
+        try:
+            tup_config = os.stat('tup.config')
+        except OSError:
+            with open('tup.config', 'w') as outfile:
+                objdir = os.path.basename(self.topobjdir)
+                outfile.write("CONFIG_MOZ_OBJDIR=%s\n" % objdir)
+
         tup_args = ['tup', 'upd']
         if verbose:
             tup_args.append('--verbose')
