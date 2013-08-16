@@ -39,6 +39,6 @@ def generate_rules(sandbox):
     bindinggen_outputs.extend(['%sBinding.cpp' % (f.replace('.webidl', '')) for f in all_webidl_files])
     bindinggen_outputs.extend(['allfiles', 'changeddeps'])
 
-    print ": %s |> ^ GlobalGen.py -> %%o^ %s |> %s" % (all_webidl_files_string, globalgen_string, globalgen_targets_string)
+    print ": %s |> ^o GlobalGen.py -> %%o^ %s |> %s" % (all_webidl_files_string, globalgen_string, globalgen_targets_string)
 
-    print ": %s | ParserResults.pkl |> ^ BindingGen.py [%i files]^ %s |> %s" % (all_webidl_files_string, len(all_webidl_files), bindinggen_string, ' '.join(bindinggen_outputs))
+    print ": %s | ParserResults.pkl |> ^o BindingGen.py [%i files]^ %s |> %s" % (all_webidl_files_string, len(all_webidl_files), bindinggen_string, ' '.join(bindinggen_outputs))
