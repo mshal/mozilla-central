@@ -137,7 +137,7 @@ for ipdldir in ipdldirs:
 # dependencies are such that all .ipdl files are dependent on all others.
 print ": ",
 print ' '.join(inputs),
-print "|> ^ tup-ipdl.py %f^ $(PYTHON_PATH) -I$(MOZ_ROOT)/other-licenses/ply ipdl.py --outheaders-dir=_ipdlheaders ",
+print "|> ^o tup-ipdl.py %f^ $(PYTHON_PATH) -I$(MOZ_ROOT)/other-licenses/ply ipdl.py --outheaders-dir=_ipdlheaders ",
 print ' '.join(incdirs),
 print "%f |>",
 print ' '.join(outputs),
