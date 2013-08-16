@@ -55,6 +55,10 @@ file_namespaces = {
     # into mozilla/dom
     'PDocumentRenderer': 'mozilla/ipc',
 
+    # This is the only file in dom/indexedDB/ipc that goes into
+    # mozilla/dom/indexedDB/ipc, the rest go into mozilla/dom/indexedDB
+    'IndexedDBParams': 'mozilla/dom/indexedDB/ipc',
+
     # Some files from ipc/ipdl/test/cxx use unique namespaces
     'PTestDataStructuresCommon': 'mozilla/_foo',
     'PTestOpensOpened': 'mozilla/_ipdltest2',
@@ -137,7 +141,7 @@ for ipdldir in ipdldirs:
 # dependencies are such that all .ipdl files are dependent on all others.
 print ": ",
 print ' '.join(inputs),
-print "|> ^o tup-ipdl.py %f^ $(PYTHON_PATH) -I$(MOZ_ROOT)/other-licenses/ply ipdl.py --outheaders-dir=_ipdlheaders ",
+print "|> ^o ipdl.py %f^ $(PYTHON_PATH) -I$(MOZ_ROOT)/other-licenses/ply ipdl.py --outheaders-dir=_ipdlheaders ",
 print ' '.join(incdirs),
 print "%f |>",
 print ' '.join(outputs),
