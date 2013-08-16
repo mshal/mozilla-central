@@ -96,7 +96,7 @@ def generate_rules(sandbox):
     install_targets = sandbox['INSTALL_TARGETS']
     for target in install_targets:
         # TODO: Currently only some targets are supported
-        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE'):
+        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE', 'globalgen_headers'):
             files = sandbox['%s_FILES' % target]
             dest = sandbox.get_string('%s_DEST' % target)
             for f in files:
