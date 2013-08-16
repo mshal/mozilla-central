@@ -261,6 +261,13 @@ class MozbuildSandbox(Sandbox):
                     for tier, values in sandbox['TIERS'].items():
                         if child in values['regular'] or child in values['static']:
                             return True
+                    external_file = os.path.join(parent, 'config/external/moz.build')
+                    # Check for 'external' moz.build files
+                    sandbox = MozbuildSandbox(self.config, external_file)
+                    sandbox.exec_file(external_file, filesystem_absolute=True)
+                    external_child = '../../%s' % child
+                    if external_child in sandbox['PARALLEL_DIRS']:
+                        return True
 
             if parent == root:
                 # If we reached the top and still aren't enabled, then
