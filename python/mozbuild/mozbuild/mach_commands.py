@@ -389,7 +389,10 @@ class Build(MachCommandBase):
         configure_in = os.stat(os.path.join(self.topsrcdir, 'configure.in'))
         if configure_in.st_mtime > config_status_mtime:
             print('Need to run configure...')
-            self.configure()
+            os.system('touch %s' % (os.path.join(self.topobjdir, 'CLOBBER')))
+            status = self.configure()
+            if status != 0:
+                return status
 
         import subprocess
         platformini = os.path.join(self.topsrcdir, 'toolkit', 'xre', 'make-platformini.py')
