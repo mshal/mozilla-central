@@ -206,6 +206,9 @@ class TupMakefile(object):
                         else:
                             prefix_dir = dirname
                         for f in files:
+                            if 'icudefs.mk' in f:
+                                self.set_var('top_srcdir', os.path.join(self.sandbox.moz_root, 'intl/icu/source'))
+                                f = os.path.join(self.sandbox.moz_root, self.sandbox.moz_objdir, 'js/src/intl/icu/icudefs.mk')
                             # We always include relative to the main Makefile
                             # since that's what make does, so we have to pass in
                             # the original dirname to process_statements(),
