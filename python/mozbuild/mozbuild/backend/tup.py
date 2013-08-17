@@ -194,6 +194,9 @@ if __name__ == '__main__':
     elif sandbox.relativesrcdir.startswith('browser/devtools') or sandbox.relativesrcdir.startswith('toolkit/devtools'):
         from tup.custom import browser_devtools
         browser_devtools.generate_rules(sandbox)
+    elif sandbox.relativesrcdir.startswith('intl/icu'):
+        from tup.custom import intl_icu
+        intl_icu.generate_rules(sandbox)
 
     if 'all_webidl_files' in sandbox:
         from tup import dombindings
