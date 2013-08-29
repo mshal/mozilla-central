@@ -152,6 +152,7 @@ from mozbuildmakesandbox import MozbuildMakeSandbox
 import makefile_parser
 sandbox = MozbuildMakeSandbox(env, mozbuild_file, moz_root, moz_objdir, [], 'ipc/ipdl')
 
+sandbox.exec_file(os.path.join(os.getcwd(), 'moz.build'), filesystem_absolute=True)
 makefile_parser.parse(sandbox, 'Makefile.in')
 tupcpp = sandbox.get_tupcpp()
 tupcpp.generate_compile_rules(cppsrcs, 'C++', 'CXX', tupcpp.cpp_flags)
