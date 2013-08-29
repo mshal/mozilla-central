@@ -35,9 +35,12 @@ class TupMakefile(object):
 
         # Set some variables that are defined in moz.build but are used in
         # the Makefile or config.mk
-        for var in ['LIBRARY_NAME']:
+        for var in ['LIBRARY_NAME', 'LIBXUL_LIBRARY']:
             if var in sandbox:
-                self.set_var(var, sandbox[var])
+                value = sandbox[var]
+                if sandbox[var] == True:
+                    value = '1'
+                self.set_var(var, value)
 
         self.set_var('srcdir', '.')
         self.set_var('MOZILLA_DIR', sandbox.moz_root)

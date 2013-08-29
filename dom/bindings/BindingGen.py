@@ -6,9 +6,6 @@ import os
 import cPickle
 from Configuration import Configuration
 from Codegen import CGBindingRoot, replaceFileIfChanged
-from mozbuild.makeutil import Makefile
-from mozbuild.pythonutil import iter_modules_in_path
-from buildconfig import topsrcdir
 
 
 def generate_binding_files(config, outputprefix, srcprefix, webidlfile,
@@ -23,6 +20,9 @@ def generate_binding_files(config, outputprefix, srcprefix, webidlfile,
     replaceFileIfChanged(outputprefix + ".cpp", root.define())
 
     if not tup_support:
+        from mozbuild.makeutil import Makefile
+        from mozbuild.pythonutil import iter_modules_in_path
+        from buildconfig import topsrcdir
         mk = Makefile()
         # NOTE: it's VERY important that we output dependencies for the
         # FooBinding file here, not for the header or generated cpp file.  These
