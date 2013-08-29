@@ -67,25 +67,35 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         if name in self.variables:
             return self.variables[name]
 
+        value = []
         if self.makefile:
-            value = self.makefile.get_var(name)
-            if value is not None:
-                return value
+            makevalue = self.makefile.get_var(name)
+            if makevalue is not None:
+                value.extend(makevalue)
+                # CSRCS is currently split between moz.build and Makefile.in
+                # in gfx/cairo/cairo/src
+                if name != 'CSRCS':
+                    return value
 
         try:
-            value = super(MozbuildMakeSandbox, self).__getitem__(name)
+            mozbuild_value = super(MozbuildMakeSandbox, self).__getitem__(name)
 
-            if type(value) != list:
-                return value
+            if not isinstance(mozbuild_value, list):
+                # If we already got a value from the Makefile, use that.
+                # Some variables (eg: EXPORTS) show up in in moz.build even
+                # if we don't have a moz.build file.
+                if value:
+                    return value
+                return mozbuild_value
 
             # Some values in moz.build still rely on definitions from
             # Makefile.in. Until that is finished, we need to resolve them here.
-            rcvalue = []
-            for v in value:
-                rcvalue.extend(self.resolve(v))
-            return rcvalue
+            for v in mozbuild_value:
+                value.extend(self.resolve(v))
         except KeyError:
             pass
+        if value:
+            return value
 
         if name in self.config.defines:
             return [self.config.defines[name]]
