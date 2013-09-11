@@ -7,10 +7,8 @@ import os
 import sys
 
 def generate_rules(sandbox):
-    cppflags = sandbox.get_string('CPPFLAGS')
-    defs = sandbox.get_string('DEFS')
-    cxxflags = sandbox.get_string('CXXFLAGS')
-    cflags = sandbox.get_string('CFLAGS')
+    compile_cc = sandbox.get_string('COMPILE.cc')
+    compile_c = sandbox.get_string('COMPILE.c')
     cc = sandbox.get_string('CC')
     cxx = sandbox.get_string('CXX')
     files = set(os.listdir('.'))
@@ -18,13 +16,13 @@ def generate_rules(sandbox):
         root, ext = os.path.splitext(obj)
         cfile = '%s.c' % root
         if cfile in files:
-            print ": foreach %s |> ^ %s %%f^ %s %s %s %s -c %%f -o %%o |> %s/%s {objs}" % (
-                cfile, cc, cc, cppflags, defs, cflags, sandbox.outputdir, obj
+            print ": foreach %s |> ^ %s %%f^ %s %%f -o %%o |> %s/%s {objs}" % (
+                cfile, cc, compile_c, sandbox.outputdir, obj
             )
         else:
             cppfile = '%s.cpp' % root
-            print ": foreach %s |> ^ %s %%f^ %s %s %s %s -c %%f -o %%o |> %s/%s {objs}" % (
-                cppfile, cxx, cxx, cppflags, defs, cxxflags, sandbox.outputdir, obj
+            print ": foreach %s |> ^ %s %%f^ %s %%f -o %%o |> %s/%s {objs}" % (
+                cppfile, cxx, compile_cc, sandbox.outputdir, obj
             )
     ar = sandbox.get_string('AR')
     arflags = sandbox.get_string('ARFLAGS')

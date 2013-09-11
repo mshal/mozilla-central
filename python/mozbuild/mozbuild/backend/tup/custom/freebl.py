@@ -20,7 +20,8 @@ def generate_rules(sandbox):
         sandbox.get_string('PROG_PREFIX'),
         sandbox.get_string('OBJ_SUFFIX')
     )
-    targets['intel-gcm-wrap.o'] = targets[filename]
+    if filename in targets:
+        targets['intel-gcm-wrap.o'] = targets[filename]
 
     from tup import csrcs
     csrcs.generate_rules(sandbox)

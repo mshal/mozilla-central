@@ -94,13 +94,18 @@ def generate_rules(sandbox):
                                                    'accessibility'))
 
     install_targets = sandbox['INSTALL_TARGETS']
+    # Files that exist in the objdir
+    obj_files = ('xpcom-config.h', 'js-config.h', 'cairo-features.h', 'necko-config.h')
     for target in install_targets:
         # TODO: Currently only some targets are supported
-        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE', 'globalgen_headers'):
+        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE', 'globalgen_headers', 'xpcom', 'jsconfig', 'histoenums', 'extra_export_files', 'structlist', 'cairo_features', 'neckoconfig', 'errorlist'):
             files = sandbox['%s_FILES' % target]
             dest = sandbox.get_string('%s_DEST' % target)
             for f in files:
-                generate_install_rule(sandbox, f, dest)
+                if f in obj_files:
+                    generate_install_rule(sandbox, os.path.join(sandbox.outputdir, f), dest)
+                else:
+                    generate_install_rule(sandbox, f, dest)
 
     pp_targets = sandbox['PP_TARGETS']
     for target in pp_targets:
