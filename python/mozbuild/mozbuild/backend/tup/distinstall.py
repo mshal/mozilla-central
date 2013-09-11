@@ -109,17 +109,17 @@ def generate_rules(sandbox):
 
     pp_targets = sandbox['PP_TARGETS']
     for target in pp_targets:
-        # TODO: Currently only some targets are supported
-        if target in ('SEARCHPLUGINS', 'PP_JS_MODULES', 'SYNC_PP', 'MAIN_JS_MODULE', 'MODULES'):
-            files = sandbox[target]
-            dest = sandbox.get_string('%s_PATH' % target)
-            for f in files:
-                prefix = ""
-                if target == 'SEARCHPLUGINS':
-                    # SEARCHPLUGINS uses vpath to locate the xml. Ugh.
-                    prefix = 'en-US/searchplugins/'
-                flags = sandbox['%s_FLAGS' % target]
-                generate_pp_rule(sandbox, prefix + f, defines, flags, dest)
+        files = sandbox[target]
+        dest = sandbox.get_string('%s_PATH' % target)
+        if not dest:
+            dest = sandbox.outputdir
+        for f in files:
+            prefix = ""
+            if target == 'SEARCHPLUGINS':
+                # SEARCHPLUGINS uses vpath to locate the xml. Ugh.
+                prefix = 'en-US/searchplugins/'
+            flags = sandbox['%s_FLAGS' % target]
+            generate_pp_rule(sandbox, prefix + f, defines, flags, dest)
 
     # Files manually exported to dist/bin/res
     for target in sandbox['EXPORT_RESOURCE']:
