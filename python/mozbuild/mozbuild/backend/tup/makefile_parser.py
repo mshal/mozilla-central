@@ -12,7 +12,9 @@ def parse(sandbox, makefile):
     tupmk = TupMakefile(sandbox, allow_includes=True)
     if makefile:
         tupmk.process_makefile(makefile)
-    else:
+
+    if not sandbox.relativesrcdir.startswith('intl/icu') and not sandbox.relativesrcdir.startswith('security/nss'):
+        # Make sure we get config.mk if it hasn't been included already.
         tupmk.process_config_mk()
 
 class TupMakefile(object):
@@ -40,6 +42,10 @@ class TupMakefile(object):
                 value = sandbox[var]
                 if sandbox[var] == True:
                     value = '1'
+                self.set_var(var, value)
+        for var in ['LOCAL_INCLUDES']:
+            if var in sandbox:
+                value = ['-I%s' % (i) for i in sandbox[var]]
                 self.set_var(var, value)
 
         self.set_var('srcdir', '.')
@@ -278,10 +284,7 @@ class TupMakefile(object):
         #    directories are used.
         if len(vpath) == 1 or filename.find('/') != -1:
             if subdir == '.':
-                if vpath[0] == '.':
-                    return filename
-                else:
-                    return os.path.join(vpath[0], filename)
+                return filename
             else:
                 return os.path.join(subdir, filename)
 

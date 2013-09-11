@@ -21,7 +21,7 @@ def generate_rules(sandbox):
     dictionary_gen += ' --cachedir=$(DIST)/idl'
     dictionary_gen += ' dictionary_helper_gen.conf'
     dictionary_gen += ' event_impl_gen.conf'
-    print ": event_impl_gen.conf | $(MOZ_ROOT)/<installed-idls> |> ^ dictionary_helper_gen.py -> %%o^ %s |> DictionaryHelpers.h DictionaryHelpers.cpp" % (dictionary_gen)
+    print ": event_impl_gen.conf | $(MOZ_ROOT)/<installed-idls> |> ^ dictionary_helper_gen.py -> %%o^ %s |> DictionaryHelpers.h DictionaryHelpers.cpp | $(MOZ_ROOT)/<generated-headers>" % (dictionary_gen)
 
     event_impl_gen = '$(PYTHON_PATH)'
     event_impl_gen += ' -I$(MOZ_ROOT)/other-licenses/ply'
