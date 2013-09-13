@@ -50,6 +50,7 @@ class TupMakefile(object):
 
         self.set_var('srcdir', '.')
         self.set_var('MOZILLA_DIR', sandbox.moz_root)
+        self.set_var('CURDIR', sandbox.outputdir)
 
         self.allow_includes = allow_includes
 

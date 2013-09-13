@@ -25,7 +25,10 @@ def generate_pp_rule(sandbox, filename, defines, extra_flags, output_path, input
     output_group = ""
     if filename.endswith('.manifest'):
         output_group = get_output_group(sandbox)
-    print ": foreach %s | %s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%%b | %s" % (filename, input_group, flags, output_path, output_group)
+    output_file = os.path.basename(filename)
+    if output_file.endswith('.in'):
+        output_file, ext = os.path.splitext(output_file)
+    print ": foreach %s | %s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%s | %s" % (filename, input_group, flags, output_path, output_file, output_group)
 
 def generate_install_rule(sandbox, filename, output_path):
     output_group = ""
@@ -87,26 +90,6 @@ def generate_rules(sandbox):
     for export in autocfg_js_exports:
         generate_install_rule(sandbox, export, autocfg_dest)
 
-    accessfu_files = sandbox['ACCESSFU_FILES']
-    for export in accessfu_files:
-        generate_install_rule(sandbox, export, os.path.join(final_target,
-                                                   'modules',
-                                                   'accessibility'))
-
-    install_targets = sandbox['INSTALL_TARGETS']
-    # Files that exist in the objdir
-    obj_files = ('xpcom-config.h', 'js-config.h', 'cairo-features.h', 'necko-config.h')
-    for target in install_targets:
-        # TODO: Currently only some targets are supported
-        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE', 'globalgen_headers', 'xpcom', 'jsconfig', 'histoenums', 'extra_export_files', 'structlist', 'cairo_features', 'neckoconfig', 'errorlist'):
-            files = sandbox['%s_FILES' % target]
-            dest = sandbox.get_string('%s_DEST' % target)
-            for f in files:
-                if f in obj_files:
-                    generate_install_rule(sandbox, os.path.join(sandbox.outputdir, f), dest)
-                else:
-                    generate_install_rule(sandbox, f, dest)
-
     pp_targets = sandbox['PP_TARGETS']
     for target in pp_targets:
         files = sandbox[target]
@@ -120,6 +103,39 @@ def generate_rules(sandbox):
                 prefix = 'en-US/searchplugins/'
             flags = sandbox['%s_FLAGS' % target]
             generate_pp_rule(sandbox, prefix + f, defines, flags, dest)
+
+    install_targets = sandbox['INSTALL_TARGETS']
+
+    if 'NSINSTALL' in install_targets:
+        # For some reason nsinstall is linked as nsinstall_real, then copied
+        # to nsinstall, then installed.
+        input_file = "%s/%s" % (sandbox.outputdir,
+                                sandbox.get_string('HOST_PROGRAM'))
+        output_file = "%s/nsinstall%s" % (sandbox.outputdir,
+                                          sandbox.get_string('HOST_BIN_SUFFIX'))
+        print ": %s |> cp %%f %%o |> %s" % (input_file, output_file)
+
+    # Files that exist in the objdir
+    obj_files = ('xpcom-config.h',
+                 'js-config.h',
+                 'cairo-features.h',
+                 'necko-config.h',
+                 'nsinstall')
+    for target in install_targets:
+        if target == 'NSINSTALL' and sandbox.relativesrcdir == 'js/src/config':
+            # Both js/src/config/ and config/ try to create nsinstall, but we
+            # only need one.
+            continue
+        # TODO: Currently only some targets are supported
+        # GDBINIT: has hidden '.gdbinit' path
+        if target in ('EXPORTS_GENERATED', 'BRANDING', 'SYNC_MAIN', 'SYNC_ENGINES', 'SYNC_STAGES', 'WORKER', 'MODULES', 'CRYPTO_MODULE', 'globalgen_headers', 'xpcom', 'jsconfig', 'histoenums', 'extra_export_files', 'structlist', 'cairo_features', 'neckoconfig', 'errorlist', 'GDB_INSTALL_AUTOLOAD', 'SHELL_INSTALL_AUTOLOAD', 'SHELL_INSTALL_AUTOLOAD_SCRIPT', 'xpcaccevents', 'ACCESSFU', 'HEADERS', 'TEST_PLUGIN', 'ICON', 'NSINSTALL'):
+            files = sandbox['%s_FILES' % target]
+            dest = sandbox.get_string('%s_DEST' % target)
+            for f in files:
+                if f in obj_files:
+                    generate_install_rule(sandbox, os.path.join(sandbox.outputdir, f), dest)
+                else:
+                    generate_install_rule(sandbox, f, dest)
 
     # Files manually exported to dist/bin/res
     for target in sandbox['EXPORT_RESOURCE']:

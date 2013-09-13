@@ -228,6 +228,9 @@ if __name__ == '__main__':
     if 'HOST_CSRCS' in sandbox:
         from tup import host_csrcs
         host_csrcs.generate_rules(sandbox)
+    if 'HOST_LIBRARY_NAME' in sandbox:
+        from tup import host_library
+        host_library.generate_rules(sandbox)
     if 'HOST_SIMPLE_PROGRAMS' in sandbox:
         from tup import host_simple_programs
         host_simple_programs.generate_rules(sandbox)
@@ -243,9 +246,6 @@ if __name__ == '__main__':
     if os.path.exists('jar.mn'):
         from tup import jarmn
         jarmn.generate_rules(sandbox, options.extra_manifest_files)
-    if 'NO_DIST_INSTALL' not in sandbox:
-        from tup import distinstall
-        distinstall.generate_rules(sandbox)
 
     objs = sandbox['OBJS']
     if not objs:
@@ -254,6 +254,10 @@ if __name__ == '__main__':
     objs = ['%s/%s' % (sandbox.outputdir, o) for o in objs]
     from tup import linker
     linker.generate_rules(sandbox, objs)
+
+    if 'NO_DIST_INSTALL' not in sandbox:
+        from tup import distinstall
+        distinstall.generate_rules(sandbox)
 
     # Needs to come after since freebl is parsed twice - once with
     # FREEBL_CHILD_BUILD set and once without
