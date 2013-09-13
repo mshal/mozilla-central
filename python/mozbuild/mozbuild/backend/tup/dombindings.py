@@ -11,11 +11,10 @@ def generate_rules(sandbox):
 
     pp_webidl = sandbox['preprocessed_webidl_files']
     for pp in pp_webidl:
-        import distinstall
         defines = sandbox['DEFINES']
         defines.extend(sandbox['ACDEFINES'])
         input_path = '../webidl/%s' % pp
-        distinstall.generate_pp_rule(sandbox, input_path, defines, [], '.')
+        sandbox.generate_pp_rule(input_path, defines, [], '.')
 
     webidl = sandbox['webidl_files']
     for idl in webidl:

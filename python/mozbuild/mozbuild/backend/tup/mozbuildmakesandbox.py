@@ -64,6 +64,70 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         else:
             return [name]
 
+    def get_output_group(self):
+        xpi_name = self.get_string('XPI_NAME')
+        if xpi_name:
+            group_suffix = "-xpi-%s" % xpi_name
+        else:
+            dist_subdir = self.get_string('DIST_SUBDIR')
+            if dist_subdir:
+                group_suffix = "-%s" % dist_subdir
+            else:
+                group_suffix = ""
+        return '$(MOZ_ROOT)/<installed-manifests%s>' % group_suffix
+
+    def generate_pp_rule(self, filename, defines, extra_flags, output_path, input_group=""):
+        flags = ' '.join(defines)
+        if(extra_flags):
+            flags += ' ' + ' '.join(extra_flags)
+        output_group = ""
+        if filename.endswith('.manifest'):
+            output_group = self.get_output_group()
+        output_file = os.path.basename(filename)
+        if output_file.endswith('.in'):
+            output_file, ext = os.path.splitext(output_file)
+        print ": foreach %s | %s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%s | %s" % (filename, input_group, flags, output_path, output_file, output_group)
+
+    def generate_install_rule(self, filename, output_path, output_group=""):
+        if filename.endswith('.manifest'):
+            output_group = self.get_output_group()
+        elif filename.endswith('.h'):
+            output_group = "$(MOZ_ROOT)/<installed-headers>"
+        elif filename.endswith('.png'):
+            # This is to help browser/app/Makefile.in copy pngs from
+            # $(DIST)/branding to $(FINAL_TARGET)/chrome/icons/default
+            output_group = "$(MOZ_ROOT)/<installed-icons>"
+
+        if '*' in filename:
+            # If we're using a wildcard-ed input due to VPATH, it's easier to just
+            # copy the file.
+            print ": foreach %s |> !cp |> %s/%%b | %s" % (filename,
+                                                          output_path, output_group)
+            return
+
+        if '/' in filename:
+            ifile = filename
+        else:
+            ifile = '%s/%s' % (self.relativesrcdir, filename)
+        ofile = '%s/%s' % (output_path, os.path.basename(ifile))
+
+        # Find longest prefix
+        prefix = None
+        index = ([x[0]==x[1] for x in zip(ofile, ifile)]+[0]).index(0)
+        if index:
+            while index > 0 and ofile[index] != '/':
+                index -= 1
+            if index:
+                prefix = ofile[:index+1]
+        if prefix:
+            dotdots = '../' * ofile.replace(prefix, '').count('/')
+            symtarget = dotdots + ifile.replace(prefix, '')
+        else:
+            tmppath = output_path.replace('../', '')
+            dotdots = '../' * (tmppath.count('/') + 1)
+            symtarget = dotdots + ifile
+        print ": %s |> ^ INSTALL %%f^ ln -s %s %s |> %s | %s" % (filename, symtarget, ofile, ofile, output_group)
+
     def __getitem__(self, name):
         if name in self.variables:
             return self.variables[name]

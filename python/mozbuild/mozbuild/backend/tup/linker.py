@@ -136,10 +136,13 @@ def generate_desc_file(sandbox, objs, static_library_name=None):
         expandlibs_exec += " " + ' '.join(lib_flags)
         lib_deps_string = ' '.join(lib_deps)
 
-        print ": %s | %s |> ^ SHLIB %%o^ %s |> %s" % (inputs, lib_deps_string, expandlibs_exec, output)
         output_group = '$(MOZ_ROOT)/<-l%s>' % (sandbox.get_string('SHARED_LIBRARY_NAME'))
-        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/lib/%%b | %s" % (output, output_group)
-        print ": %s |> ^ INSTALL %%o^ cp %%f %%o |> $(DIST)/bin/%%b | %s" % (output, output_group)
+        print ": %s | %s |> ^ SHLIB %%o^ %s |> %s | %s" % (inputs, lib_deps_string, expandlibs_exec, output, output_group)
+        dist = sandbox.get_string('DIST')
+        lib_install = '%s/lib' % (dist)
+        bin_install = '%s/bin' % (dist)
+        sandbox.generate_install_rule(output, lib_install, output_group)
+        sandbox.generate_install_rule(output, bin_install, output_group)
 
         if not sandbox['NO_DIST_INSTALL'] and sandbox['IS_COMPONENT']:
             dist_subdir = sandbox.get_string('DIST_SUBDIR')
