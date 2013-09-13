@@ -29,7 +29,6 @@ def generate_rules(sandbox):
     all_webidl_files_string = ' '.join(all_webidl_files)
     globalgen_targets_string = ' '.join(sandbox['globalgen_targets'])
     globalgen_targets_string += ' ParserResults.pkl parser.out WebIDLGrammar.pkl'
-    globalgen_targets_string += ' | $(MOZ_ROOT)/<generated-headers>'
 
     python_string = '$(PYTHON_PATH) -Iparser -I$(MOZ_ROOT)/other-licenses/ply'
     globalgen_string = '%s GlobalGen.py Bindings.conf . %%f' % (python_string)
@@ -39,6 +38,6 @@ def generate_rules(sandbox):
     bindinggen_outputs.extend(['%sBinding.cpp' % (f.replace('.webidl', '')) for f in all_webidl_files])
     bindinggen_outputs.extend(['allfiles', 'changeddeps'])
 
-    print ": %s |> ^o GlobalGen.py -> %%o^ %s |> %s" % (all_webidl_files_string, globalgen_string, globalgen_targets_string)
+    print ": %s |> ^o GlobalGen.py -> %%o^ %s |> %s | $(MOZ_ROOT)/<generated-headers>" % (all_webidl_files_string, globalgen_string, globalgen_targets_string)
 
-    print ": %s | ParserResults.pkl |> ^o BindingGen.py [%i files]^ %s |> %s" % (all_webidl_files_string, len(all_webidl_files), bindinggen_string, ' '.join(bindinggen_outputs))
+    print ": %s | ParserResults.pkl |> ^o BindingGen.py [%i files]^ %s |> %s | $(MOZ_ROOT)/<generated-headers>" % (all_webidl_files_string, len(all_webidl_files), bindinggen_string, ' '.join(bindinggen_outputs))

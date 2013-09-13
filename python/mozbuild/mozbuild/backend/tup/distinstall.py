@@ -40,7 +40,29 @@ def generate_install_rule(sandbox, filename, output_path):
         # This is to help browser/app/Makefile.in copy pngs from
         # $(DIST)/branding to $(FINAL_TARGET)/chrome/icons/default
         output_group = "$(MOZ_ROOT)/<installed-icons>"
-    print ": foreach %s |> !cp |> %s/%%b | %s" % (filename, output_path, output_group)
+
+    if '*' in filename:
+        # If we're using a wildcard-ed input due to VPATH, it's easier to just
+        # copy the file.
+        print ": foreach %s |> !cp |> %s/%%b | %s" % (filename,
+                                                      output_path, output_group)
+        return
+
+    if '/' in filename:
+        ifile = filename
+    else:
+        ifile = '%s/%s' % (sandbox.relativesrcdir, filename)
+    ofile = '%s/%s' % (output_path, os.path.basename(ifile))
+
+    prefix = ofile[:([x[0]==x[1] for x in zip(ofile, ifile)]+[0]).index(0)]
+    if prefix:
+        dotdots = '../' * ofile.replace(prefix, '').count('/')
+        symtarget = dotdots + ifile.replace(prefix, '')
+    else:
+        tmppath = output_path.replace('../', '')
+        dotdots = '../' * (tmppath.count('/') + 1)
+        symtarget = dotdots + ifile
+    print ": %s |> ^ INSTALL %%f^ ln -s %s %s |> %s | %s" % (filename, symtarget, ofile, ofile, output_group)
 
 def generate_rules(sandbox):
     final_target = sandbox.get_string('FINAL_TARGET')
