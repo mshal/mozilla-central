@@ -126,7 +126,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
             tmppath = output_path.replace('../', '')
             dotdots = '../' * (tmppath.count('/') + 1)
             symtarget = dotdots + ifile
-        print ": %s |> ^ INSTALL %%f^ ln -s %s %s |> %s | %s" % (filename, symtarget, ofile, ofile, output_group)
+        print ": %s |> ^ INSTALL %s^ ln -s %s %s |> %s | %s" % (filename, ofile, symtarget, ofile, ofile, output_group)
 
     def __getitem__(self, name):
         if name in self.variables:
