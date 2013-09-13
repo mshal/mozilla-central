@@ -170,10 +170,13 @@ class TupCpp(object):
 
                 # Put all objects into sandbox.objs, except for host srcs since
                 # they don't end up in libraries.
-                if not host_prefix:
+                output = '%s%s.%s' % (obj_prefix_string, basename, obj_suffix)
+                if host_prefix:
+                    self.sandbox.hostobjs.append(output)
+                else:
                     # libcppsrcs is specific to widget/xremoteclient/
                     if not libcppsrcs or filename in libcppsrcs:
-                        self.sandbox.objs.append("%s%s.%s" % (obj_prefix_string, basename, obj_suffix))
+                        self.sandbox.objs.append(output)
 
     def generate_simple_link_rules(self, srcs, print_string, ld_var, flags):
         if srcs:

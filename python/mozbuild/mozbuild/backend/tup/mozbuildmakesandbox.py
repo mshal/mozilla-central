@@ -15,6 +15,7 @@ class MozbuildMakeSandbox(MozbuildSandbox):
         MozbuildSandbox.__init__(self, config, path)
         self.makefile = None
         self.objs = []
+        self.hostobjs = []
         self.moz_root = moz_root
         self.moz_objdir = moz_objdir
         self.variables = {}

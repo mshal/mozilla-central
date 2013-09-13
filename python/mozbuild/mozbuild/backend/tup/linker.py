@@ -310,6 +310,31 @@ def generate_nsprpub_progs(sandbox, objs):
         prog = prog.replace('./', '')
         print ": %s/%s |> %s %s %%f %s%%o |> %s/%s | $(MOZ_ROOT)/nsprpub/<progs>" % (sandbox.outputdir, prog + '.' + obj_suffix, cc, flags, outoption, sandbox.outputdir, prog + prog_suffix)
 
+def generate_host_program(sandbox):
+    host_program = sandbox.get_string('HOST_PROGRAM')
+
+    if sandbox['HOST_CPP_PROG_LINK']:
+        linker_display = 'HOST_CXX'
+        host_flags = ['HOST_CXXFLAGS']
+    else:
+        linker_display = 'HOST_CC'
+        host_flags = ['HOST_CFLAGS']
+
+    linker = sandbox.get_string(linker_display)
+    host_flags.extend([
+        'HOST_LDFLAGS',
+        'HOST_LIBS',
+        'HOST_EXTRA_LIBS',
+    ])
+
+    all_flags = sandbox.get_tupcpp().get_all_flags(host_flags, host_program)
+    lib_flags, lib_deps = resolve_libraries(sandbox, all_flags)
+
+    inputs = ['%s/%s' % (sandbox.outputdir, o) for o in sandbox.hostobjs]
+    input_string = ' '.join(inputs) + ' | ' + ' '.join(lib_deps)
+    lib_flags_string = ' '.join(lib_flags)
+    print ": %s |> ^ %s %%o^ %s -o %%o %%f %s |> %s/%s" % (input_string, linker_display, linker, lib_flags_string, sandbox.outputdir, host_program)
+
 def generate_rules(sandbox, objs):
     if sandbox.relativesrcdir.startswith('nsprpub'):
         if sandbox['PROGS']:
@@ -320,3 +345,6 @@ def generate_rules(sandbox, objs):
         generate_nss_library(sandbox)
     else:
         generate_desc_file(sandbox, objs)
+
+    if 'HOST_PROGRAM' in sandbox:
+        generate_host_program(sandbox)
