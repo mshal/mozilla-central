@@ -54,6 +54,6 @@ def generate_rules(sandbox):
     generated_events_gen += ' --class-declarations GeneratedEventClasses.h'
     generated_events_gen += ' --stub-output GeneratedEvents.cpp'
     generated_events_gen += ' event_impl_gen.conf'
-    print ": event_impl_gen.conf $(MOZ_ROOT)/<installed-idls> |> ^ event_impl_gen.py -> %%o^ %s |> GeneratedEventClasses.h GeneratedEvents.cpp" % (generated_events_gen)
+    print ": event_impl_gen.conf $(MOZ_ROOT)/<installed-idls> |> ^ event_impl_gen.py -> %%o^ %s |> GeneratedEventClasses.h GeneratedEvents.cpp | $(MOZ_ROOT)/<generated-headers>" % (generated_events_gen)
     for header in sandbox['_EXTRA_EXPORT_FILES']:
         print ": %s |> ^ INSTALL %%f^ cp %%f %%o |> $(DIST)/include/%%b | $(MOZ_ROOT)/<installed-headers>" % (header)
