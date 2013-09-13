@@ -6,64 +6,6 @@
 import os
 import sys
 
-def get_output_group(sandbox):
-    xpi_name = sandbox.get_string('XPI_NAME')
-    if xpi_name:
-        group_suffix = "-xpi-%s" % xpi_name
-    else:
-        dist_subdir = sandbox.get_string('DIST_SUBDIR')
-        if dist_subdir:
-            group_suffix = "-%s" % dist_subdir
-        else:
-            group_suffix = ""
-    return '$(MOZ_ROOT)/<installed-manifests%s>' % group_suffix
-
-def generate_pp_rule(sandbox, filename, defines, extra_flags, output_path, input_group=""):
-    flags = ' '.join(defines)
-    if(extra_flags):
-        flags += ' ' + ' '.join(extra_flags)
-    output_group = ""
-    if filename.endswith('.manifest'):
-        output_group = get_output_group(sandbox)
-    output_file = os.path.basename(filename)
-    if output_file.endswith('.in'):
-        output_file, ext = os.path.splitext(output_file)
-    print ": foreach %s | %s |> ^ Preprocessor %%f -> %%o^ $(PYTHON) $(MOZ_ROOT)/config/Preprocessor.py %s %%f > %%o |> %s/%s | %s" % (filename, input_group, flags, output_path, output_file, output_group)
-
-def generate_install_rule(sandbox, filename, output_path):
-    output_group = ""
-    if filename.endswith('.manifest'):
-        output_group = get_output_group(sandbox)
-    elif filename.endswith('.h'):
-        output_group = "$(MOZ_ROOT)/<installed-headers>"
-    elif filename.endswith('.png'):
-        # This is to help browser/app/Makefile.in copy pngs from
-        # $(DIST)/branding to $(FINAL_TARGET)/chrome/icons/default
-        output_group = "$(MOZ_ROOT)/<installed-icons>"
-
-    if '*' in filename:
-        # If we're using a wildcard-ed input due to VPATH, it's easier to just
-        # copy the file.
-        print ": foreach %s |> !cp |> %s/%%b | %s" % (filename,
-                                                      output_path, output_group)
-        return
-
-    if '/' in filename:
-        ifile = filename
-    else:
-        ifile = '%s/%s' % (sandbox.relativesrcdir, filename)
-    ofile = '%s/%s' % (output_path, os.path.basename(ifile))
-
-    prefix = ofile[:([x[0]==x[1] for x in zip(ofile, ifile)]+[0]).index(0)]
-    if prefix:
-        dotdots = '../' * ofile.replace(prefix, '').count('/')
-        symtarget = dotdots + ifile.replace(prefix, '')
-    else:
-        tmppath = output_path.replace('../', '')
-        dotdots = '../' * (tmppath.count('/') + 1)
-        symtarget = dotdots + ifile
-    print ": %s |> ^ INSTALL %%f^ ln -s %s %s |> %s | %s" % (filename, symtarget, ofile, ofile, output_group)
-
 def generate_rules(sandbox):
     final_target = sandbox.get_string('FINAL_TARGET')
     defines = sandbox['DEFINES']
@@ -78,7 +20,7 @@ def generate_rules(sandbox):
     extra_pp_components = sandbox['EXTRA_PP_COMPONENTS']
     extra_pp_components_flags = sandbox['EXTRA_PP_COMPONENTS_FLAGS']
     for component in extra_pp_components:
-        generate_pp_rule(sandbox, component, defines, extra_pp_components_flags, component_dir, input_group="$(MOZ_ROOT)/<generated-headers>")
+        sandbox.generate_pp_rule(component, defines, extra_pp_components_flags, component_dir, input_group="$(MOZ_ROOT)/<generated-headers>")
 
     pref_js_exports = sandbox['PREF_JS_EXPORTS']
     if sandbox['GRE_MODULE']:
@@ -92,25 +34,25 @@ def generate_rules(sandbox):
         # on win32, pref files need CRLF line endings... see bug 206029
         pref_pp_flags.append('--line-endings=crlf')
     for export in pref_js_exports:
-        generate_pp_rule(sandbox, export, defines, pref_pp_flags, os.path.join(final_target, pref_dir))
+        sandbox.generate_pp_rule(export, defines, pref_pp_flags, os.path.join(final_target, pref_dir))
 
     extra_components = sandbox['EXTRA_COMPONENTS']
     for component in extra_components:
-        generate_install_rule(sandbox, component, component_dir)
+        sandbox.generate_install_rule(component, component_dir)
 
     extra_js_modules = sandbox['EXTRA_JS_MODULES']
     for module in extra_js_modules:
         fullpath = sandbox.vpath_resolve(module)
-        generate_install_rule(sandbox, fullpath, js_module_dir)
+        sandbox.generate_install_rule(fullpath, js_module_dir)
 
     extra_pp_js_modules = sandbox['EXTRA_PP_JS_MODULES']
     for module in extra_pp_js_modules:
-        generate_pp_rule(sandbox, module, defines, [], js_module_dir)
+        sandbox.generate_pp_rule(module, defines, [], js_module_dir)
 
     autocfg_js_exports = sandbox['AUTOCFG_JS_EXPORTS']
     autocfg_dest = os.path.join(final_target, 'defaults', 'autoconfig')
     for export in autocfg_js_exports:
-        generate_install_rule(sandbox, export, autocfg_dest)
+        sandbox.generate_install_rule(export, autocfg_dest)
 
     pp_targets = sandbox['PP_TARGETS']
     for target in pp_targets:
@@ -124,7 +66,7 @@ def generate_rules(sandbox):
                 # SEARCHPLUGINS uses vpath to locate the xml. Ugh.
                 prefix = 'en-US/searchplugins/'
             flags = sandbox['%s_FLAGS' % target]
-            generate_pp_rule(sandbox, prefix + f, defines, flags, dest)
+            sandbox.generate_pp_rule(prefix + f, defines, flags, dest)
 
     install_targets = sandbox['INSTALL_TARGETS']
 
@@ -155,12 +97,12 @@ def generate_rules(sandbox):
             dest = sandbox.get_string('%s_DEST' % target)
             for f in files:
                 if f in obj_files:
-                    generate_install_rule(sandbox, os.path.join(sandbox.outputdir, f), dest)
+                    sandbox.generate_install_rule(os.path.join(sandbox.outputdir, f), dest)
                 else:
-                    generate_install_rule(sandbox, f, dest)
+                    sandbox.generate_install_rule(f, dest)
 
     # Files manually exported to dist/bin/res
     for target in sandbox['EXPORT_RESOURCE']:
-        generate_install_rule(sandbox, target, '$(DIST)/bin/res')
+        sandbox.generate_install_rule(target, '$(DIST)/bin/res')
     for target in sandbox['EXPORT_RESOURCE_CONTENT']:
-        generate_install_rule(sandbox, target, '$(DIST)/bin/res/dtd')
+        sandbox.generate_install_rule(target, '$(DIST)/bin/res/dtd')
