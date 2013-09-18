@@ -4,9 +4,4 @@
 
 include_rules
 
-: foreach ../*.cpp |> !ln |>
-
-glue_headers += ../DeadlockDetector.h
-: foreach $(glue_headers) |> !ln |> %b | $(MOZ_ROOT)/<installed-headers>
-
 include $(MOZ_ROOT)/build/tup/compile.tup

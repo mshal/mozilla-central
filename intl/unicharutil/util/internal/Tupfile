@@ -4,8 +4,4 @@
 
 include_rules
 
-# Install the cpp files locally, and put them in the <generated-headers> group
-# since some .cpp files #include others directly.
-: foreach ../*.cpp |> !ln |> %b | $(MOZ_ROOT)/<generated-headers>
-
 include $(MOZ_ROOT)/build/tup/compile.tup

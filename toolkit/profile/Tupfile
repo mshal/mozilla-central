@@ -4,6 +4,4 @@
 
 include_rules
 
-: $(MOZ_ROOT)/profile/dirserviceprovider/src/nsProfileLock.cpp |> !ln |>
-
 include $(MOZ_ROOT)/build/tup/compile.tup

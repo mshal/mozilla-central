@@ -4,6 +4,4 @@
 
 include_rules
 
-: foreach ../src/*.cpp |> !ln |>
-
 include $(MOZ_ROOT)/build/tup/compile.tup
