@@ -8,5 +8,6 @@ import os
 def generate_rules(sandbox):
     tupcpp = sandbox.get_tupcpp()
 
-    cppsrcs = sandbox['CPP_SOURCES']
+    topsrcdir = sandbox['TOPSRCDIR']
+    cppsrcs = [s.replace(topsrcdir, sandbox.moz_root) for s in sandbox['CPP_SOURCES']]
     tupcpp.generate_compile_rules(cppsrcs, 'C++', 'CXX', tupcpp.cpp_flags)

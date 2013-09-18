@@ -45,7 +45,12 @@ class TupMakefile(object):
                 self.set_var(var, value)
         for var in ['LOCAL_INCLUDES']:
             if var in sandbox:
-                value = ['-I%s' % (i) for i in sandbox[var]]
+                value = []
+                for i in sandbox[var]:
+                    if i.startswith('/'):
+                        value.append('-I%s%s' % (sandbox.moz_root, i))
+                    else:
+                        value.append('-I%s' % i)
                 self.set_var(var, value)
 
         self.set_var('srcdir', '.')
@@ -216,6 +221,8 @@ class TupMakefile(object):
                         else:
                             prefix_dir = dirname
                         for f in files:
+                            if 'webidlsrcs.mk' in f:
+                                f = os.path.join(self.sandbox.moz_root, self.sandbox.moz_objdir, 'dom/bindings/webidlsrcs.mk')
                             if 'icudefs.mk' in f:
                                 self.set_var('top_srcdir', os.path.join(self.sandbox.moz_root, 'intl/icu/source'))
                                 f = os.path.join(self.sandbox.moz_root, self.sandbox.moz_objdir, 'js/src/intl/icu/icudefs.mk')

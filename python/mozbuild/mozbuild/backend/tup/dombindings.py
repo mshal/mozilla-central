@@ -29,13 +29,18 @@ def generate_rules(sandbox):
     globalgen_targets_string = ' '.join(sandbox['globalgen_targets'])
     globalgen_targets_string += ' ParserResults.pkl parser.out WebIDLGrammar.pkl'
 
+    generated_events = sandbox['generated_events_webidl_files']
+    generated_events_string = ' '.join(generated_events)
+
     python_string = '$(PYTHON_PATH) -Iparser -I$(MOZ_ROOT)/other-licenses/ply'
     globalgen_string = '%s GlobalGen.py Bindings.conf . %%f' % (python_string)
-    bindinggen_string = 'echo all > changeddeps; echo %s > allfiles; %s BindingGen.py --tup-support Bindings.conf . allfiles changeddeps' % (all_webidl_files_string, python_string)
+    bindinggen_string = 'echo all > changeddeps; echo %s > allfiles; echo %s > generatedevents; %s BindingGen.py --tup-support Bindings.conf . allfiles generatedevents changeddeps' % (all_webidl_files_string, generated_events_string, python_string)
 
-    bindinggen_outputs = ['%sBinding.h' % (f.replace('.webidl', '')) for f in all_webidl_files]
-    bindinggen_outputs.extend(['%sBinding.cpp' % (f.replace('.webidl', '')) for f in all_webidl_files])
-    bindinggen_outputs.extend(['allfiles', 'changeddeps'])
+    bindinggen_outputs = [f.replace('.webidl', 'Binding.h') for f in all_webidl_files]
+    bindinggen_outputs.extend([f.replace('.webidl', 'Binding.cpp') for f in all_webidl_files])
+    bindinggen_outputs.extend([f.replace('.webidl', '.h') for f in generated_events])
+    bindinggen_outputs.extend([f.replace('.webidl', '.cpp') for f in generated_events])
+    bindinggen_outputs.extend(['allfiles', 'generatedevents', 'changeddeps'])
 
     print ": %s |> ^o GlobalGen.py -> %%o^ %s |> %s | $(MOZ_ROOT)/<generated-headers>" % (all_webidl_files_string, globalgen_string, globalgen_targets_string)
 
